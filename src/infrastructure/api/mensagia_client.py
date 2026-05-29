@@ -33,7 +33,7 @@ class MensagiaClient:
         data = data or {}
         data["api_token"] = self.api_token
         try:
-            response = self.session.post(f"{BASE_URL}/{endpoint}", json=data, timeout=30)
+            response = self.session.post(f"{BASE_URL}/{endpoint}", data=data, timeout=30)
             self._raise_for_error(response)
             return response.json()
         except (ConnectionError, Timeout) as exc:
@@ -87,7 +87,7 @@ class MensagiaClient:
         return self.get_all_pages("extrafields")
 
     def send_email(self, payload: dict) -> dict:
-        return self._post("email", payload)
+        return self._post("email/simple", payload)
 
     def validate_token(self) -> bool:
         try:
