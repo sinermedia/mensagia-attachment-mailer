@@ -18,8 +18,7 @@ def next_ten_minute_mark(now: datetime) -> datetime:
 
 
 def calculate_start_dates(count: int, now: datetime = None) -> list[datetime]:
-    """Returns a list of send datetimes: first at the next 10-min mark, then +12s each."""
     if now is None:
         now = datetime.now()
-    base = next_ten_minute_mark(now)
+    base = next_ten_minute_mark(next_ten_minute_mark(now))
     return [base + timedelta(seconds=SECONDS_BETWEEN_EMAILS * i) for i in range(count)]

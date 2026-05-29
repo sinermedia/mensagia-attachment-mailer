@@ -46,10 +46,16 @@ class TestCalculateStartDates:
         result = calculate_start_dates(0, now)
         assert result == []
 
-    def test_first_email_at_next_ten_minute_mark(self):
+    def test_first_email_at_second_ten_minute_mark(self):
         now = datetime(2024, 1, 15, 14, 23, 0)
         result = calculate_start_dates(1, now)
-        assert result[0] == datetime(2024, 1, 15, 14, 30, 0)
+        assert result[0] == datetime(2024, 1, 15, 14, 40, 0)
+
+    def test_first_email_skips_imminent_mark(self):
+        # At 14:09:40 the next mark is 14:10 (only 20s away) — should skip to 14:20
+        now = datetime(2024, 1, 15, 14, 9, 40)
+        result = calculate_start_dates(1, now)
+        assert result[0] == datetime(2024, 1, 15, 14, 20, 0)
 
     def test_second_email_is_12_seconds_after_first(self):
         now = datetime(2024, 1, 15, 14, 23, 0)
