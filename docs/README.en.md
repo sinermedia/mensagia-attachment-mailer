@@ -22,7 +22,7 @@ Application to send emails with per-contact personalised attachments using the [
 MENSAGIA_API_TOKEN=your_api_token_here
 ```
 
-> You can get your API token at [app.mensagia.com](https://app.mensagia.com) → Settings → API.
+> You can get your API token at [mensagia.com](https://mensagia.com) → Users.
 > If the `.env` file does not exist, the app will ask for the token on startup.
 
 3. Run the `.exe`.

@@ -22,7 +22,7 @@ Aplicación para enviar correos electrónicos con adxuntos personalizados por co
 MENSAGIA_API_TOKEN=o_teu_token_api_aqui
 ```
 
-> Podes obter o teu token API en [app.mensagia.com](https://app.mensagia.com) → Configuración → API.
+> Podes obter o teu token API en [mensagia.com](https://mensagia.com) → Usuarios.
 > Se non existe o ficheiro `.env`, a aplicación pedirache o token ao arrancar.
 
 3. Executa o `.exe`.

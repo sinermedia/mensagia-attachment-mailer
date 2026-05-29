@@ -22,7 +22,7 @@
 MENSAGIA_API_TOKEN=zure_api_tokena_hemen
 ```
 
-> Zure API tokena [app.mensagia.com](https://app.mensagia.com) → Konfigurazioa → API atalean lor dezakezu.
+> Zure API tokena [mensagia.com](https://mensagia.com) → Erabiltzaileak atalean lor dezakezu.
 > `.env` fitxategia ez badago, aplikazioak tokena eskatuko dizu abiatzean.
 
 3. Exekutatu `.exe`.

@@ -22,7 +22,7 @@ Aplicació per enviar correus electrònics amb adjunts personalitzats per contac
 MENSAGIA_API_TOKEN=el_teu_token_api_aqui
 ```
 
-> Pots obtenir el teu token API a [app.mensagia.com](https://app.mensagia.com) → Configuració → API.
+> Pots obtenir el teu token API a [mensagia.com](https://mensagia.com) → Usuaris.
 > Si no existeix el fitxer `.env`, l'aplicació et demanarà el token en arrencar.
 
 3. Executa el `.exe`.
