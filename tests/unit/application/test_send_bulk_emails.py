@@ -159,6 +159,47 @@ class TestSendBulkEmailsUseCase:
         assert dates[1] > dates[0]
         assert dates[2] > dates[1]
 
+    def test_dry_run_does_not_call_sender(self, use_case, contact_repo, email_sender, extra_field):
+        contacts = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        contact_repo.get_by_group.return_value = contacts
+
+        result = use_case.execute(
+            from_email="sender@test.com",
+            group_id=10,
+            subject="Test",
+            template_id=5,
+            extra_field=extra_field,
+            certified=0,
+            now=FIXED_NOW,
+            dry_run=True,
+        )
+
+        email_sender.send.assert_not_called()
+        assert len(result.sent) == 1
+
+    def test_dry_run_still_validates_attachment_url(self, use_case, contact_repo, email_sender, extra_field):
+        contacts = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        contact_repo.get_by_group.return_value = contacts
+
+        checker = MagicMock()
+        checker.is_accessible.return_value = False
+
+        result = use_case.execute(
+            from_email="sender@test.com",
+            group_id=10,
+            subject="Test",
+            template_id=5,
+            extra_field=extra_field,
+            certified=0,
+            now=FIXED_NOW,
+            dry_run=True,
+            attachment_checker=checker,
+        )
+
+        email_sender.send.assert_not_called()
+        assert len(result.errors) == 1
+        assert len(result.sent) == 0
+
     def test_relative_attachment_url_resolved_with_base_url(self, use_case, contact_repo, email_sender, extra_field):
         contacts = [make_contact(1, "a@test.com", "file.pdf")]
         contact_repo.get_by_group.return_value = contacts

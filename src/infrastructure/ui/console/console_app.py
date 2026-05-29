@@ -62,6 +62,19 @@ def _select_from_list(prompt: str, items: list, display_fn) -> object:
         print(f"  (1-{len(items)})")
 
 
+def _confirm_action() -> str | None:
+    """Returns 'send', 'dry_run', or None (cancel)."""
+    sim = t("sim").lower()
+    while True:
+        answer = input(f"\n  {t('confirm_send')} [{t('yes')}/{t('sim')}/{t('no')}]: ").strip().lower()
+        if answer in (t("yes").lower(), "s", "si", "sí", "yes", "y", "1", "bai"):
+            return "send"
+        if answer in (sim, "sim", "simular", "simulatu", "simulate"):
+            return "dry_run"
+        if answer in (t("no").lower(), "no", "n", "0", "ez"):
+            return None
+
+
 def _yes_no(prompt: str) -> bool:
     while True:
         answer = input(f"{prompt} [{t('yes')}/{t('no')}]: ").strip().lower()
@@ -194,9 +207,11 @@ def run():
         print(f"\n  (0 {t('summary_contacts', count=0).lower()})")
         sys.exit(0)
 
-    if not _yes_no(f"\n  {t('confirm_send')}"):
+    action = _confirm_action()
+    if action is None:
         sys.exit(0)
 
+    dry_run = action == "dry_run"
     contact_repo = MensagiaContactRepository(client)
     email_sender = MensagiaEmailSender(client)
     use_case = SendBulkEmailsUseCase(contact_repo, email_sender)
@@ -211,9 +226,11 @@ def run():
         certified=certified,
         attachment_base_url=attachment_base_url,
         attachment_checker=HttpAttachmentChecker(),
+        dry_run=dry_run,
     )
 
     for error_item in result.errors:
         print(f"  {t('send_error', email=error_item['contact'].email, error=error_item['error'])}")
 
-    print(f"\n  {t('send_complete', sent=len(result.sent), skipped=len(result.skipped), errors=len(result.errors))}")
+    key = "dry_run_complete" if dry_run else "send_complete"
+    print(f"\n  {t(key, sent=len(result.sent), skipped=len(result.skipped), errors=len(result.errors))}")

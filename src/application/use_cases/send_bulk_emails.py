@@ -32,6 +32,7 @@ class SendBulkEmailsUseCase:
         now: datetime = None,
         attachment_base_url: str | None = None,
         attachment_checker=None,
+        dry_run: bool = False,
     ) -> SendResult:
         contacts = self.contact_repository.get_by_group(group_id, in_mail_blacklist=False)
 
@@ -60,7 +61,7 @@ class SendBulkEmailsUseCase:
                     attachments=[attachment_url],
                     certified=certified,
                 )
-                response = self.email_sender.send(message)
+                response = {} if dry_run else self.email_sender.send(message)
                 result.sent.append({"contact": contact, "response": response})
             except Exception as exc:
                 result.errors.append({"contact": contact, "error": str(exc)})

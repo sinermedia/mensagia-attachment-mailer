@@ -383,7 +383,12 @@ class App(ctk.CTk):
         btn_frame.pack(anchor="w", pady=(PAD, 0))
         ctk.CTkButton(btn_frame, text=t("btn_back"), command=lambda: self._show_frame("certified"),
                       fg_color="gray", hover_color="#555").pack(side="left", padx=(0, 8))
-        self._send_btn = ctk.CTkButton(btn_frame, text=t("btn_send"), command=self._do_send,
+        self._dry_run_btn = ctk.CTkButton(btn_frame, text=t("btn_dry_run"),
+                                          command=lambda: self._do_send(dry_run=True),
+                                          fg_color="#888", hover_color="#666")
+        self._dry_run_btn.pack(side="left", padx=(0, 8))
+        self._send_btn = ctk.CTkButton(btn_frame, text=t("btn_send"),
+                                       command=lambda: self._do_send(dry_run=False),
                                        fg_color="#e05", hover_color="#c03")
         self._send_btn.pack(side="left")
 
@@ -426,7 +431,7 @@ class App(ctk.CTk):
         self._result_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=13), wraplength=460, justify="left")
         self._result_label.pack(anchor="w", pady=(PAD, 0))
 
-    def _do_send(self):
+    def _do_send(self, dry_run: bool = False):
         self._show_frame("sending")
         self._progress_bar.set(0)
         self._progress_label.configure(text="")
@@ -439,6 +444,7 @@ class App(ctk.CTk):
                 use_case = SendBulkEmailsUseCase(contact_repo, email_sender_adapter)
                 attachment_base_url = self._base_url_entry.get().strip() or None
                 attachment_checker = HttpAttachmentChecker()
+                _dry_run = dry_run
 
                 contacts = contact_repo.get_by_group(self.selected_agenda.id, in_mail_blacklist=False)
                 eligible = [
@@ -475,7 +481,8 @@ class App(ctk.CTk):
                             attachments=[attachment_url],
                             certified=self._certified_var.get(),
                         )
-                        email_sender_adapter.send(message)
+                        if not _dry_run:
+                            email_sender_adapter.send(message)
                         sent.append(contact)
                     except Exception as e:
                         errors.append((contact, str(e)))
@@ -484,7 +491,8 @@ class App(ctk.CTk):
                 error_msgs = "\n".join(
                     t("send_error", email=c.email, error=err) for c, err in errors
                 )
-                result_text = t("send_complete", sent=len(sent), skipped=len(skipped), errors=len(errors))
+                key = "dry_run_complete" if _dry_run else "send_complete"
+                result_text = t(key, sent=len(sent), skipped=len(skipped), errors=len(errors))
                 if error_msgs:
                     result_text += "\n\n" + error_msgs
                 self._result_label.configure(text=result_text)
