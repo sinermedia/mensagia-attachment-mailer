@@ -78,10 +78,10 @@ class MensagiaClient:
         return self.get_all_pages("contacts", params)
 
     def get_email_addresses(self) -> list:
-        return self.get_all_pages("email-addresses")
+        return self.get_all_pages("email/sender_address")
 
     def get_email_templates(self) -> list:
-        return self.get_all_pages("email-templates")
+        return self.get_all_pages("email/templates")
 
     def get_extra_fields(self) -> list:
         return self.get_all_pages("extrafields")
