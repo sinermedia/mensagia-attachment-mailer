@@ -408,7 +408,7 @@ class App(ctk.CTk):
         ]
 
         lines = "\n".join([
-            t("summary_from", value=self.selected_sender.email),
+            t("summary_from", value=f"{self.selected_sender.name} <{self.selected_sender.email}>" if self.selected_sender.name else self.selected_sender.email),
             t("summary_subject", value=self._subject_entry.get().strip()),
             t("summary_template", value=self.selected_template.name),
             t("summary_group", value=self.selected_agenda.name),

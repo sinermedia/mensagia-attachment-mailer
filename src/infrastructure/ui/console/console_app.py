@@ -195,7 +195,8 @@ def run():
 
     attachment_base_url = _resolve_attachment_base_url(eligible, extra_field)
 
-    print(f"\n  {t('summary_from', value=sender.email)}")
+    sender_display = f"{sender.name} <{sender.email}>" if sender.name else sender.email
+    print(f"\n  {t('summary_from', value=sender_display)}")
     print(f"  {t('summary_subject', value=subject)}")
     print(f"  {t('summary_template', value=template.name)}")
     print(f"  {t('summary_group', value=agenda.name)}")
