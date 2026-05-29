@@ -12,7 +12,8 @@ from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtra
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language, get_language
-from src.infrastructure.config.settings import load_api_token, load_language
+from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url
+from src.domain.attachment_url import resolve_attachment_url
 
 
 ctk.set_appearance_mode("light")
@@ -104,6 +105,13 @@ class App(ctk.CTk):
         preloaded = load_api_token()
         if preloaded:
             self._token_entry.insert(0, preloaded)
+
+        ctk.CTkLabel(f, text=t("base_url_label"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
+        self._base_url_entry = ctk.CTkEntry(f, width=460, placeholder_text=t("base_url_placeholder"))
+        self._base_url_entry.pack(anchor="w")
+        preloaded_base = load_attachment_base_url()
+        if preloaded_base:
+            self._base_url_entry.insert(0, preloaded_base)
 
         self._token_status = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=12), text_color="gray")
         self._token_status.pack(anchor="w", pady=(6, 0))
@@ -428,6 +436,7 @@ class App(ctk.CTk):
                 contact_repo = MensagiaContactRepository(self.client)
                 email_sender_adapter = MensagiaEmailSender(self.client)
                 use_case = SendBulkEmailsUseCase(contact_repo, email_sender_adapter)
+                attachment_base_url = self._base_url_entry.get().strip() or None
 
                 contacts = contact_repo.get_by_group(self.selected_agenda.id, in_mail_blacklist=False)
                 eligible = [
@@ -448,19 +457,23 @@ class App(ctk.CTk):
                     self._progress_bar.set(i / total if total else 0)
                     self.update_idletasks()
 
-                    message = EmailMessage(
-                        from_email=self.selected_sender.email,
-                        to_email=contact.email,
-                        subject=self._subject_entry.get().strip(),
-                        template_id=self.selected_template.id,
-                        start_date=start_date,
-                        attachments=[contact.extra_fields[self.selected_field.name]],
-                        certified=self._certified_var.get(),
-                    )
                     try:
+                        attachment_url = resolve_attachment_url(
+                            contact.extra_fields[self.selected_field.name],
+                            attachment_base_url,
+                        )
+                        message = EmailMessage(
+                            from_email=self.selected_sender.email,
+                            to_email=contact.email,
+                            subject=self._subject_entry.get().strip(),
+                            template_id=self.selected_template.id,
+                            start_date=start_date,
+                            attachments=[attachment_url],
+                            certified=self._certified_var.get(),
+                        )
                         email_sender_adapter.send(message)
                         sent.append(contact)
-                    except MensagiaAPIError as e:
+                    except Exception as e:
                         errors.append((contact, str(e)))
 
                 skipped = [c for c in contacts if c not in eligible]

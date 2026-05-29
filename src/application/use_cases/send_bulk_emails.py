@@ -6,6 +6,7 @@ from src.domain.entities.extra_field import ExtraField
 from src.domain.ports.contact_repository import ContactRepository
 from src.domain.ports.email_sender import EmailSender
 from src.domain.scheduling import calculate_start_dates
+from src.domain.attachment_url import resolve_attachment_url
 
 
 @dataclass
@@ -29,6 +30,7 @@ class SendBulkEmailsUseCase:
         extra_field: ExtraField,
         certified: int,
         now: datetime = None,
+        attachment_base_url: str | None = None,
     ) -> SendResult:
         contacts = self.contact_repository.get_by_group(group_id, in_mail_blacklist=False)
 
@@ -42,16 +44,19 @@ class SendBulkEmailsUseCase:
         result = SendResult(skipped=skipped)
 
         for contact, start_date in zip(eligible, start_dates):
-            message = EmailMessage(
-                from_email=from_email,
-                to_email=contact.email,
-                subject=subject,
-                template_id=template_id,
-                start_date=start_date,
-                attachments=[contact.extra_fields[extra_field.name]],
-                certified=certified,
-            )
             try:
+                attachment_url = resolve_attachment_url(
+                    contact.extra_fields[extra_field.name], attachment_base_url
+                )
+                message = EmailMessage(
+                    from_email=from_email,
+                    to_email=contact.email,
+                    subject=subject,
+                    template_id=template_id,
+                    start_date=start_date,
+                    attachments=[attachment_url],
+                    certified=certified,
+                )
                 response = self.email_sender.send(message)
                 result.sent.append({"contact": contact, "response": response})
             except Exception as exc:

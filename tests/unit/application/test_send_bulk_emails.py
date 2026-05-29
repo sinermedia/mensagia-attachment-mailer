@@ -159,6 +159,42 @@ class TestSendBulkEmailsUseCase:
         assert dates[1] > dates[0]
         assert dates[2] > dates[1]
 
+    def test_relative_attachment_url_resolved_with_base_url(self, use_case, contact_repo, email_sender, extra_field):
+        contacts = [make_contact(1, "a@test.com", "file.pdf")]
+        contact_repo.get_by_group.return_value = contacts
+        email_sender.send.return_value = {"data": {"id": 1}}
+
+        use_case.execute(
+            from_email="sender@test.com",
+            group_id=10,
+            subject="Test",
+            template_id=5,
+            extra_field=extra_field,
+            certified=0,
+            now=FIXED_NOW,
+            attachment_base_url="https://example.com/files",
+        )
+
+        sent_message = email_sender.send.call_args[0][0]
+        assert sent_message.attachments == ["https://example.com/files/file.pdf"]
+
+    def test_relative_url_without_base_url_adds_to_errors(self, use_case, contact_repo, email_sender, extra_field):
+        contacts = [make_contact(1, "a@test.com", "file.pdf")]
+        contact_repo.get_by_group.return_value = contacts
+
+        result = use_case.execute(
+            from_email="sender@test.com",
+            group_id=10,
+            subject="Test",
+            template_id=5,
+            extra_field=extra_field,
+            certified=0,
+            now=FIXED_NOW,
+        )
+
+        assert len(result.errors) == 1
+        assert len(result.sent) == 0
+
     def test_returns_empty_result_when_no_contacts(self, use_case, contact_repo, email_sender, extra_field):
         contact_repo.get_by_group.return_value = []
 

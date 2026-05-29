@@ -48,4 +48,7 @@ STRINGS = {
     "yes": "Bai",
     "no": "Ez",
     "language_label": "Hizkuntza:",
+    "enter_base_url": "Sartu eranskinaren bideak eraikitzeko oinarrizko URLa:",
+    "base_url_label": "Eranskinaren oinarrizko URLa:",
+    "base_url_placeholder": "https://example.com/files/",
 }

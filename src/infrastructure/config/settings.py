@@ -13,6 +13,11 @@ def load_language() -> str | None:
     return os.environ.get("MENSAGIA_LANGUAGE") or None
 
 
+def load_attachment_base_url() -> str | None:
+    _load_env_files()
+    return os.environ.get("MENSAGIA_ATTACHMENT_BASE_URL") or None
+
+
 def _load_env_files():
     candidates = [
         Path(".env"),

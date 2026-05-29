@@ -48,4 +48,7 @@ STRINGS = {
     "yes": "Yes",
     "no": "No",
     "language_label": "Language:",
+    "enter_base_url": "Enter the base URL for building attachment paths:",
+    "base_url_label": "Attachment base URL:",
+    "base_url_placeholder": "https://example.com/files/",
 }

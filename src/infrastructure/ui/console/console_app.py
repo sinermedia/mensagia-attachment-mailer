@@ -9,7 +9,8 @@ from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtra
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language
-from src.infrastructure.config.settings import load_api_token, load_language
+from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url
+from src.domain.attachment_url import resolve_attachment_url
 
 
 def _choose_language():
@@ -29,6 +30,24 @@ def _choose_language():
         set_language(code)
     else:
         set_language(detect_system_language())
+
+
+def _resolve_attachment_base_url(eligible: list, extra_field) -> str | None:
+    needs_base = any(
+        not v.startswith(("http://", "https://"))
+        for c in eligible
+        if (v := c.extra_fields.get(extra_field.name))
+    )
+    if not needs_base:
+        return load_attachment_base_url()
+    base_url = load_attachment_base_url()
+    if base_url:
+        return base_url
+    print(f"\n  {t('enter_base_url')}")
+    while True:
+        url = input("  > ").strip()
+        if url:
+            return url
 
 
 def _select_from_list(prompt: str, items: list, display_fn) -> object:
@@ -159,6 +178,8 @@ def run():
     ]
     skipped_count = len(contacts) - len(eligible)
 
+    attachment_base_url = _resolve_attachment_base_url(eligible, extra_field)
+
     print(f"\n  {t('summary_from', value=sender.email)}")
     print(f"  {t('summary_subject', value=subject)}")
     print(f"  {t('summary_template', value=template.name)}")
@@ -187,6 +208,7 @@ def run():
         template_id=template.id,
         extra_field=extra_field,
         certified=certified,
+        attachment_base_url=attachment_base_url,
     )
 
     for error_item in result.errors:
