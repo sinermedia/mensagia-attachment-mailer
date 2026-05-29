@@ -35,7 +35,7 @@ MENSAGIA_API_TOKEN=tu_token_api_aqui
 
 ```bash
 # Clonar el repositorio
-git clone <url-del-repo>
+git clone https://github.com/sinermedia/mensagia-attachment-mailer.git
 cd mensagia-attachment-mailer
 
 # Crear entorno virtual (si no existe)
