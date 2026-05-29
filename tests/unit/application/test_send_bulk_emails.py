@@ -178,6 +178,49 @@ class TestSendBulkEmailsUseCase:
         sent_message = email_sender.send.call_args[0][0]
         assert sent_message.attachments == ["https://example.com/files/file.pdf"]
 
+    def test_inaccessible_attachment_discards_contact(self, use_case, contact_repo, email_sender, extra_field):
+        contacts = [
+            make_contact(1, "a@test.com", "https://example.com/ok.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/missing.pdf"),
+        ]
+        contact_repo.get_by_group.return_value = contacts
+        email_sender.send.return_value = {"data": {"id": 1}}
+
+        checker = MagicMock()
+        checker.is_accessible.side_effect = [True, False]
+
+        result = use_case.execute(
+            from_email="sender@test.com",
+            group_id=10,
+            subject="Test",
+            template_id=5,
+            extra_field=extra_field,
+            certified=0,
+            now=FIXED_NOW,
+            attachment_checker=checker,
+        )
+
+        assert len(result.sent) == 1
+        assert len(result.errors) == 1
+
+    def test_no_checker_skips_url_validation(self, use_case, contact_repo, email_sender, extra_field):
+        contacts = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        contact_repo.get_by_group.return_value = contacts
+        email_sender.send.return_value = {"data": {"id": 1}}
+
+        result = use_case.execute(
+            from_email="sender@test.com",
+            group_id=10,
+            subject="Test",
+            template_id=5,
+            extra_field=extra_field,
+            certified=0,
+            now=FIXED_NOW,
+            attachment_checker=None,
+        )
+
+        assert len(result.sent) == 1
+
     def test_relative_url_without_base_url_adds_to_errors(self, use_case, contact_repo, email_sender, extra_field):
         contacts = [make_contact(1, "a@test.com", "file.pdf")]
         contact_repo.get_by_group.return_value = contacts

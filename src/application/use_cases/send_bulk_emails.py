@@ -31,6 +31,7 @@ class SendBulkEmailsUseCase:
         certified: int,
         now: datetime = None,
         attachment_base_url: str | None = None,
+        attachment_checker=None,
     ) -> SendResult:
         contacts = self.contact_repository.get_by_group(group_id, in_mail_blacklist=False)
 
@@ -48,6 +49,8 @@ class SendBulkEmailsUseCase:
                 attachment_url = resolve_attachment_url(
                     contact.extra_fields[extra_field.name], attachment_base_url
                 )
+                if attachment_checker and not attachment_checker.is_accessible(attachment_url):
+                    raise ValueError(f"attachment not accessible: {attachment_url}")
                 message = EmailMessage(
                     from_email=from_email,
                     to_email=contact.email,

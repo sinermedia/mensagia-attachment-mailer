@@ -11,6 +11,7 @@ from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language
 from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url
 from src.domain.attachment_url import resolve_attachment_url
+from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 
 
 def _choose_language():
@@ -209,6 +210,7 @@ def run():
         extra_field=extra_field,
         certified=certified,
         attachment_base_url=attachment_base_url,
+        attachment_checker=HttpAttachmentChecker(),
     )
 
     for error_item in result.errors:

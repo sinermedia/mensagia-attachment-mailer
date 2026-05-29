@@ -14,6 +14,7 @@ from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language, get_language
 from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url
 from src.domain.attachment_url import resolve_attachment_url
+from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 
 
 ctk.set_appearance_mode("light")
@@ -437,6 +438,7 @@ class App(ctk.CTk):
                 email_sender_adapter = MensagiaEmailSender(self.client)
                 use_case = SendBulkEmailsUseCase(contact_repo, email_sender_adapter)
                 attachment_base_url = self._base_url_entry.get().strip() or None
+                attachment_checker = HttpAttachmentChecker()
 
                 contacts = contact_repo.get_by_group(self.selected_agenda.id, in_mail_blacklist=False)
                 eligible = [
@@ -462,6 +464,8 @@ class App(ctk.CTk):
                             contact.extra_fields[self.selected_field.name],
                             attachment_base_url,
                         )
+                        if not attachment_checker.is_accessible(attachment_url):
+                            raise ValueError(f"attachment not accessible: {attachment_url}")
                         message = EmailMessage(
                             from_email=self.selected_sender.email,
                             to_email=contact.email,
