@@ -9,10 +9,15 @@ from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtra
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language
-from src.infrastructure.config.settings import load_api_token
+from src.infrastructure.config.settings import load_api_token, load_language
 
 
 def _choose_language():
+    env_lang = load_language()
+    if env_lang:
+        set_language(env_lang)
+        return
+
     names = language_names()
     print("\n  Language / Idioma / Llengua:")
     options = list(names.items())

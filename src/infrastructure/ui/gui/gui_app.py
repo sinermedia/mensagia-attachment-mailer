@@ -12,7 +12,7 @@ from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtra
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language, get_language
-from src.infrastructure.config.settings import load_api_token
+from src.infrastructure.config.settings import load_api_token, load_language
 
 
 ctk.set_appearance_mode("light")
@@ -51,7 +51,7 @@ class App(ctk.CTk):
         bar = ctk.CTkFrame(self, height=36, fg_color="#f0f0f0", corner_radius=0)
         bar.pack(fill="x", side="top")
         ctk.CTkLabel(bar, text=t("language_label"), font=ctk.CTkFont(size=12)).pack(side="left", padx=PAD, pady=6)
-        self._lang_var = tk.StringVar(value=detect_system_language())
+        self._lang_var = tk.StringVar(value=get_language())
         for code, name in language_names().items():
             ctk.CTkRadioButton(
                 bar, text=name, variable=self._lang_var, value=code,
@@ -490,6 +490,7 @@ class App(ctk.CTk):
 
 
 def run():
-    set_language(detect_system_language())
+    env_lang = load_language()
+    set_language(env_lang if env_lang else detect_system_language())
     app = App()
     app.mainloop()

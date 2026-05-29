@@ -4,9 +4,13 @@ from dotenv import load_dotenv
 
 
 def load_api_token() -> str | None:
-    """Loads the API token from .env file (searches current dir and executable dir)."""
     _load_env_files()
     return os.environ.get("MENSAGIA_API_TOKEN")
+
+
+def load_language() -> str | None:
+    _load_env_files()
+    return os.environ.get("MENSAGIA_LANGUAGE") or None
 
 
 def _load_env_files():
