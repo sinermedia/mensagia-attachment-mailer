@@ -23,7 +23,7 @@ def test_load_language_returns_value_for_any_language_code():
                 assert load_language() == code
 
 
-from src.infrastructure.config.settings import load_attachment_base_url
+from src.infrastructure.config.settings import load_attachment_base_url, load_show_ids
 
 
 def test_load_attachment_base_url_returns_none_when_not_set():
@@ -37,3 +37,22 @@ def test_load_attachment_base_url_returns_value_when_set():
     with patch("src.infrastructure.config.settings._load_env_files"):
         with patch.dict(os.environ, {"MENSAGIA_ATTACHMENT_BASE_URL": "https://example.com/files"}):
             assert load_attachment_base_url() == "https://example.com/files"
+
+
+def test_load_show_ids_returns_false_by_default():
+    with patch("src.infrastructure.config.settings._load_env_files"):
+        env = {k: v for k, v in os.environ.items() if k != "MENSAGIA_SHOW_IDS"}
+        with patch.dict(os.environ, env, clear=True):
+            assert load_show_ids() is False
+
+
+def test_load_show_ids_returns_false_when_set_to_false():
+    with patch("src.infrastructure.config.settings._load_env_files"):
+        with patch.dict(os.environ, {"MENSAGIA_SHOW_IDS": "false"}):
+            assert load_show_ids() is False
+
+
+def test_load_show_ids_returns_true_when_set_to_true():
+    with patch("src.infrastructure.config.settings._load_env_files"):
+        with patch.dict(os.environ, {"MENSAGIA_SHOW_IDS": "true"}):
+            assert load_show_ids() is True

@@ -12,7 +12,7 @@ from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtra
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language, get_language
-from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url
+from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url, load_show_ids
 from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 
@@ -32,6 +32,7 @@ class App(ctk.CTk):
         self.geometry(f"{WINDOW_W}x{WINDOW_H}")
         self.resizable(False, False)
 
+        self._show_ids = load_show_ids()
         self.client: MensagiaClient | None = None
         self.templates = []
         self.senders = []
@@ -193,7 +194,7 @@ class App(ctk.CTk):
                     return
                 self._template_error.configure(text="")
                 for tmpl in self.templates:
-                    label = f"[{tmpl.id}]  {tmpl.name}"
+                    label = f"[{tmpl.id}]  {tmpl.name}" if self._show_ids else tmpl.name
                     ctk.CTkRadioButton(
                         self._template_list, text=label, variable=self._template_var,
                         value=str(tmpl.id), font=ctk.CTkFont(size=13)
@@ -285,7 +286,7 @@ class App(ctk.CTk):
                     return
                 self._group_error.configure(text="")
                 for a in self.agendas:
-                    label = f"{a.name}  ({t('group_contacts', count=a.total_users)})"
+                    label = (f"[{a.id}]  " if self._show_ids else "") + f"{a.name}  ({t('group_contacts', count=a.total_users)})"
                     ctk.CTkRadioButton(
                         self._group_list, text=label, variable=self._group_var,
                         value=str(a.id), font=ctk.CTkFont(size=13)
@@ -332,7 +333,7 @@ class App(ctk.CTk):
                 self._field_error.configure(text="")
                 for ef in self.extra_fields:
                     ctk.CTkRadioButton(
-                        self._field_list, text=f"[{ef.id}]  {ef.name}", variable=self._field_var,
+                        self._field_list, text=f"[{ef.id}]  {ef.name}" if self._show_ids else ef.name, variable=self._field_var,
                         value=str(ef.id), font=ctk.CTkFont(size=13)
                     ).pack(anchor="w", pady=2)
             except MensagiaAPIError as e:

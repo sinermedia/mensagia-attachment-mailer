@@ -9,7 +9,7 @@ from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtra
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language
-from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url
+from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url, load_show_ids
 from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 
@@ -90,6 +90,7 @@ def run():
     print("=" * 60)
 
     _choose_language()
+    show_ids = load_show_ids()
 
     # Step 0: token
     api_token = load_api_token()
@@ -129,7 +130,7 @@ def run():
     if not templates:
         print(f"  {t('error_no_templates')}")
         sys.exit(1)
-    template = _select_from_list(t("template_label"), templates, lambda x: f"[{x.id}] {x.name}")
+    template = _select_from_list(t("template_label"), templates, lambda x: f"[{x.id}] {x.name}" if show_ids else x.name)
 
     # Step 3: sender
     print(f"\n--- {t('step_sender')} ---")
@@ -157,7 +158,7 @@ def run():
         sys.exit(1)
     agenda = _select_from_list(
         t("group_label"), agendas,
-        lambda x: f"[{x.id}] {x.name} ({t('group_contacts', count=x.total_users)})"
+        lambda x: (f"[{x.id}] " if show_ids else "") + f"{x.name} ({t('group_contacts', count=x.total_users)})"
     )
 
     # Step 5: extra field
@@ -171,7 +172,7 @@ def run():
     if not extra_fields:
         print(f"  {t('error_no_fields')}")
         sys.exit(1)
-    extra_field = _select_from_list(t("field_label"), extra_fields, lambda x: f"[{x.id}] {x.name}")
+    extra_field = _select_from_list(t("field_label"), extra_fields, lambda x: f"[{x.id}] {x.name}" if show_ids else x.name)
 
     # Step 6: certified
     print(f"\n--- {t('step_certified')} ---")

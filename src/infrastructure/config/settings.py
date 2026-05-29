@@ -18,6 +18,11 @@ def load_attachment_base_url() -> str | None:
     return os.environ.get("MENSAGIA_ATTACHMENT_BASE_URL") or None
 
 
+def load_show_ids() -> bool:
+    _load_env_files()
+    return os.environ.get("MENSAGIA_SHOW_IDS", "false").strip().lower() == "true"
+
+
 def _load_env_files():
     candidates = [
         Path(".env"),
