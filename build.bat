@@ -28,7 +28,8 @@ pyinstaller ^
     --onefile ^
     --windowed ^
     --name "mensagia-mailer-gui" ^
-    --icon NONE ^
+    --icon assets\icon.ico ^
+    --add-data "assets\icon.ico;assets" ^
     --hidden-import customtkinter ^
     --hidden-import PIL ^
     --collect-all customtkinter ^

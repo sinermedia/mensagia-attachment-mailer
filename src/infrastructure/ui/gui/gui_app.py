@@ -24,7 +24,13 @@ ctk.set_default_color_theme("blue")
 PAD = 16
 WINDOW_W = 620
 WINDOW_H = 560
-_ICON = pathlib.Path(__file__).parents[4] / "assets" / "icon.ico"
+def _resource(relative: str) -> pathlib.Path:
+    import sys
+    if hasattr(sys, "_MEIPASS"):
+        return pathlib.Path(sys._MEIPASS) / relative
+    return pathlib.Path(__file__).parents[4] / relative
+
+_ICON = _resource("assets/icon.ico")
 
 
 class App(ctk.CTk):
