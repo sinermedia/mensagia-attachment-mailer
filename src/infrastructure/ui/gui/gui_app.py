@@ -1,3 +1,4 @@
+import pathlib
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -23,6 +24,7 @@ ctk.set_default_color_theme("blue")
 PAD = 16
 WINDOW_W = 620
 WINDOW_H = 560
+_ICON = pathlib.Path(__file__).parents[4] / "assets" / "icon.png"
 
 
 class App(ctk.CTk):
@@ -31,6 +33,9 @@ class App(ctk.CTk):
         self.title(t("app_title"))
         self.geometry(f"{WINDOW_W}x{WINDOW_H}")
         self.resizable(False, False)
+        if _ICON.exists():
+            self._icon_img = tk.PhotoImage(file=str(_ICON))
+            self.iconphoto(True, self._icon_img)
 
         self._show_ids = load_show_ids()
         self.client: MensagiaClient | None = None
