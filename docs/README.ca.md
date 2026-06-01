@@ -84,6 +84,19 @@ python main.py
 
 ---
 
+## ⚠ Avís important sobre l'enviament
+
+El programa **no envia els correus de forma immediata**. Per cada contacte elegible crea una configuració d'enviament individual a la plataforma Mensagia, programada per executar-se de forma escalonada:
+
+- El **primer enviament** s'executa entre **10 i 20 minuts** després de llançar l'aplicació, per donar marge a cancel·lar si es detecta algun error.
+- Els **enviaments següents** s'espaiïen **12 segons** entre ells (5 per minut).
+
+> **Si cal aturar l'enviament un cop iniciat**, hauràs d'eliminar cada configuració d'enviament de forma individual des del portal de Mensagia. No hi ha cap botó de cancel·lació global.
+>
+> Fes servir el mode **Simular** per revisar què s'enviaria sense crear cap configuració real.
+
+---
+
 ## Memòria de seleccions (mode gràfic)
 
 Després de cada enviament o simulació, l'aplicació desa els paràmetres escollits

@@ -84,6 +84,19 @@ python main.py
 
 ---
 
+## ⚠ Oharra bidaltzeari buruz
+
+Programak **ez ditu mezu elektronikoak berehala bidaltzen**. Kontaktu hautagarri bakoitzarentzat banakako bidaltzeko konfigurazio bat sortzen du Mensagia plataforman, modu eskalonatuan exekutatzeko programatuta:
+
+- **Lehen bidalketa** aplikazioa abiarazi eta **10 eta 20 minutu** artean exekutatzen da, erroreren bat antzemanez gero denbora izateko ezeztatzen.
+- **Hurrengo bidalketak** **12 segundotan** banatzen dira (minutuko 5).
+
+> **Bidalketa hasita dagoenean gelditu behar baduzu**, Mensagia atarian bidaltzeko konfigurazio bakoitza banaka ezabatu beharko duzu. Ez dago ezeztatze botoi globalik.
+>
+> Erabili **Simulatu** modua konfigurazio errealik sortu gabe zer bidaliko litzatekeen ikusteko.
+
+---
+
 ## Hautaketen memoria (GUI modua)
 
 Bidalketa edo simulazio bakoitzaren ondoren, aplikazioak aukeratutako

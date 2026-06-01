@@ -84,6 +84,19 @@ python main.py
 
 ---
 
+## ⚠ Aviso importante sobre o envío
+
+O programa **non envía os correos de forma inmediata**. Por cada contacto elixible crea unha configuración de envío individual na plataforma Mensagia, programada para executarse de forma escalonada:
+
+- O **primeiro envío** execútase entre **10 e 20 minutos** despois de lanzar a aplicación, para dar marxe a cancelar se se detecta algún erro.
+- Os **envíos seguintes** espácianse **12 segundos** entre si (5 por minuto).
+
+> **Se necesitas deter o envío unha vez iniciado**, deberás eliminar cada configuración de envío de forma individual dende o portal de Mensagia. Non existe un botón de cancelación global.
+>
+> Usa o modo **Simular** para revisar o que se enviaría sen crear ningunha configuración real.
+
+---
+
 ## Memoria de seleccións (modo gráfico)
 
 Tras cada envío ou simulación, a aplicación garda os parámetros escollidos

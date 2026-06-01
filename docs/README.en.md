@@ -84,6 +84,19 @@ python main.py
 
 ---
 
+## ⚠ Important warning about sending
+
+The program **does not send emails immediately**. For each eligible contact it creates an individual send configuration on the Mensagia platform, scheduled to run in a staggered sequence:
+
+- The **first send** is executed between **10 and 20 minutes** after launching the application, to allow time to cancel if an error is detected.
+- **Subsequent sends** are spaced **12 seconds** apart (5 per minute).
+
+> **If you need to stop the send once it has started**, you must delete each send configuration individually from the Mensagia portal. There is no global cancel button.
+>
+> Use **Simulate** mode to review what would be sent without creating any real configurations.
+
+---
+
 ## Selection memory (GUI mode)
 
 After each send or simulation, the app saves the chosen parameters
