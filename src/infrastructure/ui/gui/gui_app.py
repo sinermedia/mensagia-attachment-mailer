@@ -56,22 +56,10 @@ class App(ctk.CTk):
         self.selected_agenda = None
         self.selected_field = None
 
-        self._build_language_bar()
         self._build_frames()
         self._show_frame("token")
 
-    # ── Language bar ──────────────────────────────────────────────────────────
-
-    def _build_language_bar(self):
-        self._lang_bar = ctk.CTkFrame(self, height=36, fg_color="#f0f0f0", corner_radius=0)
-        self._lang_bar.pack(fill="x", side="top")
-        ctk.CTkLabel(self._lang_bar, text=t("language_label"), font=ctk.CTkFont(size=12)).pack(side="left", padx=PAD, pady=6)
-        self._lang_var = tk.StringVar(value=get_language())
-        for code, name in language_names().items():
-            ctk.CTkRadioButton(
-                self._lang_bar, text=name, variable=self._lang_var, value=code,
-                font=ctk.CTkFont(size=12), command=self._on_language_change
-            ).pack(side="left", padx=6, pady=6)
+    # ── Language selector (token frame only) ──────────────────────────────────
 
     def _on_language_change(self):
         set_language(self._lang_var.get())
@@ -92,7 +80,6 @@ class App(ctk.CTk):
         self.selected_sender = None
         self.selected_agenda = None
         self.selected_field = None
-        self._build_language_bar()
         self._build_frames()
         self._show_frame("token")
 
@@ -120,16 +107,22 @@ class App(ctk.CTk):
         self._build_sending_frame()
 
     def _show_frame(self, name: str):
-        for w in self._lang_bar.winfo_children():
-            if isinstance(w, ctk.CTkRadioButton):
-                w.configure(state="normal" if name == "token" else "disabled")
         self._frames[name].tkraise()
 
     # ── Step 0: Token ──────────────────────────────────────────────────────────
 
     def _build_token_frame(self):
         f = self._frames["token"]
-        ctk.CTkLabel(f, text=t("token_label"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
+        lang_row = ctk.CTkFrame(f, fg_color="transparent")
+        lang_row.pack(anchor="w", pady=(0, PAD))
+        ctk.CTkLabel(lang_row, text=t("language_label"), font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 6))
+        self._lang_var = tk.StringVar(value=get_language())
+        for code, name in language_names().items():
+            ctk.CTkRadioButton(
+                lang_row, text=name, variable=self._lang_var, value=code,
+                font=ctk.CTkFont(size=12), command=self._on_language_change
+            ).pack(side="left", padx=6)
+        ctk.CTkLabel(f, text=t("token_label"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(0, 4))
         self._token_entry = ctk.CTkEntry(f, width=460, show="*", placeholder_text="•••••••••••••••••")
         self._token_entry.pack(anchor="w")
 
