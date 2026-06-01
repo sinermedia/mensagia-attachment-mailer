@@ -44,6 +44,7 @@ class App(ctk.CTk):
         self.selected_agenda = None
         self.selected_field = None
 
+        self._current_frame = "token"
         self._build_language_bar()
         self._build_frames()
         self._show_frame("token")
@@ -66,9 +67,97 @@ class App(ctk.CTk):
         self._rebuild_ui()
 
     def _rebuild_ui(self):
+        state = self._capture_state()
         for w in self.winfo_children():
             w.destroy()
-        self.__init__()
+        self.title(t("app_title"))
+        self._show_ids = load_show_ids()
+        self.client = state["client"]
+        self.templates = state["templates"]
+        self.senders = state["senders"]
+        self.agendas = state["agendas"]
+        self.extra_fields = state["extra_fields"]
+        self.selected_template = state["selected_template"]
+        self.selected_sender = state["selected_sender"]
+        self.selected_agenda = state["selected_agenda"]
+        self.selected_field = state["selected_field"]
+        self._build_language_bar()
+        self._build_frames()
+        self._restore_state(state)
+        self._show_frame(state["current_frame"])
+
+    def _capture_state(self):
+        return {
+            "current_frame": getattr(self, "_current_frame", "token"),
+            "token": self._token_entry.get() if hasattr(self, "_token_entry") else "",
+            "base_url": self._base_url_entry.get() if hasattr(self, "_base_url_entry") else "",
+            "subject": self._subject_entry.get() if hasattr(self, "_subject_entry") else "",
+            "template_var": self._template_var.get() if hasattr(self, "_template_var") else "",
+            "sender_var": self._sender_var.get() if hasattr(self, "_sender_var") else "",
+            "group_var": self._group_var.get() if hasattr(self, "_group_var") else "",
+            "field_var": self._field_var.get() if hasattr(self, "_field_var") else "",
+            "certified_var": self._certified_var.get() if hasattr(self, "_certified_var") else 0,
+            "client": self.client,
+            "templates": self.templates,
+            "senders": self.senders,
+            "agendas": self.agendas,
+            "extra_fields": self.extra_fields,
+            "selected_template": self.selected_template,
+            "selected_sender": self.selected_sender,
+            "selected_agenda": self.selected_agenda,
+            "selected_field": self.selected_field,
+        }
+
+    def _restore_state(self, state):
+        if state["token"]:
+            self._token_entry.delete(0, tk.END)
+            self._token_entry.insert(0, state["token"])
+        if state["base_url"]:
+            self._base_url_entry.delete(0, tk.END)
+            self._base_url_entry.insert(0, state["base_url"])
+        if state["subject"]:
+            self._subject_entry.insert(0, state["subject"])
+
+        if state["client"]:
+            self._token_next_btn.configure(state="normal")
+            self._token_status.configure(text=t("token_ok"), text_color="green")
+
+        for tmpl in state["templates"]:
+            label = f"[{tmpl.id}]  {tmpl.name}" if self._show_ids else tmpl.name
+            ctk.CTkRadioButton(
+                self._template_list, text=label, variable=self._template_var,
+                value=str(tmpl.id), font=ctk.CTkFont(size=13)
+            ).pack(anchor="w", pady=2)
+        self._template_var.set(state["template_var"])
+
+        for s in state["senders"]:
+            label = s.email + (f"  ({s.name})" if s.name else "")
+            ctk.CTkRadioButton(
+                self._sender_list, text=label, variable=self._sender_var,
+                value=str(s.id), font=ctk.CTkFont(size=13)
+            ).pack(anchor="w", pady=2)
+        self._sender_var.set(state["sender_var"])
+
+        for a in state["agendas"]:
+            label = (f"[{a.id}]  " if self._show_ids else "") + f"{a.name}  ({t('group_contacts', count=a.total_users)})"
+            ctk.CTkRadioButton(
+                self._group_list, text=label, variable=self._group_var,
+                value=str(a.id), font=ctk.CTkFont(size=13)
+            ).pack(anchor="w", pady=2)
+        self._group_var.set(state["group_var"])
+
+        for ef in state["extra_fields"]:
+            label = f"[{ef.id}]  {ef.name}" if self._show_ids else ef.name
+            ctk.CTkRadioButton(
+                self._field_list, text=label, variable=self._field_var,
+                value=str(ef.id), font=ctk.CTkFont(size=13)
+            ).pack(anchor="w", pady=2)
+        self._field_var.set(state["field_var"])
+
+        self._certified_var.set(state["certified_var"])
+
+        if state["current_frame"] == "summary" and state["selected_agenda"]:
+            self._build_summary()
 
     # ── Frame container ────────────────────────────────────────────────────────
 
@@ -94,6 +183,7 @@ class App(ctk.CTk):
         self._build_sending_frame()
 
     def _show_frame(self, name: str):
+        self._current_frame = name
         self._frames[name].tkraise()
 
     # ── Step 0: Token ──────────────────────────────────────────────────────────
