@@ -14,6 +14,7 @@ from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language, get_language
 from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url, load_show_ids
+from src.infrastructure.config.last_selections import load_last_selections, save_last_selections
 from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 
@@ -43,6 +44,7 @@ class App(ctk.CTk):
             self.after(0, lambda: self.iconbitmap(str(_ICON)))
 
         self._show_ids = load_show_ids()
+        self._last_sel = load_last_selections()
         self.client: MensagiaClient | None = None
         self.templates = []
         self.senders = []
@@ -299,6 +301,9 @@ class App(ctk.CTk):
                         self._template_list, text=label, variable=self._template_var,
                         value=str(tmpl.id), font=ctk.CTkFont(size=13)
                     ).pack(anchor="w", pady=2)
+                saved = self._last_sel.get("template_id")
+                if saved and any(str(t.id) == saved for t in self.templates):
+                    self._template_var.set(saved)
             except MensagiaAPIError as e:
                 self._template_error.configure(text=t("error_api", error=str(e)))
 
@@ -345,6 +350,9 @@ class App(ctk.CTk):
                         self._sender_list, text=label, variable=self._sender_var,
                         value=str(s.id), font=ctk.CTkFont(size=13)
                     ).pack(anchor="w", pady=2)
+                saved = self._last_sel.get("sender_id")
+                if saved and any(str(s.id) == saved for s in self.senders):
+                    self._sender_var.set(saved)
             except MensagiaAPIError as e:
                 self._sender_error.configure(text=t("error_api", error=str(e)))
 
@@ -391,6 +399,9 @@ class App(ctk.CTk):
                         self._group_list, text=label, variable=self._group_var,
                         value=str(a.id), font=ctk.CTkFont(size=13)
                     ).pack(anchor="w", pady=2)
+                saved = self._last_sel.get("agenda_id")
+                if saved and any(str(a.id) == saved for a in self.agendas):
+                    self._group_var.set(saved)
             except MensagiaAPIError as e:
                 self._group_error.configure(text=t("error_api", error=str(e)))
 
@@ -436,6 +447,9 @@ class App(ctk.CTk):
                         self._field_list, text=f"[{ef.id}]  {ef.name}" if self._show_ids else ef.name, variable=self._field_var,
                         value=str(ef.id), font=ctk.CTkFont(size=13)
                     ).pack(anchor="w", pady=2)
+                saved = self._last_sel.get("field_id")
+                if saved and any(str(ef.id) == saved for ef in self.extra_fields):
+                    self._field_var.set(saved)
             except MensagiaAPIError as e:
                 self._field_error.configure(text=t("error_api", error=str(e)))
 
@@ -456,7 +470,7 @@ class App(ctk.CTk):
         f = self._frames["certified"]
         ctk.CTkLabel(f, text=t("step_certified"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
         ctk.CTkLabel(f, text=t("certified_label"), font=ctk.CTkFont(size=13)).pack(anchor="w", pady=(8, 4))
-        self._certified_var = tk.IntVar(value=0)
+        self._certified_var = tk.IntVar(value=self._last_sel.get("certified", 0))
         ctk.CTkRadioButton(f, text=t("certified_no"), variable=self._certified_var, value=0,
                            font=ctk.CTkFont(size=13)).pack(anchor="w", pady=2)
         ctk.CTkRadioButton(f, text=t("certified_yes"), variable=self._certified_var, value=1,
@@ -613,6 +627,13 @@ class App(ctk.CTk):
                     result_text += "\n\n" + error_msgs
                 self._result_label.configure(text=result_text)
                 self._progress_bar.set(1)
+                save_last_selections({
+                    "template_id": str(self.selected_template.id),
+                    "sender_id": str(self.selected_sender.id),
+                    "agenda_id": str(self.selected_agenda.id),
+                    "field_id": str(self.selected_field.id),
+                    "certified": self._certified_var.get(),
+                })
                 if _dry_run:
                     ctk.CTkButton(
                         self._sending_actions, text=t("btn_send"),
