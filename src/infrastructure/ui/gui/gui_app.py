@@ -521,12 +521,27 @@ class App(ctk.CTk):
         self._progress_label.pack(anchor="w")
         self._result_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=13), wraplength=460, justify="left")
         self._result_label.pack(anchor="w", pady=(PAD, 0))
+        self._sending_actions = ctk.CTkFrame(f, fg_color="transparent")
+        self._sending_actions.pack(anchor="w", pady=(PAD, 0))
+
+    def _reset_for_new_send(self):
+        self.selected_template = None
+        self.selected_sender = None
+        self.selected_agenda = None
+        self.selected_field = None
+        self._template_var.set("")
+        self._sender_var.set("")
+        self._group_var.set("")
+        self._field_var.set("")
+        self._show_frame("subject")
 
     def _do_send(self, dry_run: bool = False):
         self._show_frame("sending")
         self._progress_bar.set(0)
         self._progress_label.configure(text="")
         self._result_label.configure(text="")
+        for w in self._sending_actions.winfo_children():
+            w.destroy()
 
         def _run():
             try:
@@ -588,6 +603,22 @@ class App(ctk.CTk):
                     result_text += "\n\n" + error_msgs
                 self._result_label.configure(text=result_text)
                 self._progress_bar.set(1)
+                if _dry_run:
+                    ctk.CTkButton(
+                        self._sending_actions, text=t("btn_send"),
+                        command=lambda: self._do_send(dry_run=False),
+                        fg_color="#e05", hover_color="#c03"
+                    ).pack(side="left", padx=(0, 8))
+                    ctk.CTkButton(
+                        self._sending_actions, text=t("btn_back_to_summary"),
+                        command=lambda: self._show_frame("summary"),
+                        fg_color="gray", hover_color="#555"
+                    ).pack(side="left")
+                else:
+                    ctk.CTkButton(
+                        self._sending_actions, text=t("btn_new_send"),
+                        command=self._reset_for_new_send
+                    ).pack(side="left")
 
             except MensagiaAPIError as e:
                 self._result_label.configure(text=t("error_api", error=str(e)), text_color="red")

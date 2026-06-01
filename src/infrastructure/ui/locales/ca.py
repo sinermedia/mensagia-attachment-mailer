@@ -49,6 +49,8 @@ STRINGS = {
     "no": "No",
     "language_label": "Idioma:",
     "btn_dry_run": "Simular",
+    "btn_new_send": "Nou enviament",
+    "btn_back_to_summary": "Tornar al resum",
     "sim": "Sim",
     "dry_run_complete": "Simulació completada: {sent} s'enviarien, {skipped} omesos, {errors} errors. No s'ha enviat cap correu.",
     "enter_base_url": "Introdueix la URL base per construir les rutes dels adjunts:",

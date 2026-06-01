@@ -49,6 +49,8 @@ STRINGS = {
     "no": "No",
     "language_label": "Language:",
     "btn_dry_run": "Simulate",
+    "btn_new_send": "New send",
+    "btn_back_to_summary": "Back to summary",
     "sim": "Sim",
     "dry_run_complete": "Simulation complete: {sent} would be sent, {skipped} skipped, {errors} errors. No emails were sent.",
     "enter_base_url": "Enter the base URL for building attachment paths:",

@@ -49,6 +49,8 @@ STRINGS = {
     "no": "Ez",
     "language_label": "Hizkuntza:",
     "btn_dry_run": "Simulatu",
+    "btn_new_send": "Bidalketa berria",
+    "btn_back_to_summary": "Laburpenera itzuli",
     "sim": "Sim",
     "dry_run_complete": "Simulazioa osatua: {sent} bidaliko lirateke, {skipped} saltatuta, {errors} akats. Ez da mezurik bidali.",
     "enter_base_url": "Sartu eranskinaren bideak eraikitzeko oinarrizko URLa:",
