@@ -56,6 +56,7 @@ class App(ctk.CTk):
         self.selected_agenda = None
         self.selected_field = None
 
+        self._send_was_dry_run: bool | None = None
         self._current_frame = "token"
         self._build_language_bar()
         self._build_frames()
@@ -109,6 +110,8 @@ class App(ctk.CTk):
             "group_var": self._group_var.get() if hasattr(self, "_group_var") else "",
             "field_var": self._field_var.get() if hasattr(self, "_field_var") else "",
             "certified_var": self._certified_var.get() if hasattr(self, "_certified_var") else 0,
+            "result_text": self._result_label.cget("text") if hasattr(self, "_result_label") else "",
+            "send_was_dry_run": self._send_was_dry_run,
             "client": self.client,
             "templates": self.templates,
             "senders": self.senders,
@@ -170,6 +173,28 @@ class App(ctk.CTk):
 
         if state["current_frame"] == "summary" and state["selected_agenda"]:
             self._build_summary()
+
+        if state["current_frame"] == "sending" and state["send_was_dry_run"] is not None:
+            self._send_was_dry_run = state["send_was_dry_run"]
+            self._progress_bar.set(1)
+            self._progress_label.configure(text="")
+            self._result_label.configure(text=state["result_text"])
+            if state["send_was_dry_run"]:
+                ctk.CTkButton(
+                    self._sending_actions, text=t("btn_send"),
+                    command=lambda: self._do_send(dry_run=False),
+                    fg_color="#e05", hover_color="#c03"
+                ).pack(side="left", padx=(0, 8))
+                ctk.CTkButton(
+                    self._sending_actions, text=t("btn_back_to_summary"),
+                    command=lambda: self._show_frame("summary"),
+                    fg_color="gray", hover_color="#555"
+                ).pack(side="left")
+            else:
+                ctk.CTkButton(
+                    self._sending_actions, text=t("btn_new_send"),
+                    command=self._reset_for_new_send
+                ).pack(side="left")
 
     # ── Frame container ────────────────────────────────────────────────────────
 
@@ -560,6 +585,7 @@ class App(ctk.CTk):
         self._show_frame("subject")
 
     def _do_send(self, dry_run: bool = False):
+        self._send_was_dry_run = None
         self._show_frame("sending")
         self._progress_bar.set(0)
         self._progress_label.configure(text="")
@@ -627,6 +653,7 @@ class App(ctk.CTk):
                     result_text += "\n\n" + error_msgs
                 self._result_label.configure(text=result_text)
                 self._progress_bar.set(1)
+                self._send_was_dry_run = _dry_run
                 save_last_selections({
                     "template_id": str(self.selected_template.id),
                     "sender_id": str(self.selected_sender.id),
