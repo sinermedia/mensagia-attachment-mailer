@@ -84,6 +84,19 @@ python main.py
 
 ---
 
+## Memòria de seleccions (mode gràfic)
+
+Després de cada enviament o simulació, l'aplicació desa els paràmetres escollits
+(plantilla, remitent, grup, camp adjunt i certificat) en un fitxer
+`last_selections.json`, a la mateixa carpeta que el `.env` o el `.exe`.
+
+En la propera execució, aquestes opcions quedaran marcades per defecte.
+
+> Per esborrar aquesta memòria, elimina el fitxer `last_selections.json`.
+> L'aplicació funciona amb normalitat si el fitxer no existeix.
+
+---
+
 ## Idiomes de la interfície
 
 La interfície detecta automàticament l'idioma del sistema operatiu.  

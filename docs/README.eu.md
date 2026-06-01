@@ -84,6 +84,20 @@ python main.py
 
 ---
 
+## Hautaketen memoria (GUI modua)
+
+Bidalketa edo simulazio bakoitzaren ondoren, aplikazioak aukeratutako
+parametroak (txantiloia, bidaltzailea, taldea, eranskin eremua eta
+ziurtagiria) `last_selections.json` fitxategi batean gordetzen ditu,
+`.env` edo `.exe` fitxategiaren karpeta berean.
+
+Hurrengo exekuzioan, aukera horiek lehenespenez markatuta agertuko dira.
+
+> Memoria hau ezabatzeko, ezabatu `last_selections.json` fitxategia.
+> Fitxategia ez badago, aplikazioak normalean funtzionatzen du.
+
+---
+
 ## Interfazearen hizkuntzak
 
 Interfazeak sistema eragilearen hizkuntza automatikoki detektatzen du.  

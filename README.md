@@ -84,6 +84,19 @@ python main.py
 
 ---
 
+## Memoria de selecciones (modo gráfico)
+
+Tras cada envío o simulación, la aplicación guarda los parámetros elegidos
+(plantilla, remitente, grupo, campo adjunto y certificado) en un archivo
+`last_selections.json`, en la misma carpeta que el `.env` o el `.exe`.
+
+En la siguiente ejecución, esas opciones quedarán marcadas por defecto.
+
+> Para borrar esta memoria, elimina el archivo `last_selections.json`.
+> La aplicación funciona con normalidad si el archivo no existe.
+
+---
+
 ## Idiomas de la interfaz
 
 La interfaz detecta automáticamente el idioma del sistema operativo.  

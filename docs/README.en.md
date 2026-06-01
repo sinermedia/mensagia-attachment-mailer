@@ -84,6 +84,19 @@ python main.py
 
 ---
 
+## Selection memory (GUI mode)
+
+After each send or simulation, the app saves the chosen parameters
+(template, sender, group, attachment field and certified) to a file
+`last_selections.json`, in the same folder as the `.env` or the `.exe`.
+
+On the next run, those options will be pre-selected by default.
+
+> To clear this memory, delete the `last_selections.json` file.
+> The app works normally if the file does not exist.
+
+---
+
 ## Interface languages
 
 The interface automatically detects the operating system language.  
