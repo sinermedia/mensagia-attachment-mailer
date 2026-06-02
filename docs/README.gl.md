@@ -84,6 +84,14 @@ python main.py
 
 ---
 
+## ⚠ Aviso sobre os contactos do grupo
+
+O grupo úsase como **fonte de contactos**, non como lista de subscrición. A aplicación enviará o correo a **todos os contactos que pertenzan ao grupo**, estean subscritos a el ou non.
+
+> A API de Mensagia non proporciona información sobre o estado de subscrición de cada contacto nunha axenda. Se desexas limitar o envío aos subscritos, deberás xestionar esa segmentación directamente en Mensagia antes de lanzar a aplicación.
+
+---
+
 ## ⚠ Aviso importante sobre o envío
 
 O programa **non envía os correos de forma inmediata**. Por cada contacto elixible crea unha configuración de envío individual na plataforma Mensagia, programada para executarse de forma escalonada:

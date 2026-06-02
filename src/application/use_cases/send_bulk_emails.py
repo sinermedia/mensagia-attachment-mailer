@@ -111,7 +111,9 @@ class SendBulkEmailsUseCase:
         Returns:
             A SendResult containing lists of sent, skipped, and errored contacts.
         """
-        # Fetch contacts, excluding those on the email blacklist (unsubscribed)
+        # Fetch all contacts in the group, excluding only those on the global
+        # email blacklist. The API returns subscribed and unsubscribed contacts
+        # alike — subscription status is not exposed by the Mensagia API.
         contacts = self.contact_repository.get_by_group(group_id, in_mail_blacklist=False)
 
         # Only contacts with both an email address and an attachment URL are eligible

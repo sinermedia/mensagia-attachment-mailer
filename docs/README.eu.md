@@ -84,6 +84,14 @@ python main.py
 
 ---
 
+## ⚠ Oharra taldeko kontaktuei buruz
+
+Taldea **kontaktu-iturri** gisa erabiltzen da, ez harpidetza-zerrenda gisa. Aplikazioak **taldeko kontaktu guztiei** bidaliko die mezua, agenda horretan harpideduta dauden ala ez.
+
+> Mensagiaren APIak ez du kontaktu bakoitzaren harpidetza-egoerari buruzko informaziorik ematen agenda batean. Harpidetutako kontaktuetara soilik bidali nahi baduzu, segmentazio hori Mensagian bertan kudeatu beharko duzu aplikazioa abiarazi aurretik.
+
+---
+
 ## ⚠ Oharra bidaltzeari buruz
 
 Programak **ez ditu mezu elektronikoak berehala bidaltzen**. Kontaktu hautagarri bakoitzarentzat banakako bidaltzeko konfigurazio bat sortzen du Mensagia plataforman, modu eskalonatuan exekutatzeko programatuta:

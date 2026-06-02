@@ -189,8 +189,10 @@ class MensagiaClient:
 
         Args:
             group_id: Numeric ID of the agenda group to query.
-            in_mail_blacklist: Whether to include contacts on the email
-                blacklist. Defaults to False to exclude unsubscribed contacts.
+            in_mail_blacklist: Whether to include contacts that are on the
+                global email blacklist. Defaults to False to exclude them.
+                Note: the blacklist is independent of agenda subscription
+                status; this parameter does not filter by subscription.
 
         Returns:
             List of raw contact dictionaries as returned by the API.

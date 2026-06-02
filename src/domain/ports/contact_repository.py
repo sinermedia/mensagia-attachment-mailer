@@ -18,8 +18,9 @@ class ContactRepository(ABC):
         Args:
             group_id: Numeric identifier of the agenda group to query.
             in_mail_blacklist: When True, also returns contacts that are on
-                the email blacklist. Defaults to False to exclude them and
-                avoid sending to unsubscribed addresses.
+                the global email blacklist. Defaults to False to exclude
+                blacklisted contacts (who cannot receive email regardless
+                of their subscription status in any agenda).
 
         Returns:
             A list of Contact instances belonging to the specified group.

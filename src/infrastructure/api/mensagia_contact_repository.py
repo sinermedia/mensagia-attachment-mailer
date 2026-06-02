@@ -32,8 +32,10 @@ class MensagiaContactRepository(ContactRepository):
 
         Args:
             group_id: Numeric ID of the agenda group to query.
-            in_mail_blacklist: When False (default) excludes contacts on the
-                email blacklist to avoid sending to unsubscribed addresses.
+            in_mail_blacklist: When False (default) excludes contacts that
+                are on the global email blacklist. The blacklist is separate
+                from agenda subscription: the API returns all contacts in
+                the group regardless of their subscription status.
 
         Returns:
             A list of Contact objects. Returns an empty list if the group

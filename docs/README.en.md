@@ -84,6 +84,14 @@ python main.py
 
 ---
 
+## ⚠ Note about group contacts
+
+The group is used as a **contact source**, not as a subscription list. The app will send the email to **all contacts that belong to the group**, regardless of whether they are subscribed to it or not.
+
+> The Mensagia API does not provide subscription status information for individual contacts within an agenda. If you want to limit sending to subscribed contacts only, you must manage that segmentation directly in Mensagia before running the application.
+
+---
+
 ## ⚠ Important warning about sending
 
 The program **does not send emails immediately**. For each eligible contact it creates an individual send configuration on the Mensagia platform, scheduled to run in a staggered sequence:

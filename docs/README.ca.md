@@ -84,6 +84,14 @@ python main.py
 
 ---
 
+## ⚠ Avís sobre els contactes del grup
+
+El grup s'utilitza com a **font de contactes**, no com a llista de subscripció. L'aplicació enviarà el correu a **tots els contactes que formin part del grup**, hi estiguin subscrits o no.
+
+> La API de Mensagia no proporciona informació sobre l'estat de subscripció de cada contacte en una agenda. Si vols limitar l'enviament als subscrits, hauràs de gestionar aquesta segmentació directament a Mensagia abans de llançar l'aplicació.
+
+---
+
 ## ⚠ Avís important sobre l'enviament
 
 El programa **no envia els correus de forma immediata**. Per cada contacte elegible crea una configuració d'enviament individual a la plataforma Mensagia, programada per executar-se de forma escalonada:
