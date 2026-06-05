@@ -22,7 +22,7 @@ Aplicación para enviar correos electrónicos con adjuntos personalizados por co
 MENSAGIA_API_TOKEN=tu_token_api_aqui
 ```
 
-> Puedes obtener tu token API en [app.mensagia.com](https://app.mensagia.com) → Configuración → API.
+> Puedes obtener tu token API en [mensagia.com](https://mensagia.com) → Usuarios.
 > Si no existe el archivo `.env`, la aplicación te pedirá el token al arrancar.
 
 3. Ejecuta el `.exe`.
@@ -35,7 +35,7 @@ MENSAGIA_API_TOKEN=tu_token_api_aqui
 
 ```bash
 # Clonar el repositorio
-git clone <url-del-repo>
+git clone https://github.com/sinermedia/mensagia-attachment-mailer.git
 cd mensagia-attachment-mailer
 
 # Crear entorno virtual (si no existe)
@@ -81,6 +81,40 @@ python main.py
 6. **Campo adjunto** — Se elige qué campo personalizado contiene la URL del adjunto.
 7. **Certificado** — El usuario decide si certificar los envíos.
 8. **Envío** — Se filtran los contactos con email y URL de adjunto válidos, y se envía un correo por cada uno a razón de 5/minuto.
+
+---
+
+## ⚠ Aviso sobre los contactos del grupo
+
+El grupo se usa como **fuente de contactos**, no como lista de suscripción. La aplicación enviará el correo a **todos los contactos que pertenezcan al grupo**, estén suscritos a él o no.
+
+> La API de Mensagia no proporciona información sobre el estado de suscripción de cada contacto en una agenda. Si deseas limitar el envío a los suscritos, deberás gestionar esa segmentación directamente en Mensagia antes de lanzar la aplicación.
+
+---
+
+## ⚠ Aviso importante sobre el envío
+
+El programa **no envía los correos de forma inmediata**. Por cada contacto elegible crea una configuración de envío individual en la plataforma Mensagia, programada para ejecutarse de forma escalonada:
+
+- El **primer envío** se ejecuta entre **10 y 20 minutos** después de lanzar la aplicación, para dar margen a cancelar si se detecta algún error.
+- Los **envíos siguientes** se espacian **12 segundos** entre sí (5 por minuto).
+
+> **Si necesitas detener el envío una vez iniciado**, deberás eliminar cada configuración de envío de forma individual desde el portal de Mensagia. No existe un botón de cancelación global.
+>
+> Usa el modo **Simular** para revisar qué se enviaría sin crear ninguna configuración real.
+
+---
+
+## Memoria de selecciones (modo gráfico)
+
+Tras cada envío o simulación, la aplicación guarda los parámetros elegidos
+(plantilla, remitente, grupo, campo adjunto y certificado) en un archivo
+`last_selections.json`, en la misma carpeta que el `.env` o el `.exe`.
+
+En la siguiente ejecución, esas opciones quedarán marcadas por defecto.
+
+> Para borrar esta memoria, elimina el archivo `last_selections.json`.
+> La aplicación funciona con normalidad si el archivo no existe.
 
 ---
 
