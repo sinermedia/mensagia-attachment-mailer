@@ -12,6 +12,7 @@ from src.infrastructure.ui.i18n import t, set_language, language_names, detect_s
 from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url, load_show_ids
 from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
+from src.infrastructure.logging.send_logger import SendLogger
 
 
 def _choose_language():
@@ -311,6 +312,9 @@ def run():
     email_sender = MensagiaEmailSender(client)
     use_case = SendBulkEmailsUseCase(contact_repo, email_sender)
 
+    # Create a logger only for real sends; dry-runs produce no log file
+    send_logger = SendLogger() if not dry_run else None
+
     print(f"\n  {t('sending')}")
     result = use_case.execute(
         from_email=sender.email,
@@ -322,6 +326,7 @@ def run():
         attachment_base_url=attachment_base_url,
         attachment_checker=HttpAttachmentChecker(),
         dry_run=dry_run,
+        logger=send_logger,
     )
 
     # Report any per-contact errors to the console
@@ -331,3 +336,6 @@ def run():
     # Print the final outcome summary
     key = "dry_run_complete" if dry_run else "send_complete"
     print(f"\n  {t(key, sent=len(result.sent), skipped=len(result.skipped), errors=len(result.errors))}")
+
+    if send_logger:
+        print(f"  {t('log_saved', path=str(send_logger.log_path))}")

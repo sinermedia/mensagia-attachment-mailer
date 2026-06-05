@@ -56,4 +56,5 @@ STRINGS = {
     "enter_base_url": "Introduce a URL base para construír as rutas dos adxuntos:",
     "base_url_label": "URL base adxuntos:",
     "base_url_placeholder": "https://example.com/files/",
+    "log_saved": "Log gardado en: {path}",
 }

@@ -17,6 +17,7 @@ from src.infrastructure.config.settings import load_api_token, load_language, lo
 from src.infrastructure.config.last_selections import load_last_selections, save_last_selections
 from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
+from src.infrastructure.logging.send_logger import SendLogger
 
 
 # Apply the light theme globally before any widget is created;
@@ -693,12 +694,13 @@ class App(ctk.CTk):
                 attachment_checker = HttpAttachmentChecker()
                 _dry_run = dry_run
 
-                # Determine the eligible contacts (replicate use-case eligibility logic)
+                # Determine the eligible and skipped contacts before the send loop
                 contacts = contact_repo.get_by_group(self.selected_agenda.id, in_mail_blacklist=False)
                 eligible = [
                     c for c in contacts
                     if c.email and c.extra_fields.get(self.selected_field.name)
                 ]
+                skipped = [c for c in contacts if c not in eligible]
                 total = len(eligible)
 
                 from src.domain.scheduling import calculate_start_dates
@@ -708,6 +710,25 @@ class App(ctk.CTk):
                 # Compute staggered send dates upfront so the timing is consistent
                 start_dates = calculate_start_dates(total)
                 sent, errors = [], []
+
+                # Create a logger only for real sends; dry-runs produce no log file
+                send_logger = SendLogger() if not _dry_run else None
+
+                # Log opening summary and all skipped contacts before the send loop
+                if send_logger:
+                    send_logger.log_start(
+                        self.selected_sender.email,
+                        self._subject_entry.get().strip(),
+                        self.selected_template.id,
+                        self.selected_agenda.id,
+                        self.selected_field.name,
+                        self._certified_var.get(),
+                        len(eligible),
+                        len(skipped),
+                    )
+                    for c in skipped:
+                        reason = "no_email" if not c.email else "no_attachment"
+                        send_logger.log_skip(c, reason)
 
                 # Process each eligible contact, updating progress after each one
                 for i, (contact, start_date) in enumerate(zip(eligible, start_dates), 1):
@@ -741,11 +762,18 @@ class App(ctk.CTk):
                         if not _dry_run:
                             email_sender_adapter.send(message)
                         sent.append(contact)
+
+                        if send_logger:
+                            send_logger.log_ok(contact, attachment_url)
+
                     except Exception as e:
                         errors.append((contact, str(e)))
+                        if send_logger:
+                            send_logger.log_error(contact, str(e))
 
-                # Compute skipped contacts (those not in the eligible list)
-                skipped = [c for c in contacts if c not in eligible]
+                # Log the closing summary once all contacts have been processed
+                if send_logger:
+                    send_logger.log_done(len(sent), len(skipped), len(errors))
 
                 # Build the result text, appending per-contact error details if any
                 error_msgs = "\n".join(
@@ -755,6 +783,8 @@ class App(ctk.CTk):
                 result_text = t(key, sent=len(sent), skipped=len(skipped), errors=len(errors))
                 if error_msgs:
                     result_text += "\n\n" + error_msgs
+                if send_logger:
+                    result_text += f"\n\n{t('log_saved', path=str(send_logger.log_path))}"
 
                 self._result_label.configure(text=result_text)
                 self._progress_bar.set(1)

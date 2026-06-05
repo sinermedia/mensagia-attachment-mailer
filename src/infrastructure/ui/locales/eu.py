@@ -56,4 +56,5 @@ STRINGS = {
     "enter_base_url": "Sartu eranskinaren bideak eraikitzeko oinarrizko URLa:",
     "base_url_label": "Eranskinaren oinarrizko URLa:",
     "base_url_placeholder": "https://example.com/files/",
+    "log_saved": "Loga gorde da: {path}",
 }

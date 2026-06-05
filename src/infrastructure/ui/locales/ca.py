@@ -56,4 +56,5 @@ STRINGS = {
     "enter_base_url": "Introdueix la URL base per construir les rutes dels adjunts:",
     "base_url_label": "URL base adjunts:",
     "base_url_placeholder": "https://example.com/files/",
+    "log_saved": "Log desat a: {path}",
 }

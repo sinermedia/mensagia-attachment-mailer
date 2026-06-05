@@ -56,4 +56,5 @@ STRINGS = {
     "enter_base_url": "Enter the base URL for building attachment paths:",
     "base_url_label": "Attachment base URL:",
     "base_url_placeholder": "https://example.com/files/",
+    "log_saved": "Log saved to: {path}",
 }

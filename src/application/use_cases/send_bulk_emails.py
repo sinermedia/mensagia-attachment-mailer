@@ -33,6 +33,22 @@ class SendResult:
     errors: list = field(default_factory=list)
 
 
+def _skip_reason(contact, field_name: str) -> str:
+    """Return the machine-readable reason why a contact was excluded from sending.
+
+    Args:
+        contact: The Contact that did not pass the eligibility filter.
+        field_name: Name of the extra field that must hold an attachment value.
+
+    Returns:
+        'no_email' when the contact has no email address, 'no_attachment'
+        when the attachment field is absent or empty.
+    """
+    if not contact.email:
+        return "no_email"
+    return "no_attachment"
+
+
 class SendBulkEmailsUseCase:
     """Orchestrates sending a personalised email with attachment to a contact group.
 
@@ -76,6 +92,7 @@ class SendBulkEmailsUseCase:
         attachment_base_url: str | None = None,
         attachment_checker=None,
         dry_run: bool = False,
+        logger=None,
     ) -> SendResult:
         """Run the bulk send for all eligible contacts in the given group.
 
@@ -107,6 +124,11 @@ class SendBulkEmailsUseCase:
             dry_run: When True, all logic runs normally (eligibility check,
                 URL resolution, accessibility check) but the email is never
                 actually dispatched. Useful for previewing what would be sent.
+                No log entries are written in dry-run mode.
+            logger: Optional SendLogger instance. When provided and dry_run is
+                False, one structured log line is written per contact outcome
+                plus opening and closing summary lines. Pass None to disable
+                logging entirely.
 
         Returns:
             A SendResult containing lists of sent, skipped, and errored contacts.
@@ -126,6 +148,15 @@ class SendBulkEmailsUseCase:
         # Compute staggered start dates so emails are not sent all at once
         start_dates = calculate_start_dates(len(eligible), now)
         result = SendResult(skipped=skipped)
+
+        # Log the opening summary and all skipped contacts before the send loop
+        if logger and not dry_run:
+            logger.log_start(
+                from_email, subject, template_id, group_id,
+                extra_field.name, certified, len(eligible), len(skipped),
+            )
+            for c in skipped:
+                logger.log_skip(c, _skip_reason(c, extra_field.name))
 
         # Process each eligible contact paired with its scheduled send time
         for contact, start_date in zip(eligible, start_dates):
@@ -154,9 +185,18 @@ class SendBulkEmailsUseCase:
                 response = {} if dry_run else self.email_sender.send(message)
                 result.sent.append({"contact": contact, "response": response})
 
+                if logger and not dry_run:
+                    logger.log_ok(contact, attachment_url)
+
             except Exception as exc:
                 # Any failure (network, API, inaccessible URL) is recorded and
                 # processing continues with the next contact
                 result.errors.append({"contact": contact, "error": str(exc)})
+                if logger and not dry_run:
+                    logger.log_error(contact, str(exc))
+
+        # Log the closing summary once all contacts have been processed
+        if logger and not dry_run:
+            logger.log_done(len(result.sent), len(result.skipped), len(result.errors))
 
         return result

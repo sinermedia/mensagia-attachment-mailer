@@ -331,3 +331,142 @@ class TestSendBulkEmailsUseCase:
         assert email_sender.send.call_count == 0
         assert len(result.sent) == 0
         assert len(result.skipped) == 0
+
+
+class TestSendBulkEmailsUseCaseWithLogger:
+    """Tests that the use case calls the logger on real sends and stays silent on dry-run."""
+
+    def test_log_start_called_once_on_real_send(self, use_case, contact_repo, email_sender, extra_field):
+        """log_start() is called exactly once when a logger is provided and dry_run is False."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.return_value = {}
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, logger=logger,
+        )
+
+        logger.log_start.assert_called_once()
+
+    def test_log_ok_called_for_each_sent_contact(self, use_case, contact_repo, email_sender, extra_field):
+        """log_ok() is called once per successfully sent contact."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+        ]
+        email_sender.send.return_value = {}
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, logger=logger,
+        )
+
+        assert logger.log_ok.call_count == 2
+
+    def test_log_skip_called_for_contacts_without_email_or_attachment(self, use_case, contact_repo, email_sender, extra_field):
+        """log_skip() is called for every contact excluded before sending."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", None),
+            make_contact(3, "c@test.com", "https://example.com/c.pdf"),
+        ]
+        email_sender.send.return_value = {}
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, logger=logger,
+        )
+
+        assert logger.log_skip.call_count == 2
+
+    def test_log_skip_reason_no_email(self, use_case, contact_repo, email_sender, extra_field):
+        """log_skip() receives reason='no_email' for a contact with an empty email."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "", "https://example.com/a.pdf")]
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, logger=logger,
+        )
+
+        reason = logger.log_skip.call_args[0][1]
+        assert reason == "no_email"
+
+    def test_log_skip_reason_no_attachment(self, use_case, contact_repo, email_sender, extra_field):
+        """log_skip() receives reason='no_attachment' for a contact with no attachment value."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", None)]
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, logger=logger,
+        )
+
+        reason = logger.log_skip.call_args[0][1]
+        assert reason == "no_attachment"
+
+    def test_log_error_called_when_send_raises(self, use_case, contact_repo, email_sender, extra_field):
+        """log_error() is called when the email sender raises an exception."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.side_effect = Exception("API error")
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, logger=logger,
+        )
+
+        logger.log_error.assert_called_once()
+
+    def test_log_done_called_with_correct_counts(self, use_case, contact_repo, email_sender, extra_field):
+        """log_done() is called once with the final sent/skipped/error counts."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.return_value = {}
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, logger=logger,
+        )
+
+        logger.log_done.assert_called_once_with(1, 0, 0)
+
+    def test_no_logging_when_dry_run_is_true(self, use_case, contact_repo, email_sender, extra_field):
+        """No logger methods are called at all when dry_run=True."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, dry_run=True, logger=logger,
+        )
+
+        logger.log_start.assert_not_called()
+        logger.log_ok.assert_not_called()
+        logger.log_skip.assert_not_called()
+        logger.log_error.assert_not_called()
+        logger.log_done.assert_not_called()
+
+    def test_no_error_when_logger_is_none(self, use_case, contact_repo, email_sender, extra_field):
+        """The use case runs without error and returns correct results when logger=None."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.return_value = {}
+
+        result = use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW,
+        )
+
+        assert len(result.sent) == 1
