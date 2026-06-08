@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -181,7 +182,10 @@ class SendBulkEmailsUseCase:
                     certified=certified,
                 )
 
-                # In dry-run mode skip the actual API call and return an empty response
+                # Pause before each real API call to stay within the 1 request-per-second
+                # rate limit; skipped in dry-run mode because no request is made
+                if not dry_run:
+                    time.sleep(1)
                 response = {} if dry_run else self.email_sender.send(message)
                 result.sent.append({"contact": contact, "response": response})
 

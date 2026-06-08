@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 import pytest
 from src.domain.entities.contact import Contact
 from src.domain.entities.extra_field import ExtraField
@@ -57,6 +57,12 @@ class TestSendBulkEmailsUseCase:
     filtering, message construction, dry-run behaviour, error handling, etc.)
     in isolation using mock dependencies so no real HTTP calls are made.
     """
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
 
     def test_sends_one_email_per_eligible_contact(self, use_case, contact_repo, email_sender, extra_field):
         """One email is sent for each contact that has both email and attachment."""
@@ -332,9 +338,59 @@ class TestSendBulkEmailsUseCase:
         assert len(result.sent) == 0
         assert len(result.skipped) == 0
 
+    def test_sleep_called_once_per_eligible_contact(self, use_case, contact_repo, email_sender, extra_field, mock_sleep):
+        """time.sleep(1) is called once per eligible contact to rate-limit API sends."""
+        contacts = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+            make_contact(3, "c@test.com", "https://example.com/c.pdf"),
+        ]
+        contact_repo.get_by_group.return_value = contacts
+        email_sender.send.return_value = {}
+
+        use_case.execute(
+            from_email="sender@test.com",
+            group_id=10,
+            subject="Test",
+            template_id=5,
+            extra_field=extra_field,
+            certified=0,
+            now=FIXED_NOW,
+        )
+
+        assert mock_sleep.call_count == 3
+        mock_sleep.assert_called_with(1)
+
+    def test_no_sleep_in_dry_run(self, use_case, contact_repo, email_sender, extra_field, mock_sleep):
+        """time.sleep is not called when dry_run=True because no real API request is made."""
+        contacts = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+        ]
+        contact_repo.get_by_group.return_value = contacts
+
+        use_case.execute(
+            from_email="sender@test.com",
+            group_id=10,
+            subject="Test",
+            template_id=5,
+            extra_field=extra_field,
+            certified=0,
+            now=FIXED_NOW,
+            dry_run=True,
+        )
+
+        mock_sleep.assert_not_called()
+
 
 class TestSendBulkEmailsUseCaseWithLogger:
     """Tests that the use case calls the logger on real sends and stays silent on dry-run."""
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
 
     def test_log_start_called_once_on_real_send(self, use_case, contact_repo, email_sender, extra_field):
         """log_start() is called exactly once when a logger is provided and dry_run is False."""

@@ -1,3 +1,5 @@
+import time
+
 import requests
 from requests.exceptions import HTTPError, ConnectionError, Timeout
 
@@ -173,6 +175,9 @@ class MensagiaClient:
             if page >= pagination.get("total_pages", 1):
                 break
             page += 1
+            # Pause between page fetches to avoid sending consecutive requests
+            # faster than the Mensagia API rate limit allows
+            time.sleep(1)
 
         return all_items
 
