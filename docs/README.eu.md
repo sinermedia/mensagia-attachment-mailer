@@ -15,7 +15,7 @@
 
 ## Exekutagarriaren erabilera (Pythonik gabeko bezeroak)
 
-1. Deskargatu `mensagia-mailer-gui.exe` (edo `mensagia-mailer-console.exe`)
+1. Deskargatu exekutagarria [releases orritik](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest) (GUI modurako `mensagia-mailer-gui.exe`, edo kontsola modurako `mensagia-mailer-console.exe`)
 2. Sortu `.env` fitxategi bat `.exe`-aren **karpeta berean**, zure tokenarekin:
 
 ```

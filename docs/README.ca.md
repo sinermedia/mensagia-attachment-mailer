@@ -15,7 +15,7 @@ Aplicació per enviar correus electrònics amb adjunts personalitzats per contac
 
 ## Ús de l'executable (clients sense Python)
 
-1. Descarrega `mensagia-mailer-gui.exe` (o `mensagia-mailer-console.exe`)
+1. Descarrega l'executable des de la [pàgina de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest) (`mensagia-mailer-gui.exe` per al mode gràfic, o `mensagia-mailer-console.exe` per al mode consola)
 2. Crea un fitxer `.env` a la **mateixa carpeta** que el `.exe` amb el teu token:
 
 ```

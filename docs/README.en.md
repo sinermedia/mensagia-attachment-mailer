@@ -15,7 +15,7 @@ Application to send emails with per-contact personalised attachments using the [
 
 ## Using the executable (clients without Python)
 
-1. Download `mensagia-mailer-gui.exe` (or `mensagia-mailer-console.exe`)
+1. Download the executable from the [releases page](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest) (`mensagia-mailer-gui.exe` for GUI mode, or `mensagia-mailer-console.exe` for console mode)
 2. Create a `.env` file in the **same folder** as the `.exe` with your token:
 
 ```

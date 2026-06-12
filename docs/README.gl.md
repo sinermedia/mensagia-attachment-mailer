@@ -15,7 +15,7 @@ Aplicación para enviar correos electrónicos con adxuntos personalizados por co
 
 ## Uso do executable (clientes sen Python)
 
-1. Descarga `mensagia-mailer-gui.exe` (ou `mensagia-mailer-console.exe`)
+1. Descarga o executable dende a [páxina de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest) (`mensagia-mailer-gui.exe` para modo gráfico, ou `mensagia-mailer-console.exe` para modo consola)
 2. Crea un ficheiro `.env` na **mesma carpeta** que o `.exe` co teu token:
 
 ```
