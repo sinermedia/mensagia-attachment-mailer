@@ -27,6 +27,8 @@ MENSAGIA_API_TOKEN=tu_token_api_aqui
 
 3. Ejecuta el `.exe`.
 
+> **Aviso de Windows SmartScreen:** la primera vez que ejecutes el archivo, Windows puede mostrar una advertencia de seguridad. Haz clic en **"Más información"** y luego en **"Ejecutar de todos modos"**. Solo es necesario hacerlo una vez por cada versión descargada.
+
 ---
 
 ## Uso desde el código fuente

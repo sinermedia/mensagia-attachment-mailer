@@ -27,6 +27,8 @@ MENSAGIA_API_TOKEN=zure_api_tokena_hemen
 
 3. Exekutatu `.exe`.
 
+> **Windows SmartScreen oharra:** fitxategia lehen aldiz exekutatzen duzunean, Windowsek segurtasun abisua erakuts dezake. Egin klik **"Informazio gehiago"** eta gero **"Exekutatu hala ere"** aukeretan. Deskargatutako bertsio bakoitzeko behin bakarrik egin behar da.
+
 ---
 
 ## Iturburu-kodetik erabiltzea

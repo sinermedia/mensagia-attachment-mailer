@@ -27,6 +27,8 @@ MENSAGIA_API_TOKEN=your_api_token_here
 
 3. Run the `.exe`.
 
+> **Windows SmartScreen warning:** the first time you run the file, Windows may show a security warning. Click **"More info"** and then **"Run anyway"**. This only needs to be done once per downloaded version.
+
 ---
 
 ## Running from source

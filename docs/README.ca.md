@@ -27,6 +27,8 @@ MENSAGIA_API_TOKEN=el_teu_token_api_aqui
 
 3. Executa el `.exe`.
 
+> **Avís de Windows SmartScreen:** la primera vegada que executis el fitxer, el Windows pot mostrar un avís de seguretat. Fes clic a **"Més informació"** i després a **"Executa de totes maneres"**. Només cal fer-ho una vegada per cada versió descarregada.
+
 ---
 
 ## Ús des del codi font
