@@ -57,4 +57,7 @@ STRINGS = {
     "base_url_label": "URL base adjunts:",
     "base_url_placeholder": "https://example.com/files/",
     "log_saved": "Log desat a: {path}",
+    "resume_title": "Enviament anterior incomplet",
+    "resume_detected": "{sent} contacte(s) ja van rebre aquest correu en un enviament anterior interromput.",
+    "resume_continue_prompt": "Vols continuar només amb els contactes pendents? Si respons que no, es tornarà a enviar a tots els contactes, incloent-hi els que ja l'han rebut.",
 }

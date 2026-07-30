@@ -57,4 +57,7 @@ STRINGS = {
     "base_url_label": "Eranskinaren oinarrizko URLa:",
     "base_url_placeholder": "https://example.com/files/",
     "log_saved": "Loga gorde da: {path}",
+    "resume_title": "Aurreko bidalketa amaitu gabe",
+    "resume_detected": "{sent} kontaktuk jaso zuten dagoeneko mezu hau eten zen aurreko bidalketa batean.",
+    "resume_continue_prompt": "Kontaktu pendienteekin bakarrik jarraitu nahi duzu? Ezetz erantzuten baduzu, kontaktu guztiei bidaliko zaie berriro, jadanik jaso dutenei ere barne.",
 }

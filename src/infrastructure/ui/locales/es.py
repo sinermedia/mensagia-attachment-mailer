@@ -57,4 +57,7 @@ STRINGS = {
     "base_url_label": "URL base adjuntos:",
     "base_url_placeholder": "https://example.com/files/",
     "log_saved": "Log guardado en: {path}",
+    "resume_title": "Envío anterior incompleto",
+    "resume_detected": "{sent} contacto(s) ya recibieron este correo en un envío anterior interrumpido.",
+    "resume_continue_prompt": "¿Quieres continuar solo con los contactos pendientes? Si respondes que no, se volverá a enviar a todos los contactos, incluidos los que ya lo han recibido.",
 }

@@ -57,4 +57,7 @@ STRINGS = {
     "base_url_label": "Attachment base URL:",
     "base_url_placeholder": "https://example.com/files/",
     "log_saved": "Log saved to: {path}",
+    "resume_title": "Incomplete previous send",
+    "resume_detected": "{sent} contact(s) already received this email in a previous, interrupted send.",
+    "resume_continue_prompt": "Do you want to continue with only the pending contacts? If you answer no, the email will be sent again to every contact, including those who already received it.",
 }
