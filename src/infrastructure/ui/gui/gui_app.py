@@ -17,6 +17,7 @@ from src.infrastructure.config.settings import load_api_token, load_language, lo
 from src.infrastructure.config.last_selections import load_last_selections, save_last_selections
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
+from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
 
 
 # Apply the light theme globally before any widget is created;
@@ -93,6 +94,9 @@ class App(ctk.CTk):
         # Load configuration from .env / environment
         self._show_ids = load_show_ids()
         self._last_sel = load_last_selections()
+        # Tracks already-sent contacts per campaign; stateless (file-backed),
+        # so a single instance is reused across the whole app session
+        self._send_registry = JsonSendRegistry()
 
         # Runtime state — populated as the user progresses through the wizard
         self.client: MensagiaClient | None = None
@@ -605,18 +609,40 @@ class App(ctk.CTk):
             c for c in contacts
             if c.email and c.extra_fields.get(self.selected_field.name)
         ]
+        subject = self._subject_entry.get().strip()
+
+        # Detect contacts already sent this exact campaign in a previous,
+        # interrupted run and let the user decide whether to skip them or
+        # start the whole campaign over again
+        pending_ids = self._send_registry.get_sent_contact_ids(
+            self.selected_agenda.id, self.selected_template.id, self.selected_field.name, subject
+        )
+        already_sent_count = len([c for c in eligible if c.id in pending_ids])
+        if already_sent_count:
+            continue_pending = messagebox.askyesno(
+                t("resume_title"),
+                t("resume_detected", sent=already_sent_count) + "\n\n" + t("resume_continue_prompt"),
+            )
+            if not continue_pending:
+                self._send_registry.clear(
+                    self.selected_agenda.id, self.selected_template.id, self.selected_field.name, subject
+                )
+                already_sent_count = 0
+
+        # Number of contacts that will actually be sent to in this run
+        to_send_count = len(eligible) - already_sent_count
 
         # Build the multi-line summary text with all selected options
         lines = "\n".join([
             t("summary_from", value=f"{self.selected_sender.name} <{self.selected_sender.email}>" if self.selected_sender.name else self.selected_sender.email),
-            t("summary_subject", value=self._subject_entry.get().strip()),
+            t("summary_subject", value=subject),
             t("summary_template", value=self.selected_template.name),
             t("summary_group", value=self.selected_agenda.name),
             t("summary_field", value=self.selected_field.name),
             t("summary_certified", value=t("yes") if self._certified_var.get() else t("no")),
         ])
         self._summary_text.configure(text=lines)
-        self._summary_contacts_label.configure(text=t("summary_contacts", count=len(eligible)))
+        self._summary_contacts_label.configure(text=t("summary_contacts", count=to_send_count))
         self._summary_skipped_label.configure(text=t("summary_skipped", count=len(contacts) - len(eligible)))
 
     # ── Step 8: Sending ────────────────────────────────────────────────────────
@@ -714,6 +740,7 @@ class App(ctk.CTk):
                     dry_run=_dry_run,
                     logger=send_logger,
                     progress_callback=_on_progress,
+                    send_registry=self._send_registry,
                 )
 
                 # Build the result text, appending per-contact error details if any
