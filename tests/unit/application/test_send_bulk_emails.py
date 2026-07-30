@@ -611,3 +611,193 @@ class TestSendBulkEmailsUseCaseWithProgressCallback:
         )
 
         assert len(result.sent) == 1
+
+
+class TestSendBulkEmailsUseCaseWithSendRegistry:
+    """Tests that the use case skips already-sent contacts and updates the registry."""
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
+
+    @pytest.fixture
+    def send_registry(self):
+        """Mock SendRegistry with no prior sends recorded by default."""
+        registry = MagicMock()
+        registry.get_sent_contact_ids.return_value = set()
+        return registry
+
+    def test_contact_already_marked_sent_is_not_sent_again(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """A contact whose ID is already in the registry is excluded from the send loop."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+        ]
+        send_registry.get_sent_contact_ids.return_value = {1}
+        email_sender.send.return_value = {}
+
+        result = use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, send_registry=send_registry,
+        )
+
+        assert email_sender.send.call_count == 1
+        assert email_sender.send.call_args[0][0].to_email == "b@test.com"
+        assert len(result.sent) == 1
+
+    def test_already_sent_contacts_are_reported_separately_from_skipped(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """Contacts excluded because they were already sent land in already_sent, not skipped."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+        ]
+        send_registry.get_sent_contact_ids.return_value = {1}
+        email_sender.send.return_value = {}
+
+        result = use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, send_registry=send_registry,
+        )
+
+        assert [c.id for c in result.already_sent] == [1]
+        assert result.skipped == []
+
+    def test_registry_is_queried_with_campaign_parameters(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """get_sent_contact_ids() is called with the group, template, field name and subject."""
+        contact_repo.get_by_group.return_value = []
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, send_registry=send_registry,
+        )
+
+        send_registry.get_sent_contact_ids.assert_called_once_with(10, 5, "attachment_url", "Test")
+
+    def test_mark_sent_called_for_each_successful_send(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """mark_sent() is called once per contact right after a successful send."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.return_value = {}
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, send_registry=send_registry,
+        )
+
+        send_registry.mark_sent.assert_called_once_with(10, 5, "attachment_url", "Test", 1)
+
+    def test_mark_sent_not_called_when_send_fails(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """mark_sent() is not called for a contact whose send attempt raised an exception."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.side_effect = Exception("API error")
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, send_registry=send_registry,
+        )
+
+        send_registry.mark_sent.assert_not_called()
+
+    def test_mark_sent_not_called_in_dry_run(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """No progress is persisted during a dry-run since no email is actually sent."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, dry_run=True, send_registry=send_registry,
+        )
+
+        send_registry.mark_sent.assert_not_called()
+
+    def test_registry_filtering_still_applies_in_dry_run(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """A dry-run preview still excludes contacts already sent in a previous real run."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+        ]
+        send_registry.get_sent_contact_ids.return_value = {1}
+
+        result = use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, dry_run=True, send_registry=send_registry,
+        )
+
+        assert len(result.sent) == 1
+        assert [c.id for c in result.already_sent] == [1]
+
+    def test_clear_called_when_run_completes_with_no_errors(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """clear() is called once the whole eligible batch was sent successfully."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.return_value = {}
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, send_registry=send_registry,
+        )
+
+        send_registry.clear.assert_called_once_with(10, 5, "attachment_url", "Test")
+
+    def test_clear_not_called_when_there_are_errors(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """clear() is not called if any contact failed, so a retry can pick up where it left off."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+        ]
+        email_sender.send.side_effect = [{}, Exception("API error")]
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, send_registry=send_registry,
+        )
+
+        send_registry.clear.assert_not_called()
+
+    def test_clear_not_called_in_dry_run(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """clear() is never called during a dry-run since nothing was actually sent."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, dry_run=True, send_registry=send_registry,
+        )
+
+        send_registry.clear.assert_not_called()
+
+    def test_log_skip_called_with_already_sent_reason(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """log_skip() records already-sent contacts with reason='already_sent'."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        send_registry.get_sent_contact_ids.return_value = {1}
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, send_registry=send_registry, logger=logger,
+        )
+
+        logger.log_skip.assert_called_once_with(make_contact(1, "a@test.com", "https://example.com/a.pdf"), "already_sent")
+
+    def test_no_error_when_send_registry_is_none(self, use_case, contact_repo, email_sender, extra_field):
+        """The use case runs normally when send_registry is not provided (default behaviour)."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.return_value = {}
+
+        result = use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW,
+        )
+
+        assert len(result.sent) == 1
+        assert result.already_sent == []

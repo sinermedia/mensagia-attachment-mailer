@@ -24,6 +24,10 @@ class SendResult:
             In dry-run mode the response dict is always empty.
         skipped: List of Contact objects that were excluded before sending
             because they lacked an email address or an attachment URL value.
+        already_sent: List of Contact objects that were excluded because a
+            send_registry showed they already received this exact campaign
+            in a previous, interrupted run. Empty when no send_registry is
+            given.
         errors: List of dicts with keys 'contact' (Contact) and 'error'
             (str). One entry per contact whose send attempt raised an
             exception (inaccessible attachment, API error, etc.).
@@ -31,6 +35,7 @@ class SendResult:
 
     sent: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
+    already_sent: list = field(default_factory=list)
     errors: list = field(default_factory=list)
 
 
@@ -95,6 +100,7 @@ class SendBulkEmailsUseCase:
         dry_run: bool = False,
         logger=None,
         progress_callback=None,
+        send_registry=None,
     ) -> SendResult:
         """Run the bulk send for all eligible contacts in the given group.
 
@@ -138,6 +144,15 @@ class SendBulkEmailsUseCase:
                 (e.g. a progress bar) reflect progress without needing to
                 reimplement this loop. Fires in dry-run mode too. Pass None
                 to disable.
+            send_registry: Optional SendRegistry instance. When provided,
+                contacts already recorded as sent for this exact campaign
+                (group, template, extra field, subject) are excluded from
+                the eligible list and reported in already_sent instead.
+                Each successful real send is recorded immediately via
+                mark_sent(); the whole campaign record is cleared once a
+                run completes with zero errors. Not written to during
+                dry-run, though filtering still applies so the preview
+                matches what a real run would do. Pass None to disable.
 
         Returns:
             A SendResult containing lists of sent, skipped, and errored contacts.
@@ -154,11 +169,20 @@ class SendBulkEmailsUseCase:
         ]
         skipped = [c for c in contacts if c not in eligible]
 
+        # Exclude contacts already sent this exact campaign in a previous,
+        # interrupted run so restarting never double-sends. Filtering (but
+        # not writing) also applies during dry-run so previews stay accurate.
+        already_sent = []
+        if send_registry:
+            sent_ids = send_registry.get_sent_contact_ids(group_id, template_id, extra_field.name, subject)
+            already_sent = [c for c in eligible if c.id in sent_ids]
+            eligible = [c for c in eligible if c.id not in sent_ids]
+
         # Compute staggered start dates so emails are not sent all at once
         start_dates = calculate_start_dates(len(eligible), now)
-        result = SendResult(skipped=skipped)
+        result = SendResult(skipped=skipped, already_sent=already_sent)
 
-        # Log the opening summary and all skipped contacts before the send loop
+        # Log the opening summary and all skipped/already-sent contacts before the send loop
         if logger and not dry_run:
             logger.log_start(
                 from_email, subject, template_id, group_id,
@@ -166,6 +190,8 @@ class SendBulkEmailsUseCase:
             )
             for c in skipped:
                 logger.log_skip(c, _skip_reason(c, extra_field.name))
+            for c in already_sent:
+                logger.log_skip(c, "already_sent")
 
         # Process each eligible contact paired with its scheduled send time
         for i, (contact, start_date) in enumerate(zip(eligible, start_dates), 1):
@@ -199,6 +225,8 @@ class SendBulkEmailsUseCase:
 
                 if logger and not dry_run:
                     logger.log_ok(contact, attachment_url)
+                if send_registry and not dry_run:
+                    send_registry.mark_sent(group_id, template_id, extra_field.name, subject, contact.id)
 
             except Exception as exc:
                 # Any failure (network, API, inaccessible URL) is recorded and
@@ -216,5 +244,10 @@ class SendBulkEmailsUseCase:
         # Log the closing summary once all contacts have been processed
         if logger and not dry_run:
             logger.log_done(len(result.sent), len(result.skipped), len(result.errors))
+
+        # A clean run (no errors) means nothing is left pending for this
+        # campaign, so forget its progress and stop blocking future re-sends
+        if send_registry and not dry_run and not result.errors:
+            send_registry.clear(group_id, template_id, extra_field.name, subject)
 
         return result
