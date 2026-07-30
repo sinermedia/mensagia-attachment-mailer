@@ -94,6 +94,7 @@ class SendBulkEmailsUseCase:
         attachment_checker=None,
         dry_run: bool = False,
         logger=None,
+        progress_callback=None,
     ) -> SendResult:
         """Run the bulk send for all eligible contacts in the given group.
 
@@ -130,6 +131,13 @@ class SendBulkEmailsUseCase:
                 False, one structured log line is written per contact outcome
                 plus opening and closing summary lines. Pass None to disable
                 logging entirely.
+            progress_callback: Optional callable invoked as
+                progress_callback(current, total) after each eligible contact
+                is processed (sent or errored), where current is the
+                1-indexed position and total is len(eligible). Lets a UI
+                (e.g. a progress bar) reflect progress without needing to
+                reimplement this loop. Fires in dry-run mode too. Pass None
+                to disable.
 
         Returns:
             A SendResult containing lists of sent, skipped, and errored contacts.
@@ -160,7 +168,7 @@ class SendBulkEmailsUseCase:
                 logger.log_skip(c, _skip_reason(c, extra_field.name))
 
         # Process each eligible contact paired with its scheduled send time
-        for contact, start_date in zip(eligible, start_dates):
+        for i, (contact, start_date) in enumerate(zip(eligible, start_dates), 1):
             try:
                 # Resolve the attachment value to a fully qualified URL
                 attachment_url = resolve_attachment_url(
@@ -198,6 +206,12 @@ class SendBulkEmailsUseCase:
                 result.errors.append({"contact": contact, "error": str(exc)})
                 if logger and not dry_run:
                     logger.log_error(contact, str(exc))
+
+            finally:
+                # Report progress after every contact regardless of outcome,
+                # including dry-run, so a UI progress bar stays accurate
+                if progress_callback:
+                    progress_callback(i, len(eligible))
 
         # Log the closing summary once all contacts have been processed
         if logger and not dry_run:

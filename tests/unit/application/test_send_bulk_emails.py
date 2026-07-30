@@ -526,3 +526,88 @@ class TestSendBulkEmailsUseCaseWithLogger:
         )
 
         assert len(result.sent) == 1
+
+
+class TestSendBulkEmailsUseCaseWithProgressCallback:
+    """Tests that the use case reports per-contact progress via an optional callback."""
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
+
+    def test_progress_callback_called_once_per_eligible_contact(self, use_case, contact_repo, email_sender, extra_field):
+        """progress_callback is invoked exactly once for each eligible contact processed."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+            make_contact(3, "c@test.com", "https://example.com/c.pdf"),
+        ]
+        email_sender.send.return_value = {}
+        progress_callback = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, progress_callback=progress_callback,
+        )
+
+        assert progress_callback.call_count == 3
+
+    def test_progress_callback_receives_current_and_total(self, use_case, contact_repo, email_sender, extra_field):
+        """progress_callback receives the 1-indexed current position and the total eligible count."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+        ]
+        email_sender.send.return_value = {}
+        progress_callback = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, progress_callback=progress_callback,
+        )
+
+        assert progress_callback.call_args_list == [call(1, 2), call(2, 2)]
+
+    def test_progress_callback_called_for_errored_contacts(self, use_case, contact_repo, email_sender, extra_field):
+        """progress_callback fires even when a contact's send attempt raises an exception."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.side_effect = Exception("API error")
+        progress_callback = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, progress_callback=progress_callback,
+        )
+
+        progress_callback.assert_called_once_with(1, 1)
+
+    def test_progress_callback_called_in_dry_run(self, use_case, contact_repo, email_sender, extra_field):
+        """progress_callback fires during a dry-run so the UI can still show progress."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        progress_callback = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, dry_run=True, progress_callback=progress_callback,
+        )
+
+        progress_callback.assert_called_once_with(1, 1)
+
+    def test_no_error_when_progress_callback_is_none(self, use_case, contact_repo, email_sender, extra_field):
+        """The use case runs without error when progress_callback is not provided."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.return_value = {}
+
+        result = use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW,
+        )
+
+        assert len(result.sent) == 1
