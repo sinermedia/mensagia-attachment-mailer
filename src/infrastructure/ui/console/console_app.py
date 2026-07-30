@@ -13,6 +13,7 @@ from src.infrastructure.config.settings import load_api_token, load_language, lo
 from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
+from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
 
 
 def _choose_language():
@@ -283,6 +284,21 @@ def run():
     ]
     skipped_count = len(contacts) - len(eligible)
 
+    # Detect contacts already sent this exact campaign in a previous,
+    # interrupted run and let the user decide whether to skip them or
+    # start the whole campaign over again
+    send_registry = JsonSendRegistry()
+    pending_ids = send_registry.get_sent_contact_ids(agenda.id, template.id, extra_field.name, subject)
+    already_sent_count = len([c for c in eligible if c.id in pending_ids])
+    if already_sent_count:
+        print(f"\n  {t('resume_detected', sent=already_sent_count)}")
+        if not _yes_no(f"  {t('resume_continue_prompt')}"):
+            send_registry.clear(agenda.id, template.id, extra_field.name, subject)
+            already_sent_count = 0
+
+    # Number of contacts that will actually be sent to in this run
+    to_send_count = len(eligible) - already_sent_count
+
     # Resolve the base URL for relative attachment paths, prompting if needed
     attachment_base_url = _resolve_attachment_base_url(eligible, extra_field)
 
@@ -294,11 +310,11 @@ def run():
     print(f"  {t('summary_group', value=agenda.name)}")
     print(f"  {t('summary_field', value=extra_field.name)}")
     print(f"  {t('summary_certified', value=t('yes') if certified else t('no'))}")
-    print(f"  {t('summary_contacts', count=len(eligible))}")
+    print(f"  {t('summary_contacts', count=to_send_count)}")
     print(f"  {t('summary_skipped', count=skipped_count)}")
 
     # Nothing to send — exit cleanly without error
-    if not eligible:
+    if to_send_count == 0:
         print(f"\n  (0 {t('summary_contacts', count=0).lower()})")
         sys.exit(0)
 
@@ -327,6 +343,7 @@ def run():
         attachment_checker=HttpAttachmentChecker(),
         dry_run=dry_run,
         logger=send_logger,
+        send_registry=send_registry,
     )
 
     # Report any per-contact errors to the console
