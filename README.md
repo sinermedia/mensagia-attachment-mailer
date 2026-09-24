@@ -79,7 +79,7 @@ python main.py
 2. **Asunto** — El usuario introduce el asunto del correo.
 3. **Plantilla** — Se muestra la lista de plantillas de email disponibles.
 4. **Remitente** — Se muestra la lista de direcciones de envío verificadas.
-5. **Grupo** — Se muestra la lista de grupos de la agenda.
+5. **Grupo** — Se muestra una primera página de grupos de la agenda. Si el grupo buscado no aparece, se puede filtrar por nombre. Los grupos sin contactos se muestran, pero no se pueden seleccionar.
 6. **Campo adjunto** — Se elige qué campo personalizado contiene la URL del adjunto.
 7. **Certificado** — El usuario decide si certificar los envíos.
 8. **Envío** — Se filtran los contactos con email y URL de adjunto válidos, y se envía un correo por cada uno a razón de 5/minuto.

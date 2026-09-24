@@ -79,7 +79,7 @@ python main.py
 2. **Gaia** — Erabiltzaileak mezu elektronikoaren gaia sartzen du.
 3. **Txantiloia** — Eskuragarri dauden email txantiloien zerrenda erakusten da.
 4. **Bidaltzailea** — Egiaztatutako bidaltzaile helbideen zerrenda erakusten da.
-5. **Taldea** — Agenda-taldeen zerrenda erakusten da.
+5. **Taldea** — Agenda-taldeen lehen orria erakusten da. Bilatzen ari zaren taldea agertzen ez bada, izenaren arabera iragaz daiteke. Kontakturik gabeko taldeak erakusten dira, baina ezin dira hautatu.
 6. **Eranskin eremua** — Eranskinaren URLa duen eremu pertsonalizatua aukeratzen da.
 7. **Ziurtagiria** — Erabiltzaileak bidalketak ziurtatzea erabakitzen du.
 8. **Bidalketa** — Email eta eranskin URL balioduna duten kontaktuak iragazten dira, eta minutuko 5eko abiaduran mezu bat bidaltzen da bakoitzari.

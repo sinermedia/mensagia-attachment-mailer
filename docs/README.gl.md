@@ -79,7 +79,7 @@ python main.py
 2. **Asunto** — O usuario introduce o asunto do correo.
 3. **Modelo** — Móstrase a lista de modelos de email dispoñibles.
 4. **Remitente** — Móstrase a lista de enderezos de envío verificados.
-5. **Grupo** — Móstrase a lista de grupos da axenda.
+5. **Grupo** — Móstrase unha primeira páxina de grupos da axenda. Se o grupo buscado non aparece, pódese filtrar polo nome. Os grupos sen contactos móstranse, pero non se poden seleccionar.
 6. **Campo adxunto** — Elíxese que campo personalizado contén a URL do adxunto.
 7. **Certificado** — O usuario decide se certificar os envíos.
 8. **Envío** — Fíltrase os contactos con email e URL de adxunto válidos, e envíase un correo por cada un a razón de 5/minuto.

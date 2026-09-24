@@ -79,7 +79,7 @@ python main.py
 2. **Assumpte** — L'usuari introdueix l'assumpte del correu.
 3. **Plantilla** — Es mostra la llista de plantilles d'email disponibles.
 4. **Remitent** — Es mostra la llista d'adreces d'enviament verificades.
-5. **Grup** — Es mostra la llista de grups de l'agenda.
+5. **Grup** — Es mostra una primera pàgina de grups de l'agenda. Si el grup buscat no hi apareix, es pot filtrar pel nom. Els grups sense contactes es mostren, però no es poden seleccionar.
 6. **Camp adjunt** — Es tria quin camp personalitzat conté la URL de l'adjunt.
 7. **Certificat** — L'usuari decideix si certificar els enviaments.
 8. **Enviament** — Es filtren els contactes amb email i URL d'adjunt vàlids, i s'envia un correu per cada un a raó de 5/minut.

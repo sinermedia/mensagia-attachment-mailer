@@ -79,7 +79,7 @@ python main.py
 2. **Subject** — The user enters the email subject.
 3. **Template** — The list of available email templates is shown.
 4. **Sender** — The list of verified sender addresses is shown.
-5. **Group** — The list of contact groups is shown.
+5. **Group** — A first page of contact groups is shown. If the group you need is not there, you can filter by name. Groups without contacts are shown but cannot be selected.
 6. **Attachment field** — Choose which custom field contains the attachment URL.
 7. **Certified** — The user decides whether to certify the sends.
 8. **Send** — Contacts with a valid email and attachment URL are filtered, and one email is sent per contact at a rate of 5/minute.
