@@ -347,9 +347,10 @@ def run():
     print(f"  {t('summary_contacts', count=len(eligible))}")
     print(f"  {t('summary_skipped', count=skipped_count)}")
 
-    # Nothing to send — exit cleanly without error
+    # Nothing to send — say why and exit cleanly without error. The group may
+    # well hold contacts: they can all lack an email address or the extra field
     if not eligible:
-        print(f"\n  (0 {t('summary_contacts', count=0).lower()})")
+        print(f"\n  {t('no_eligible_contacts')}")
         sys.exit(0)
 
     action = _confirm_action()
