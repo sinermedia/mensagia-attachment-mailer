@@ -111,6 +111,63 @@ def _select_from_list(prompt: str, items: list, display_fn) -> object:
         print(f"  (1-{len(items)})")
 
 
+def _select_agenda(client, show_ids: bool):
+    """Let the user pick an agenda from a paged, searchable listing.
+
+    Kept separate from _select_from_list because agendas are the only list
+    that can hold thousands of entries: instead of loading them all, one
+    page is fetched at a time and the prompt doubles as a search box.
+    Anything that is not a valid position number is treated as a name to
+    search for, which also covers the case of a group that is not in the
+    first page. A group whose name is a digit within the listed range will
+    therefore select that position rather than start a search; this is
+    accepted as a rare and harmless ambiguity.
+
+    Args:
+        client: Authenticated MensagiaClient used to query the API.
+        show_ids: Whether to prefix each entry with the agenda id.
+
+    Returns:
+        The Agenda the user selected. Agendas without contacts can be seen
+        but not selected, since they would produce a campaign with no
+        recipients.
+
+    Raises:
+        MensagiaAPIError: If any of the API calls fails.
+    """
+    repository = MensagiaAgendaRepository(client)
+    page = repository.search()
+
+    while True:
+        print(f"\n{t('group_label')}")
+        if not page.agendas:
+            print(f"  {t('group_no_results')}")
+        for i, agenda in enumerate(page.agendas, 1):
+            prefix = f"[{agenda.id}] " if show_ids else ""
+            # Mark empty agendas explicitly so the refusal below is not a surprise
+            state = f" - {t('group_no_contacts')}" if not agenda.has_contacts else ""
+            print(f"  {i}. {prefix}{agenda.name} ({t('group_contacts', count=agenda.total_users)}){state}")
+        print(f"  {t('group_showing', shown=len(page.agendas), total=page.total)}")
+        print(f"  {t('group_console_hint')}")
+
+        choice = input("  > ").strip()
+
+        # An empty line is not a search for everything: just redraw the listing
+        if not choice:
+            continue
+
+        # Only a position number within the current listing selects an agenda;
+        # everything else is a name to search for
+        if choice.isdigit() and 1 <= int(choice) <= len(page.agendas):
+            selected = page.agendas[int(choice) - 1]
+            if not selected.has_contacts:
+                print(f"  {t('group_empty_not_selectable')}")
+                continue
+            return selected
+
+        page = repository.search(name=choice)
+
+
 def _confirm_action() -> str | None:
     """Ask the user whether to send, simulate, or cancel the operation.
 
@@ -238,17 +295,10 @@ def run():
     print(f"\n--- {t('step_group')} ---")
     print(f"  {t('loading')}")
     try:
-        agendas = MensagiaAgendaRepository(client).get_all()
+        agenda = _select_agenda(client, show_ids)
     except MensagiaAPIError as e:
         print(f"  {t('error_api', error=str(e))}")
         sys.exit(1)
-    if not agendas:
-        print(f"  {t('error_no_groups')}")
-        sys.exit(1)
-    agenda = _select_from_list(
-        t("group_label"), agendas,
-        lambda x: (f"[{x.id}] " if show_ids else "") + f"{x.name} ({t('group_contacts', count=x.total_users)})"
-    )
 
     # ── Step 5: Extra field selection ─────────────────────────────────────────
     print(f"\n--- {t('step_field')} ---")
