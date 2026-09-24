@@ -1,7 +1,8 @@
 import pathlib
+import queue
 import threading
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 import customtkinter as ctk
 
 from src.infrastructure.api.mensagia_client import MensagiaClient, MensagiaAPIError
@@ -29,6 +30,9 @@ ctk.set_default_color_theme("blue")
 PAD = 16
 WINDOW_W = 620
 WINDOW_H = 560
+
+# How often the main thread drains the UI updates queued by worker threads
+UI_POLL_MS = 50
 
 
 def _resource(relative: str) -> pathlib.Path:
@@ -106,9 +110,32 @@ class App(ctk.CTk):
         self.selected_agenda = None
         self.selected_field = None
 
+        # Updates handed over by background threads, applied by _pump_ui
+        self._ui_queue = queue.Queue()
+
         # Build all wizard frames and start on the token step
         self._build_frames()
         self._show_frame("token")
+
+        # Start draining the queue only once the UI exists to be updated
+        self._pump_ui()
+
+    def _pump_ui(self):
+        """Apply the UI updates queued by background threads.
+
+        tkinter widgets may only be touched by the thread running the event
+        loop, and after() is not safe to call from another thread either, so
+        worker threads push a callable here instead and this method, which
+        always runs on the main thread, invokes it.
+        """
+        while True:
+            try:
+                update = self._ui_queue.get_nowait()
+            except queue.Empty:
+                break
+            update()
+
+        self.after(UI_POLL_MS, self._pump_ui)
 
     # ── Language selector (token frame only) ──────────────────────────────────
 
@@ -426,46 +453,111 @@ class App(ctk.CTk):
     # ── Step 4: Group ──────────────────────────────────────────────────────────
 
     def _build_group_frame(self):
-        """Build the agenda group selection step (step 4)."""
+        """Build the agenda group selection step (step 4).
+
+        Includes a search box because only one page of groups is ever
+        loaded: when the wanted group is not among the ones listed,
+        searching by name is the only way to reach it.
+        """
         f = self._frames["group"]
         ctk.CTkLabel(f, text=t("step_group"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
         ctk.CTkLabel(f, text=t("group_label"), font=ctk.CTkFont(size=13)).pack(anchor="w")
+
+        # Search row; the entry also submits on Enter so the mouse is optional
+        search_row = ctk.CTkFrame(f, fg_color="transparent")
+        search_row.pack(fill="x", pady=(6, 0))
+        self._group_search = ctk.CTkEntry(search_row, placeholder_text=t("group_search_placeholder"), width=320)
+        self._group_search.pack(side="left", padx=(0, 8))
+        self._group_search.bind("<Return>", lambda _event: self._search_groups())
+        ctk.CTkButton(search_row, text=t("btn_search"), width=90,
+                      command=self._search_groups).pack(side="left")
+
         self._group_var = tk.StringVar()
-        self._group_list = ctk.CTkScrollableFrame(f, height=260)
-        self._group_list.pack(fill="x", pady=(4, 0))
+        self._group_list = ctk.CTkScrollableFrame(f, height=230)
+        self._group_list.pack(fill="x", pady=(8, 0))
+        self._group_count = ctk.CTkLabel(f, text="", text_color="gray", font=ctk.CTkFont(size=12))
+        self._group_count.pack(anchor="w")
         self._group_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12))
         self._group_error.pack(anchor="w")
         self._nav_buttons(f, back="sender", next_cmd=self._group_next)
 
     def _load_groups(self):
-        """Navigate to the group step and fetch agenda groups from the API."""
+        """Navigate to the group step and show the first page of agenda groups."""
         self._show_frame("group")
+        # Always enter the step unfiltered, so a search left over from an
+        # earlier campaign does not appear to hide most of the account
+        self._group_search.delete(0, "end")
+        self._search_groups()
+
+    def _search_groups(self):
+        """Fetch a single page of agenda groups honouring the current search text.
+
+        Only one page is requested per search. Fetching every group meant one
+        API call per hundred groups, each separated by the rate-limit pause,
+        and then one widget per group, which together made accounts with
+        thousands of groups unusable.
+        """
+        name = self._group_search.get().strip()
         self._group_error.configure(text=t("loading"))
+        self._group_count.configure(text="")
+        # Clear the selection as well: the previously selected group may not
+        # be among the results that are about to replace the listing
+        self._group_var.set("")
         for w in self._group_list.winfo_children():
             w.destroy()
 
         def _fetch():
-            """Background thread: fetch agendas and populate the list."""
+            """Background thread: fetch one page of agendas, then hand it to the UI."""
             try:
-                self.agendas = MensagiaAgendaRepository(self.client).get_all()
-                if not self.agendas:
-                    self._group_error.configure(text=t("error_no_groups"))
-                    return
-                self._group_error.configure(text="")
-                for a in self.agendas:
-                    # Show contact count so the user can identify the right group
-                    label = (f"[{a.id}]  " if self._show_ids else "") + f"{a.name}  ({t('group_contacts', count=a.total_users)})"
-                    ctk.CTkRadioButton(
-                        self._group_list, text=label, variable=self._group_var,
-                        value=str(a.id), font=ctk.CTkFont(size=13)
-                    ).pack(anchor="w", pady=2)
-                saved = self._last_sel.get("agenda_id")
-                if saved and any(str(a.id) == saved for a in self.agendas):
-                    self._group_var.set(saved)
+                page = MensagiaAgendaRepository(self.client).search(name=name)
             except MensagiaAPIError as e:
-                self._group_error.configure(text=t("error_api", error=str(e)))
+                message = t("error_api", error=str(e))
+                self._ui_queue.put(lambda: self._group_error.configure(text=message))
+                return
+            self._ui_queue.put(lambda: self._render_groups(page, name))
 
         threading.Thread(target=_fetch, daemon=True).start()
+
+    def _render_groups(self, page, name: str):
+        """Draw a page of agenda groups in the listing.
+
+        Always invoked on the main thread through after(), because tkinter
+        widgets may only be touched from the thread running the event loop.
+
+        Args:
+            page: AgendaPage returned by the repository.
+            name: Search text that produced the page, used to tell an empty
+                account apart from a search that matched nothing.
+        """
+        self.agendas = page.agendas
+
+        if not page.agendas:
+            self._group_error.configure(text=t("group_no_results") if name else t("error_no_groups"))
+            return
+
+        self._group_error.configure(text="")
+        self._group_count.configure(
+            text=t("group_showing", shown=len(page.agendas), total=page.total)
+        )
+
+        for a in page.agendas:
+            # Show contact count so the user can identify the right group
+            label = (f"[{a.id}]  " if self._show_ids else "") + f"{a.name}  ({t('group_contacts', count=a.total_users)})"
+            # Empty groups stay visible but unselectable: choosing one leads
+            # to a campaign with no recipients at all
+            if not a.has_contacts:
+                label += f"  -  {t('group_no_contacts')}"
+            ctk.CTkRadioButton(
+                self._group_list, text=label, variable=self._group_var,
+                value=str(a.id), font=ctk.CTkFont(size=13),
+                state="normal" if a.has_contacts else "disabled",
+            ).pack(anchor="w", pady=2)
+
+        # Restore the previous campaign's group, but only if it is both in
+        # this page and still selectable
+        saved = self._last_sel.get("agenda_id")
+        if saved and any(str(a.id) == saved and a.has_contacts for a in page.agendas):
+            self._group_var.set(saved)
 
     def _group_next(self):
         """Validate that a group is selected and advance to the extra field step."""
@@ -549,9 +641,29 @@ class App(ctk.CTk):
         self._nav_buttons(f, back="field", next_cmd=self._certified_next)
 
     def _certified_next(self):
-        """Build the summary and advance to the summary step."""
-        self._build_summary()
+        """Advance to the summary step and fill it in the background."""
         self._show_frame("summary")
+        self._load_summary()
+
+    def _load_summary(self):
+        """Show the summary step in a loading state and populate it off the main thread.
+
+        The contact query used to run on the main thread, which froze the
+        window while it lasted. Running it in a background thread keeps the
+        Back button usable, so a group that turns out to be unusable is never
+        a dead end for the interface.
+        """
+        self._summary_text.configure(text="")
+        self._summary_contacts_label.configure(text=t("loading"))
+        self._summary_skipped_label.configure(text="")
+        self._summary_error.configure(text="")
+
+        # Keep both send actions out of reach until we know there is something
+        # to send; an empty campaign is precisely the case that used to hang
+        self._dry_run_btn.configure(state="disabled")
+        self._send_btn.configure(state="disabled")
+
+        threading.Thread(target=self._fetch_summary, daemon=True).start()
 
     # ── Step 7: Summary ────────────────────────────────────────────────────────
 
@@ -570,6 +682,9 @@ class App(ctk.CTk):
         self._summary_contacts_label.pack(anchor="w", pady=(8, 0))
         self._summary_skipped_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=12), text_color="gray")
         self._summary_skipped_label.pack(anchor="w")
+        self._summary_error = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=12), text_color="red",
+                                           wraplength=460, justify="left")
+        self._summary_error.pack(anchor="w", pady=(8, 0))
 
         # Navigation row: back, dry-run, and the destructive send button
         btn_frame = ctk.CTkFrame(f, fg_color="transparent")
@@ -586,21 +701,40 @@ class App(ctk.CTk):
                                        fg_color="#e05", hover_color="#c03")
         self._send_btn.pack(side="left")
 
-    def _build_summary(self):
-        """Fetch the eligible contact count and populate the summary step widgets.
+    def _fetch_summary(self):
+        """Background thread: query the selected group's contacts for the summary.
 
-        Queries the API synchronously here (on the main thread) because the
-        result must be ready before _show_frame("summary") is called. The
-        operation is fast because we only query one group's contacts.
+        Errors are reported inline rather than in a modal dialog so the user
+        can simply go back and pick another group.
         """
         try:
             contacts = MensagiaContactRepository(self.client).get_by_group(
                 self.selected_agenda.id, in_mail_blacklist=False
             )
         except MensagiaAPIError as e:
-            messagebox.showerror("Error", t("error_api", error=str(e)))
+            message = t("error_api", error=str(e))
+            self._ui_queue.put(lambda: self._show_summary_error(message))
             return
+        self._ui_queue.put(lambda: self._build_summary(contacts))
 
+    def _show_summary_error(self, message: str):
+        """Report a summary failure, leaving the send actions disabled.
+
+        Args:
+            message: Text explaining why the summary could not be produced.
+        """
+        self._summary_contacts_label.configure(text="")
+        self._summary_error.configure(text=message)
+
+    def _build_summary(self, contacts: list):
+        """Populate the summary step widgets from the group's contacts.
+
+        Always invoked on the main thread through after(), because tkinter
+        widgets may only be touched from the thread running the event loop.
+
+        Args:
+            contacts: Every contact of the selected group, eligible or not.
+        """
         # Replicate the same eligibility filter as the use case
         eligible = [
             c for c in contacts
@@ -620,6 +754,16 @@ class App(ctk.CTk):
         self._summary_contacts_label.configure(text=t("summary_contacts", count=len(eligible)))
         self._summary_skipped_label.configure(text=t("summary_skipped", count=len(contacts) - len(eligible)))
 
+        # A group can hold contacts and still have none that can be written to,
+        # when they lack an email address or the selected extra field. Say so
+        # and leave the send actions disabled instead of starting an empty run
+        if not eligible:
+            self._summary_error.configure(text=t("no_eligible_contacts"))
+            return
+
+        self._dry_run_btn.configure(state="normal")
+        self._send_btn.configure(state="normal")
+
     # ── Step 8: Sending ────────────────────────────────────────────────────────
 
     def _build_sending_frame(self):
@@ -637,6 +781,9 @@ class App(ctk.CTk):
         self._progress_label.pack(anchor="w")
         self._result_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=13), wraplength=460, justify="left")
         self._result_label.pack(anchor="w", pady=(PAD, 0))
+        # Remember the theme's own colour so a later successful run can undo
+        # the red applied when a send fails
+        self._result_color = self._result_label.cget("text_color")
         # Container for post-send action buttons; populated dynamically by _do_send
         self._sending_actions = ctk.CTkFrame(f, fg_color="transparent")
         self._sending_actions.pack(anchor="w", pady=(PAD, 0))
@@ -679,7 +826,7 @@ class App(ctk.CTk):
         self._show_frame("sending")
         self._progress_bar.set(0)
         self._progress_label.configure(text="")
-        self._result_label.configure(text="")
+        self._result_label.configure(text="", text_color=self._result_color)
 
         # Remove any action buttons left over from a previous send
         for w in self._sending_actions.winfo_children():
@@ -819,9 +966,34 @@ class App(ctk.CTk):
                     ).pack(side="left")
 
             except MensagiaAPIError as e:
-                self._result_label.configure(text=t("error_api", error=str(e)), text_color="red")
+                message = t("error_api", error=str(e))
+                self._ui_queue.put(lambda: self._fail_send(message))
+            except Exception as e:
+                # Any other failure would otherwise kill the thread silently and
+                # leave the user staring at an idle progress bar with no way out
+                message = str(e)
+                self._ui_queue.put(lambda: self._fail_send(message))
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _fail_send(self, message: str):
+        """Report a failed send and give the user a way out of the sending step.
+
+        The sending step has no navigation of its own; its buttons are added
+        once a run finishes. Without this, a failure left the step with an
+        error message and nothing to click.
+
+        Args:
+            message: Text to show in place of the send result.
+        """
+        self._result_label.configure(text=message, text_color="red")
+        for w in self._sending_actions.winfo_children():
+            w.destroy()
+        ctk.CTkButton(
+            self._sending_actions, text=t("btn_back_to_summary"),
+            command=lambda: self._show_frame("summary"),
+            fg_color="gray", hover_color="#555"
+        ).pack(side="left")
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
