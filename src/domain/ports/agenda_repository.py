@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from src.domain.entities.agenda import Agenda
+from src.domain.entities.agenda import AgendaPage
 
 
 class AgendaRepository(ABC):
@@ -12,11 +12,22 @@ class AgendaRepository(ABC):
     """
 
     @abstractmethod
-    def get_all(self) -> list[Agenda]:
-        """Retrieve all agendas available in the account.
+    def search(self, name: str = "", page: int = 1, per_page: int = 10) -> AgendaPage:
+        """Retrieve a single page of agendas, optionally filtered by name.
+
+        Deliberately page-based rather than returning every agenda: accounts
+        with thousands of groups made a full listing unusable, both because
+        of the time spent walking every API page and because of the number
+        of widgets the interface then had to render.
+
+        Args:
+            name: Partial name to filter by. An empty string returns the
+                first agendas of the account without any filter.
+            page: 1-based page number to retrieve.
+            per_page: Maximum number of agendas to return in the page.
 
         Returns:
-            A list of Agenda instances. Returns an empty list if no
-            agendas exist or none are accessible with the current token.
+            An AgendaPage with the agendas of the requested page and the
+            total number of matches across all pages.
         """
         pass

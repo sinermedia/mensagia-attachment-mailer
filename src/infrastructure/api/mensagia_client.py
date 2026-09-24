@@ -181,13 +181,37 @@ class MensagiaClient:
 
         return all_items
 
-    def get_agendas(self) -> list:
-        """Fetch all contact groups (agendas) from the account.
+    def get_agendas_page(self, name: str = "", page: int = 1, per_page: int = 10) -> dict:
+        """Fetch a single page of contact groups (agendas) from the account.
+
+        Unlike get_all_pages, this performs exactly one request and never
+        walks the remaining pages. Accounts may hold thousands of agendas,
+        and fetching them all meant one request per hundred agendas, each
+        separated by the rate-limit pause, before the user saw anything.
+
+        Args:
+            name: Partial name to filter by. Blank values apply no filter,
+                so the first agendas of the account are returned instead.
+            page: 1-based page number to retrieve.
+            per_page: Maximum number of agendas to return in the page.
 
         Returns:
-            List of raw agenda dictionaries as returned by the API.
+            The parsed response body, including the 'meta.pagination'
+            section the caller needs to know how many matches exist.
+
+        Raises:
+            MensagiaAPIError: If the API call fails.
         """
-        return self.get_all_pages("agendas")
+        params = {"page": page, "per_page": per_page}
+
+        # Only send the filter when there is something to filter by: the API
+        # treats an empty 'name' as a search for the empty string rather than
+        # as an absent filter
+        if name and name.strip():
+            params["name"] = name.strip()
+            params["search_type"] = "contains"
+
+        return self._get("agendas", params)
 
     def get_contacts(self, group_id: int, in_mail_blacklist: bool = False) -> list:
         """Fetch all contacts belonging to the given agenda group.

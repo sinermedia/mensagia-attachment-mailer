@@ -1,4 +1,4 @@
-from src.domain.entities.agenda import Agenda
+from src.domain.entities.agenda import Agenda, AgendaPage
 from src.domain.ports.agenda_repository import AgendaRepository
 from src.infrastructure.api.mensagia_client import MensagiaClient
 
@@ -21,29 +21,36 @@ class MensagiaAgendaRepository(AgendaRepository):
         """
         self.client = client
 
-    def get_all(self) -> list[Agenda]:
-        """Retrieve all agendas from the Mensagia account and map them to domain objects.
+    def search(self, name: str = "", page: int = 1, per_page: int = 10) -> AgendaPage:
+        """Retrieve one page of agendas from the Mensagia account.
 
-        Fetches raw agenda data via the client (handling pagination
-        automatically) and converts each API dictionary into an Agenda
-        domain entity.
+        Args:
+            name: Partial name to filter by. An empty string applies no filter.
+            page: 1-based page number to retrieve.
+            per_page: Maximum number of agendas to return in the page.
 
         Returns:
-            A list of Agenda objects. Returns an empty list if the account
-            has no agendas.
+            An AgendaPage with the mapped Agenda objects and the total number
+            of matches reported by the API.
 
         Raises:
             MensagiaAPIError: If the API call fails.
         """
-        raw = self.client.get_agendas()
+        raw = self.client.get_agendas_page(name=name, page=page, per_page=per_page)
 
         # Map each raw API dict to a domain Agenda, using 0 as a safe default
         # for total_users when the field is absent from the response
-        return [
+        agendas = [
             Agenda(
                 id=item["id"],
                 name=item["name"],
                 total_users=item.get("total_users", 0),
             )
-            for item in raw
+            for item in raw.get("data", [])
         ]
+
+        # Prefer the API's own match count; fall back to the page size so a
+        # response without pagination metadata still yields a coherent page
+        total = raw.get("meta", {}).get("pagination", {}).get("total", len(agendas))
+
+        return AgendaPage(agendas=agendas, total=total)
