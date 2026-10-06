@@ -1,15 +1,22 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 
 class SendRegistry(ABC):
-    """Port that defines how to track which contacts already received an email in a campaign.
+    """Port that defines how to track the progress of an email campaign.
 
     A campaign is identified by the combination of target group, template,
     attachment extra field, and subject — the same parameters a user would
     pick again when restarting an interrupted bulk send. Implementations
-    persist this state locally so that resuming the same campaign does not
-    re-send emails to contacts that were already reached in a previous,
-    interrupted run.
+    persist this state locally so that resuming the same campaign:
+
+    - does not re-send emails to contacts already reached,
+    - continues the schedule right after the last slot already queued,
+    - can warn about attempts whose outcome is unknown (possible duplicates).
+
+    Every send attempt is recorded with mark_attempt() before calling the
+    delivery service, and resolved afterwards with mark_sent() or
+    discard_attempt(). Attempts left unresolved are the uncertain ones.
     """
 
     @abstractmethod
@@ -31,13 +38,73 @@ class SendRegistry(ABC):
         pass
 
     @abstractmethod
+    def get_last_start_date(
+        self, group_id: int, template_id: int, field_name: str, subject: str
+    ) -> datetime | None:
+        """Return the latest send slot ever attempted in this campaign.
+
+        Args:
+            group_id: ID of the target agenda group.
+            template_id: ID of the email template used.
+            field_name: Name of the extra field holding the attachment URL.
+            subject: Email subject line.
+
+        Returns:
+            The latest start_date passed to mark_attempt() or mark_sent(),
+            or None when the campaign has no record.
+        """
+        pass
+
+    @abstractmethod
+    def get_uncertain_attempts(
+        self, group_id: int, template_id: int, field_name: str, subject: str
+    ) -> dict[int, list[datetime]]:
+        """Return the attempts of this campaign whose outcome is unknown.
+
+        Args:
+            group_id: ID of the target agenda group.
+            template_id: ID of the email template used.
+            field_name: Name of the extra field holding the attachment URL.
+            subject: Email subject line.
+
+        Returns:
+            A dict mapping each contact ID to the list of send slots that
+            were attempted but never resolved. Empty when there are none.
+        """
+        pass
+
+    @abstractmethod
+    def mark_attempt(
+        self, group_id: int, template_id: int, field_name: str, subject: str,
+        contact_id: int, start_date: datetime,
+    ) -> None:
+        """Record that an email is about to be sent to a contact for a given slot.
+
+        Must be called right before calling the delivery service and be
+        persisted immediately, so an abrupt close leaves the attempt on
+        record as uncertain. Also advances the campaign's last start date.
+
+        Args:
+            group_id: ID of the target agenda group.
+            template_id: ID of the email template used.
+            field_name: Name of the extra field holding the attachment URL.
+            subject: Email subject line.
+            contact_id: ID of the contact about to be emailed.
+            start_date: Send slot requested for this email.
+        """
+        pass
+
+    @abstractmethod
     def mark_sent(
-        self, group_id: int, template_id: int, field_name: str, subject: str, contact_id: int
+        self, group_id: int, template_id: int, field_name: str, subject: str,
+        contact_id: int, start_date: datetime,
     ) -> None:
         """Record that a contact successfully received an email in this campaign.
 
-        Implementations must persist this immediately so progress survives
-        an interruption of the send process.
+        Resolves the attempt for the same slot, if any, and advances the
+        campaign's last start date. Earlier unresolved attempts of the same
+        contact are kept, since they may be duplicates. Implementations
+        must persist this immediately so progress survives an interruption.
 
         Args:
             group_id: ID of the target agenda group.
@@ -45,12 +112,33 @@ class SendRegistry(ABC):
             field_name: Name of the extra field holding the attachment URL.
             subject: Email subject line.
             contact_id: ID of the contact that was successfully emailed.
+            start_date: Send slot the email was scheduled for.
+        """
+        pass
+
+    @abstractmethod
+    def discard_attempt(
+        self, group_id: int, template_id: int, field_name: str, subject: str,
+        contact_id: int, start_date: datetime,
+    ) -> None:
+        """Resolve an attempt known not to have scheduled any email.
+
+        The last start date is not rolled back, so later runs still stay
+        after this slot.
+
+        Args:
+            group_id: ID of the target agenda group.
+            template_id: ID of the email template used.
+            field_name: Name of the extra field holding the attachment URL.
+            subject: Email subject line.
+            contact_id: ID of the contact whose attempt failed.
+            start_date: Send slot of the failed attempt.
         """
         pass
 
     @abstractmethod
     def clear(self, group_id: int, template_id: int, field_name: str, subject: str) -> None:
-        """Forget all recorded sends for this campaign.
+        """Forget everything recorded for this campaign.
 
         Called once a campaign completes with no pending or errored
         contacts, so a legitimate future re-send to the same group,

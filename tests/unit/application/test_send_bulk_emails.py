@@ -679,7 +679,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
         send_registry.get_sent_contact_ids.assert_called_once_with(10, 5, "attachment_url", "Test")
 
     def test_mark_sent_called_for_each_successful_send(self, use_case, contact_repo, email_sender, extra_field, send_registry):
-        """mark_sent() is called once per contact right after a successful send."""
+        """mark_sent() is called once per contact with its scheduled slot right after a successful send."""
         contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
         email_sender.send.return_value = {}
 
@@ -689,7 +689,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             now=FIXED_NOW, send_registry=send_registry,
         )
 
-        send_registry.mark_sent.assert_called_once_with(10, 5, "attachment_url", "Test", 1)
+        send_registry.mark_sent.assert_called_once_with(10, 5, "attachment_url", "Test", 1, datetime(2024, 1, 15, 14, 40, 0))
 
     def test_mark_sent_not_called_when_send_fails(self, use_case, contact_repo, email_sender, extra_field, send_registry):
         """mark_sent() is not called for a contact whose send attempt raised an exception."""

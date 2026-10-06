@@ -226,7 +226,7 @@ class SendBulkEmailsUseCase:
                 if logger and not dry_run:
                     logger.log_ok(contact, attachment_url)
                 if send_registry and not dry_run:
-                    send_registry.mark_sent(group_id, template_id, extra_field.name, subject, contact.id)
+                    send_registry.mark_sent(group_id, template_id, extra_field.name, subject, contact.id, start_date)
 
             except Exception as exc:
                 # Any failure (network, API, inaccessible URL) is recorded and
