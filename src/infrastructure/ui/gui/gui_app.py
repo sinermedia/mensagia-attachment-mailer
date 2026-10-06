@@ -18,6 +18,7 @@ from src.infrastructure.config.last_selections import load_last_selections, save
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
 from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
+from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
 
 
 # Apply the light theme globally before any widget is created;
@@ -612,21 +613,23 @@ class App(ctk.CTk):
         subject = self._subject_entry.get().strip()
 
         # Detect contacts already sent this exact campaign in a previous,
-        # interrupted run and let the user decide whether to skip them or
-        # start the whole campaign over again
-        pending_ids = self._send_registry.get_sent_contact_ids(
-            self.selected_agenda.id, self.selected_template.id, self.selected_field.name, subject
-        )
+        # interrupted run, and attempts it left unconfirmed (possible
+        # duplicates), and let the user decide whether to skip the sent
+        # ones or start the whole campaign over again
+        campaign = (self.selected_agenda.id, self.selected_template.id, self.selected_field.name, subject)
+        pending_ids = self._send_registry.get_sent_contact_ids(*campaign)
         already_sent_count = len([c for c in eligible if c.id in pending_ids])
-        if already_sent_count:
-            continue_pending = messagebox.askyesno(
-                t("resume_title"),
-                t("resume_detected", sent=already_sent_count) + "\n\n" + t("resume_continue_prompt"),
-            )
+        uncertain = self._send_registry.get_uncertain_attempts(*campaign)
+        if already_sent_count or uncertain:
+            parts = []
+            if already_sent_count:
+                parts.append(t("resume_detected", sent=already_sent_count))
+            if uncertain:
+                parts.append(t("resume_uncertain") + "\n" + "\n".join(resume_uncertain_lines(uncertain, contacts)))
+            parts.append(t("resume_continue_prompt"))
+            continue_pending = messagebox.askyesno(t("resume_title"), "\n\n".join(parts))
             if not continue_pending:
-                self._send_registry.clear(
-                    self.selected_agenda.id, self.selected_template.id, self.selected_field.name, subject
-                )
+                self._send_registry.clear(*campaign)
                 already_sent_count = 0
 
         # Number of contacts that will actually be sent to in this run
@@ -752,6 +755,12 @@ class App(ctk.CTk):
                 result_text = t(key, sent=len(result.sent), skipped=len(result.skipped), errors=len(result.errors))
                 if error_msgs:
                     result_text += "\n\n" + error_msgs
+
+                # Warn about sends that may have been scheduled without
+                # confirmation, with the recipient and slot to check in the portal
+                uncertain_msgs = result_uncertain_lines(result.uncertain)
+                if uncertain_msgs:
+                    result_text += "\n\n" + "\n\n".join(uncertain_msgs)
                 if send_logger:
                     result_text += f"\n\n{t('log_saved', path=str(send_logger.log_path))}"
 
