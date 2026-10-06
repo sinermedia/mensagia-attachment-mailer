@@ -108,3 +108,53 @@ class TestCalculateStartDates:
         result = calculate_start_dates(10, now)
         for i in range(1, len(result)):
             assert result[i] > result[i - 1]
+
+
+class TestCalculateStartDatesWhenResuming:
+    """Tests for calculate_start_dates() when continuing an interrupted campaign.
+
+    When the last email of a previous run is still far enough in the future,
+    the new run continues right after it so the sending rhythm is preserved
+    and the two runs never overlap. Otherwise the usual 10-20 minute initial
+    gap is applied, exactly as for a brand-new campaign.
+    """
+
+    NOW = datetime(2024, 1, 15, 15, 5, 0)
+
+    def test_continues_right_after_last_scheduled_when_far_in_future(self):
+        """A previous last slot well in the future is followed by the next 12-second slot."""
+        last = datetime(2024, 1, 15, 15, 40, 0)
+        result = calculate_start_dates(2, self.NOW, last_scheduled=last)
+        assert result == [
+            datetime(2024, 1, 15, 15, 40, 12),
+            datetime(2024, 1, 15, 15, 40, 24),
+        ]
+
+    def test_continues_when_next_slot_is_exactly_ten_minutes_ahead(self):
+        """A next slot exactly 10 minutes from now is still close enough to continue."""
+        last = self.NOW + timedelta(minutes=10) - timedelta(seconds=SECONDS_BETWEEN_EMAILS)
+        result = calculate_start_dates(1, self.NOW, last_scheduled=last)
+        assert result[0] == self.NOW + timedelta(minutes=10)
+
+    def test_applies_initial_gap_when_next_slot_is_less_than_ten_minutes_ahead(self):
+        """A next slot under 10 minutes away falls back to the second 10-minute mark."""
+        last = datetime(2024, 1, 15, 15, 14, 0)
+        result = calculate_start_dates(1, self.NOW, last_scheduled=last)
+        assert result[0] == datetime(2024, 1, 15, 15, 20, 0)
+
+    def test_applies_initial_gap_when_last_scheduled_is_in_the_past(self):
+        """A previous last slot already in the past falls back to the second 10-minute mark."""
+        last = datetime(2024, 1, 15, 14, 0, 0)
+        result = calculate_start_dates(1, self.NOW, last_scheduled=last)
+        assert result[0] == datetime(2024, 1, 15, 15, 20, 0)
+
+    def test_none_last_scheduled_behaves_like_a_new_campaign(self):
+        """Passing last_scheduled=None gives the same dates as not passing it at all."""
+        assert calculate_start_dates(3, self.NOW, last_scheduled=None) == calculate_start_dates(3, self.NOW)
+
+    def test_resumed_dates_never_overlap_previous_run(self):
+        """Whatever the previous last slot, the first new slot is always after it."""
+        for minutes in range(-30, 60):
+            last = self.NOW + timedelta(minutes=minutes)
+            result = calculate_start_dates(1, self.NOW, last_scheduled=last)
+            assert result[0] > last
