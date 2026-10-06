@@ -44,6 +44,8 @@ class SendLogger:
     - [SEND_OK]    — one entry per successfully dispatched email
     - [SEND_SKIP]  — one entry per contact excluded before sending
     - [SEND_ERROR] — one entry per contact whose send attempt failed
+    - [SEND_UNCERTAIN] — one entry per attempt that may have been scheduled
+      although the API gave no reliable answer (possible duplicate)
     - [SEND_DONE]  — closing summary with total counts
 
     Example grep usage::
@@ -152,6 +154,22 @@ class SendLogger:
         self._logger.info(
             f"[SEND_ERROR] id={contact.id} name={_q(contact.name)} "
             f"to={contact.email} reason={_q(reason)}"
+        )
+
+    def log_uncertain(self, contact, start_date: datetime, reason: str) -> None:
+        """Log a send attempt that may have been scheduled although no answer arrived.
+
+        The slot is recorded so the user can find the possible duplicate in
+        the Mensagia portal later, even after the on-screen summary is gone.
+
+        Args:
+            contact: Contact domain entity of the uncertain attempt.
+            start_date: Send slot requested in that attempt.
+            reason: Human-readable error description.
+        """
+        self._logger.info(
+            f"[SEND_UNCERTAIN] id={contact.id} name={_q(contact.name)} "
+            f"to={contact.email} start_date={start_date.isoformat()} reason={_q(reason)}"
         )
 
     def log_done(self, sent: int, skipped: int, errors: int) -> None:
