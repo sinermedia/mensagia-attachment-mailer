@@ -60,4 +60,8 @@ STRINGS = {
     "resume_title": "Envío anterior incompleto",
     "resume_detected": "{sent} contacto(s) xa recibiron este correo nun envío anterior interrompido.",
     "resume_continue_prompt": "Queres continuar só cos contactos pendentes? Se respondes que non, volverase enviar a todos os contactos, incluídos os que xa o recibiron.",
+    "resume_uncertain": "Non se puido confirmar se estes correos se chegaron a programar. Se continúas, volveranse programar: cando remate o envío, revisa no portal de Mensagia se algún está repetido e elimina a programación sobrante.",
+    "uncertain_item": "- {email}: {slots}",
+    "possible_duplicate": "Posible duplicado: o correo para {email} programouse, pero quizais tamén se programou para {slots}. Revísao no portal de Mensagia e elimina a programación sobrante.",
+    "uncertain_unconfirmed": "Non se puido confirmar se o correo para {email} se programou para {slots}. Revísao no portal de Mensagia antes de continuar o envío.",
 }

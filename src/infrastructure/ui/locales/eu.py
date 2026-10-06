@@ -60,4 +60,8 @@ STRINGS = {
     "resume_title": "Aurreko bidalketa amaitu gabe",
     "resume_detected": "{sent} kontaktuk jaso zuten dagoeneko mezu hau eten zen aurreko bidalketa batean.",
     "resume_continue_prompt": "Kontaktu pendienteekin bakarrik jarraitu nahi duzu? Ezetz erantzuten baduzu, kontaktu guztiei bidaliko zaie berriro, jadanik jaso dutenei ere barne.",
+    "resume_uncertain": "Ezin izan da baieztatu mezu hauek programatu ziren ala ez. Jarraitzen baduzu, berriro programatuko dira: bidalketa amaitzean, egiaztatu Mensagia atarian errepikaturik dagoen eta ezabatu soberan dagoen programazioa.",
+    "uncertain_item": "- {email}: {slots}",
+    "possible_duplicate": "Bikoiztua izan daiteke: {email} helbiderako mezua programatu da, baina baliteke {slots} unerako ere programatuta egotea. Egiaztatu Mensagia atarian eta ezabatu soberan dagoen programazioa.",
+    "uncertain_unconfirmed": "Ezin izan da baieztatu {email} helbiderako mezua {slots} unerako programatu zen. Egiaztatu Mensagia atarian bidalketarekin jarraitu aurretik.",
 }
