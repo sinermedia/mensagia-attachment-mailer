@@ -14,6 +14,7 @@ from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
 from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
+from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
 
 
 def _choose_language():
@@ -285,15 +286,23 @@ def run():
     skipped_count = len(contacts) - len(eligible)
 
     # Detect contacts already sent this exact campaign in a previous,
-    # interrupted run and let the user decide whether to skip them or
-    # start the whole campaign over again
+    # interrupted run, and attempts it left unconfirmed (possible
+    # duplicates), and let the user decide whether to skip the sent ones
+    # or start the whole campaign over again
     send_registry = JsonSendRegistry()
-    pending_ids = send_registry.get_sent_contact_ids(agenda.id, template.id, extra_field.name, subject)
+    campaign = (agenda.id, template.id, extra_field.name, subject)
+    pending_ids = send_registry.get_sent_contact_ids(*campaign)
     already_sent_count = len([c for c in eligible if c.id in pending_ids])
-    if already_sent_count:
-        print(f"\n  {t('resume_detected', sent=already_sent_count)}")
+    uncertain = send_registry.get_uncertain_attempts(*campaign)
+    if already_sent_count or uncertain:
+        if already_sent_count:
+            print(f"\n  {t('resume_detected', sent=already_sent_count)}")
+        if uncertain:
+            print(f"\n  {t('resume_uncertain')}")
+            for line in resume_uncertain_lines(uncertain, contacts):
+                print(f"    {line}")
         if not _yes_no(f"  {t('resume_continue_prompt')}"):
-            send_registry.clear(agenda.id, template.id, extra_field.name, subject)
+            send_registry.clear(*campaign)
             already_sent_count = 0
 
     # Number of contacts that will actually be sent to in this run
@@ -353,6 +362,11 @@ def run():
     # Print the final outcome summary
     key = "dry_run_complete" if dry_run else "send_complete"
     print(f"\n  {t(key, sent=len(result.sent), skipped=len(result.skipped), errors=len(result.errors))}")
+
+    # Warn about sends that may have been scheduled without confirmation,
+    # with the recipient and slot to check in the Mensagia portal
+    for line in result_uncertain_lines(result.uncertain):
+        print(f"\n  {line}")
 
     if send_logger:
         print(f"  {t('log_saved', path=str(send_logger.log_path))}")
