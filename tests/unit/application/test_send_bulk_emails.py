@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, call, patch
 import pytest
 from src.domain.entities.contact import Contact
 from src.domain.entities.extra_field import ExtraField
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
+from src.domain.ports.email_sender import EmailNotSentError, EmailRejectedError, EmailSendUncertainError
 
 
 # Fixed reference datetime used in all tests to make scheduling deterministic
@@ -627,6 +628,8 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
         """Mock SendRegistry with no prior sends recorded by default."""
         registry = MagicMock()
         registry.get_sent_contact_ids.return_value = set()
+        registry.get_last_start_date.return_value = None
+        registry.get_uncertain_attempts.return_value = {}
         return registry
 
     def test_contact_already_marked_sent_is_not_sent_again(self, use_case, contact_repo, email_sender, extra_field, send_registry):
@@ -752,7 +755,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             make_contact(1, "a@test.com", "https://example.com/a.pdf"),
             make_contact(2, "b@test.com", "https://example.com/b.pdf"),
         ]
-        email_sender.send.side_effect = [{}, Exception("API error")]
+        email_sender.send.side_effect = [{}, EmailRejectedError("API error")]
 
         use_case.execute(
             from_email="sender@test.com", group_id=10, subject="Test",
@@ -801,3 +804,312 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
 
         assert len(result.sent) == 1
         assert result.already_sent == []
+
+
+# First slot computed from FIXED_NOW (14:23) for a brand-new campaign
+FIRST_SLOT = datetime(2024, 1, 15, 14, 40, 0)
+
+
+def slot(n):
+    """Return the n-th (0-indexed) 12-second slot after FIRST_SLOT."""
+    return FIRST_SLOT + timedelta(seconds=12 * n)
+
+
+def run(use_case, extra_field, **kwargs):
+    """Execute the use case with the standard campaign parameters used in this module."""
+    return use_case.execute(
+        from_email="sender@test.com", group_id=10, subject="Test",
+        template_id=5, extra_field=extra_field, certified=0,
+        now=FIXED_NOW, **kwargs,
+    )
+
+
+def sent_slots(email_sender):
+    """Return the (recipient, start_date) pair of every call made to the sender, in order."""
+    return [(c.args[0].to_email, c.args[0].start_date) for c in email_sender.send.call_args_list]
+
+
+@pytest.fixture
+def send_registry():
+    """Mock SendRegistry with no prior state recorded."""
+    registry = MagicMock()
+    registry.get_sent_contact_ids.return_value = set()
+    registry.get_last_start_date.return_value = None
+    registry.get_uncertain_attempts.return_value = {}
+    return registry
+
+
+@pytest.fixture
+def one_contact(contact_repo):
+    """A single eligible contact returned by the repository."""
+    contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+
+
+@pytest.fixture
+def two_contacts(contact_repo):
+    """Two eligible contacts returned by the repository."""
+    contact_repo.get_by_group.return_value = [
+        make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+        make_contact(2, "b@test.com", "https://example.com/b.pdf"),
+    ]
+
+
+class TestSendBulkEmailsUseCaseRetries:
+    """Tests for the end-of-run retry of sends that got no answer from the API.
+
+    Contacts whose request was not processed, or whose outcome is uncertain,
+    are retried once after all other contacts, on new slots right after the
+    last one of the run so the sending rhythm is kept. Rejections and
+    pre-send failures are final and never retried.
+    """
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
+
+    @pytest.mark.parametrize("error", [EmailNotSentError("no connection"), EmailSendUncertainError("timeout")])
+    def test_unanswered_send_is_retried_after_the_other_contacts(self, use_case, email_sender, extra_field, two_contacts, error):
+        """A send without answer is retried at the end on the slot after the last one of the run."""
+        email_sender.send.side_effect = [error, {}, {}]
+
+        run(use_case, extra_field)
+
+        assert sent_slots(email_sender) == [
+            ("a@test.com", slot(0)),
+            ("b@test.com", slot(1)),
+            ("a@test.com", slot(2)),
+        ]
+
+    def test_successful_retry_counts_as_sent(self, use_case, email_sender, extra_field, two_contacts):
+        """A contact whose retry succeeds is reported as sent and not as an error."""
+        email_sender.send.side_effect = [EmailNotSentError("no connection"), {}, {}]
+
+        result = run(use_case, extra_field)
+
+        assert [item["contact"].id for item in result.sent] == [2, 1]
+        assert result.errors == []
+
+    def test_failed_retry_is_reported_once_as_error(self, use_case, email_sender, extra_field, two_contacts):
+        """A contact whose retry fails again is retried only once and reported as one error."""
+        email_sender.send.side_effect = [EmailNotSentError("no connection"), {}, EmailNotSentError("still down")]
+
+        result = run(use_case, extra_field)
+
+        assert email_sender.send.call_count == 3
+        assert len(result.errors) == 1
+        assert result.errors[0]["contact"].id == 1
+        assert result.errors[0]["error"] == "still down"
+
+    def test_rejected_send_is_not_retried(self, use_case, email_sender, extra_field, two_contacts):
+        """A send refused by the API is a final error and is not retried."""
+        email_sender.send.side_effect = [EmailRejectedError("invalid address"), {}]
+
+        result = run(use_case, extra_field)
+
+        assert email_sender.send.call_count == 2
+        assert [item["contact"].id for item in result.errors] == [1]
+
+    def test_unexpected_send_exception_is_treated_as_uncertain(self, use_case, email_sender, extra_field, two_contacts):
+        """An unknown exception from the sender is handled conservatively as an uncertain send."""
+        email_sender.send.side_effect = [RuntimeError("boom"), {}, {}]
+
+        result = run(use_case, extra_field)
+
+        assert email_sender.send.call_count == 3
+        assert [u["contact"].id for u in result.uncertain] == [1]
+
+    def test_failure_before_sending_is_not_retried(self, use_case, contact_repo, email_sender, extra_field):
+        """A contact failing before any API call (e.g. unresolvable attachment) is not retried."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "relative.pdf")]
+
+        result = run(use_case, extra_field)
+
+        email_sender.send.assert_not_called()
+        assert len(result.errors) == 1
+
+    def test_sleep_before_every_attempt_including_retries(self, use_case, email_sender, extra_field, two_contacts, mock_sleep):
+        """The 1-second pause is applied before retries too, to respect the API rate limit."""
+        email_sender.send.side_effect = [EmailNotSentError("no connection"), {}, {}]
+
+        run(use_case, extra_field)
+
+        assert mock_sleep.call_count == 3
+
+    def test_logger_records_only_the_final_outcome_of_a_retried_contact(self, use_case, email_sender, extra_field, two_contacts):
+        """A not-sent first attempt followed by a successful retry logs a single SEND_OK and no error."""
+        email_sender.send.side_effect = [EmailNotSentError("no connection"), {}, {}]
+        logger = MagicMock()
+
+        run(use_case, extra_field, logger=logger)
+
+        assert logger.log_ok.call_count == 2
+        logger.log_error.assert_not_called()
+        logger.log_done.assert_called_once_with(2, 0, 0)
+
+
+class TestSendBulkEmailsUseCaseUncertainSends:
+    """Tests for reporting sends that may have been scheduled without confirmation.
+
+    Every uncertain attempt is reported in SendResult.uncertain with the slot
+    the user must check in the Mensagia portal, together with whether the
+    contact ended up sent (making that slot a possible duplicate).
+    """
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
+
+    def test_uncertain_send_later_confirmed_is_a_possible_duplicate(self, use_case, email_sender, extra_field, one_contact):
+        """An uncertain attempt followed by a successful retry is reported as sent with the first slot."""
+        email_sender.send.side_effect = [EmailSendUncertainError("timeout"), {}]
+
+        result = run(use_case, extra_field)
+
+        assert len(result.uncertain) == 1
+        assert result.uncertain[0]["contact"].id == 1
+        assert result.uncertain[0]["start_dates"] == [slot(0)]
+        assert result.uncertain[0]["sent"] is True
+
+    def test_uncertain_send_never_confirmed_lists_every_slot(self, use_case, email_sender, extra_field, one_contact):
+        """When the retry is uncertain too, both slots are reported and the contact is not sent."""
+        email_sender.send.side_effect = EmailSendUncertainError("timeout")
+
+        result = run(use_case, extra_field)
+
+        assert result.uncertain[0]["start_dates"] == [slot(0), slot(1)]
+        assert result.uncertain[0]["sent"] is False
+        assert len(result.errors) == 1
+
+    def test_not_sent_error_is_never_reported_as_uncertain(self, use_case, email_sender, extra_field, one_contact):
+        """A request known not to have been processed does not produce a duplicate warning."""
+        email_sender.send.side_effect = [EmailNotSentError("no connection"), {}]
+
+        result = run(use_case, extra_field)
+
+        assert result.uncertain == []
+
+    def test_uncertain_attempt_is_logged_with_its_slot(self, use_case, email_sender, extra_field, one_contact):
+        """Each uncertain attempt is written to the log with the slot to check."""
+        email_sender.send.side_effect = [EmailSendUncertainError("timeout"), {}]
+        logger = MagicMock()
+
+        run(use_case, extra_field, logger=logger)
+
+        logger.log_uncertain.assert_called_once_with(
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"), slot(0), "timeout"
+        )
+
+    def test_uncertain_attempts_from_previous_run_are_reported(self, use_case, email_sender, extra_field, one_contact, send_registry):
+        """Unresolved attempts recorded by an interrupted run are included in the result."""
+        previous = datetime(2024, 1, 15, 13, 0, 0)
+        send_registry.get_uncertain_attempts.return_value = {1: [previous]}
+        email_sender.send.return_value = {}
+
+        result = run(use_case, extra_field, send_registry=send_registry)
+
+        assert result.uncertain[0]["start_dates"] == [previous]
+        assert result.uncertain[0]["sent"] is True
+
+    def test_previous_uncertain_attempt_of_already_sent_contact_is_reported_as_sent(self, use_case, email_sender, extra_field, one_contact, send_registry):
+        """A previous unresolved attempt of a contact already sent is reported as a possible duplicate."""
+        send_registry.get_sent_contact_ids.return_value = {1}
+        send_registry.get_uncertain_attempts.return_value = {1: [datetime(2024, 1, 15, 13, 0, 0)]}
+
+        result = run(use_case, extra_field, send_registry=send_registry)
+
+        assert result.uncertain[0]["sent"] is True
+
+    def test_uncertain_attempts_are_not_reported_in_dry_run(self, use_case, email_sender, extra_field, one_contact, send_registry):
+        """A dry run reports nothing as uncertain because it never contacts the API."""
+        send_registry.get_uncertain_attempts.return_value = {1: [datetime(2024, 1, 15, 13, 0, 0)]}
+
+        result = run(use_case, extra_field, send_registry=send_registry, dry_run=True)
+
+        assert result.uncertain == []
+
+
+class TestSendBulkEmailsUseCaseRegistryAttempts:
+    """Tests that every API call is recorded as an attempt and resolved afterwards.
+
+    Recording the attempt before calling the API is what lets an abrupt close
+    be detected as a possible duplicate on the next run, and its slot keeps
+    the next run's schedule from overlapping.
+    """
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
+
+    def test_attempt_is_recorded_before_calling_the_api(self, use_case, email_sender, extra_field, one_contact, send_registry):
+        """mark_attempt() is called with the contact and slot before the sender is invoked."""
+        order = []
+        send_registry.mark_attempt.side_effect = lambda *a: order.append(("attempt", a))
+        email_sender.send.side_effect = lambda m: order.append(("send", m.start_date)) or {}
+
+        run(use_case, extra_field, send_registry=send_registry)
+
+        assert order == [("attempt", (10, 5, "attachment_url", "Test", 1, slot(0))), ("send", slot(0))]
+
+    @pytest.mark.parametrize("error", [EmailRejectedError("invalid"), EmailNotSentError("no connection")])
+    def test_attempt_is_discarded_when_nothing_was_scheduled(self, use_case, email_sender, extra_field, one_contact, send_registry, error):
+        """A rejected or not-processed request resolves its attempt with discard_attempt()."""
+        email_sender.send.side_effect = [error, EmailRejectedError("invalid")]
+
+        run(use_case, extra_field, send_registry=send_registry)
+
+        assert call(10, 5, "attachment_url", "Test", 1, slot(0)) in send_registry.discard_attempt.call_args_list
+
+    def test_uncertain_attempt_is_left_unresolved(self, use_case, email_sender, extra_field, one_contact, send_registry):
+        """An uncertain send keeps its attempt on record so a later run can warn about it."""
+        email_sender.send.side_effect = EmailSendUncertainError("timeout")
+
+        run(use_case, extra_field, send_registry=send_registry)
+
+        send_registry.discard_attempt.assert_not_called()
+
+    def test_no_attempt_recorded_when_failing_before_the_api_call(self, use_case, contact_repo, email_sender, extra_field, send_registry):
+        """A contact that fails before calling the API never records an attempt."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "relative.pdf")]
+
+        run(use_case, extra_field, send_registry=send_registry)
+
+        send_registry.mark_attempt.assert_not_called()
+
+    def test_no_attempt_recorded_in_dry_run(self, use_case, email_sender, extra_field, one_contact, send_registry):
+        """A dry run never writes attempts to the registry."""
+        run(use_case, extra_field, send_registry=send_registry, dry_run=True)
+
+        send_registry.mark_attempt.assert_not_called()
+
+    def test_resumed_run_continues_after_previous_last_slot(self, use_case, email_sender, extra_field, one_contact, send_registry):
+        """With a previous last slot far enough ahead, the first email goes 12 seconds after it."""
+        send_registry.get_last_start_date.return_value = datetime(2024, 1, 15, 15, 40, 0)
+        email_sender.send.return_value = {}
+
+        run(use_case, extra_field, send_registry=send_registry)
+
+        assert sent_slots(email_sender) == [("a@test.com", datetime(2024, 1, 15, 15, 40, 12))]
+
+    def test_resumed_run_with_past_last_slot_applies_initial_gap(self, use_case, email_sender, extra_field, one_contact, send_registry):
+        """With a previous last slot already in the past, the usual initial gap applies."""
+        send_registry.get_last_start_date.return_value = datetime(2024, 1, 15, 12, 0, 0)
+        email_sender.send.return_value = {}
+
+        run(use_case, extra_field, send_registry=send_registry)
+
+        assert sent_slots(email_sender) == [("a@test.com", slot(0))]
+
+    def test_dry_run_preview_uses_the_resumed_schedule(self, use_case, email_sender, extra_field, one_contact, send_registry):
+        """The dry run reads the previous last slot so its preview matches a real resumed run."""
+        send_registry.get_last_start_date.return_value = datetime(2024, 1, 15, 15, 40, 0)
+
+        result = run(use_case, extra_field, send_registry=send_registry, dry_run=True)
+
+        send_registry.get_last_start_date.assert_called_once_with(10, 5, "attachment_url", "Test")
+        assert len(result.sent) == 1
