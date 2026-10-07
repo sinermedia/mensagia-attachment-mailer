@@ -133,12 +133,17 @@ jobs:
 
       # ditto keeps the symlinks and permissions inside the .app bundle and
       # the console binary's executable bit, which a plain zip can lose,
-      # leaving an app that refuses to start
+      # leaving an app that refuses to start. --keepParent stores the .app
+      # folder itself; for the single console file it would also store the
+      # dist/ folder around it, so it is left out there
       - name: Package
         run: |
           mkdir -p release
           ditto -c -k --keepParent dist/mensagia-mailer-gui.app "release/mensagia-mailer-gui-macos-${{ matrix.arch }}.zip"
-          ditto -c -k --keepParent dist/mensagia-mailer-console "release/mensagia-mailer-console-macos-${{ matrix.arch }}.zip"
+          ditto -c -k dist/mensagia-mailer-console "release/mensagia-mailer-console-macos-${{ matrix.arch }}.zip"
+          # Fail here rather than ship zips with an unexpected layout
+          unzip -l "release/mensagia-mailer-gui-macos-${{ matrix.arch }}.zip" | grep -q " mensagia-mailer-gui.app/Contents/MacOS/mensagia-mailer-gui$"
+          unzip -l "release/mensagia-mailer-console-macos-${{ matrix.arch }}.zip" | grep -q " mensagia-mailer-console$"
 
       - uses: actions/upload-artifact@v7
         with:
