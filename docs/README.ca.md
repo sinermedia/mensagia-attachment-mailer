@@ -86,6 +86,28 @@ python main.py
 
 ---
 
+## Ruta de l'adjunt al camp personalitzat
+
+El camp personalitzat triat al pas 6 pot indicar l'adjunt de cada contacte de dues maneres:
+
+- **URL completa**, que comença per `http://` o `https://` (per exemple, `https://cdn.empresa.com/docs/factura_42.pdf`). Es fa servir tal qual.
+- **Nom de fitxer o ruta relativa** (per exemple, `factura_42.pdf` o `2026/factura_42.pdf`). L'aplicació hi afegeix al davant una **URL base**: amb la base `https://cdn.empresa.com/docs/`, el valor `factura_42.pdf` es converteix en `https://cdn.empresa.com/docs/factura_42.pdf`.
+
+Les dues formes es poden combinar dins del mateix grup.
+
+La URL base es pot indicar de diverses maneres:
+
+- Al fitxer `.env`, amb la variable `MENSAGIA_ATTACHMENT_BASE_URL`:
+  ```
+  MENSAGIA_ATTACHMENT_BASE_URL=https://cdn.empresa.com/docs/
+  ```
+- En el **mode gràfic**, al camp **URL base adjunts** de la primera pantalla. Si està definida al `.env`, ja apareix emplenada.
+- En el **mode consola**, l'aplicació la demana només si algun contacte té una ruta relativa i la variable no és al `.env`.
+
+> La URL base ha de ser sempre una **adreça web pública**, mai una carpeta de l'ordinador: és Mensagia qui descarrega el fitxer per adjuntar-lo al correu. Pot acabar en `/` o no; l'aplicació ho té en compte.
+
+---
+
 ## ⚠ Avís sobre els contactes del grup
 
 El grup s'utilitza com a **font de contactes**, no com a llista de subscripció. L'aplicació enviarà el correu a **tots els contactes que formin part del grup**, hi estiguin subscrits o no.

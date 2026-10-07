@@ -86,6 +86,28 @@ python main.py
 
 ---
 
+## Eranskinaren bidea eremu pertsonalizatuan
+
+6. urratsean aukeratutako eremu pertsonalizatuak kontaktu bakoitzaren eranskina bi modutan adieraz dezake:
+
+- **URL osoa**, `http://` edo `https://`-rekin hasten dena (adibidez, `https://cdn.empresa.com/docs/factura_42.pdf`). Dagoen bezala erabiltzen da.
+- **Fitxategi-izena edo bide erlatiboa** (adibidez, `factura_42.pdf` edo `2026/factura_42.pdf`). Aplikazioak **oinarrizko URL** bat jartzen dio aurretik: `https://cdn.empresa.com/docs/` oinarriarekin, `factura_42.pdf` balioa `https://cdn.empresa.com/docs/factura_42.pdf` bihurtzen da.
+
+Bi moduak talde berean konbina daitezke.
+
+Oinarrizko URLa hainbat modutan adieraz daiteke:
+
+- `.env` fitxategian, `MENSAGIA_ATTACHMENT_BASE_URL` aldagaiarekin:
+  ```
+  MENSAGIA_ATTACHMENT_BASE_URL=https://cdn.empresa.com/docs/
+  ```
+- **GUI moduan**, lehen pantailako **Eranskinaren oinarrizko URLa** eremuan. `.env`-n definituta badago, beteta agertzen da.
+- **Kontsola moduan**, aplikazioak kontaktuen batek bide erlatiboa badu eta aldagaia `.env`-n ez badago bakarrik eskatzen du.
+
+> Oinarrizko URLak beti **web helbide publiko** bat izan behar du, inoiz ez ordenagailuko karpeta bat: Mensagiak deskargatzen du fitxategia mezuari eransteko. `/`-rekin amai daiteke edo ez; aplikazioak kontuan hartzen du.
+
+---
+
 ## ⚠ Oharra taldeko kontaktuei buruz
 
 Taldea **kontaktu-iturri** gisa erabiltzen da, ez harpidetza-zerrenda gisa. Aplikazioak **taldeko kontaktu guztiei** bidaliko die mezua, agenda horretan harpideduta dauden ala ez.

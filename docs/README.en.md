@@ -86,6 +86,28 @@ python main.py
 
 ---
 
+## Attachment path in the custom field
+
+The custom field chosen in step 6 can specify each contact's attachment in two ways:
+
+- **Full URL**, starting with `http://` or `https://` (for example, `https://cdn.example.com/docs/invoice_42.pdf`). It is used as is.
+- **File name or relative path** (for example, `invoice_42.pdf` or `2026/invoice_42.pdf`). The app prepends a **base URL** to it: with the base `https://cdn.example.com/docs/`, the value `invoice_42.pdf` becomes `https://cdn.example.com/docs/invoice_42.pdf`.
+
+Both forms can be mixed within the same group.
+
+The base URL can be provided in several ways:
+
+- In the `.env` file, with the `MENSAGIA_ATTACHMENT_BASE_URL` variable:
+  ```
+  MENSAGIA_ATTACHMENT_BASE_URL=https://cdn.example.com/docs/
+  ```
+- In **GUI mode**, in the **Attachment base URL** field on the first screen. If it is set in `.env`, it appears already filled in.
+- In **console mode**, the app asks for it only if some contact has a relative path and the variable is not set in `.env`.
+
+> The base URL must always be a **public web address**, never a folder on your computer: Mensagia is the one that downloads the file to attach it to the email. It may end in `/` or not; the app handles both.
+
+---
+
 ## ⚠ Note about group contacts
 
 The group is used as a **contact source**, not as a subscription list. The app will send the email to **all contacts that belong to the group**, regardless of whether they are subscribed to it or not.

@@ -86,6 +86,28 @@ python main.py
 
 ---
 
+## Ruta del adjunto en el campo personalizado
+
+El campo personalizado elegido en el paso 6 puede indicar el adjunto de cada contacto de dos formas:
+
+- **URL completa**, que empieza por `http://` o `https://` (por ejemplo, `https://cdn.empresa.com/docs/factura_42.pdf`). Se usa tal cual.
+- **Nombre de archivo o ruta relativa** (por ejemplo, `factura_42.pdf` o `2026/factura_42.pdf`). La aplicación le antepone una **URL base**: con la base `https://cdn.empresa.com/docs/`, el valor `factura_42.pdf` se convierte en `https://cdn.empresa.com/docs/factura_42.pdf`.
+
+Las dos formas se pueden combinar dentro del mismo grupo.
+
+La URL base se puede indicar de varias maneras:
+
+- En el archivo `.env`, con la variable `MENSAGIA_ATTACHMENT_BASE_URL`:
+  ```
+  MENSAGIA_ATTACHMENT_BASE_URL=https://cdn.empresa.com/docs/
+  ```
+- En el **modo gráfico**, en el campo **URL base adjuntos** de la primera pantalla. Si está definida en el `.env`, aparece ya rellenada.
+- En el **modo consola**, la aplicación la pide solo si algún contacto tiene una ruta relativa y la variable no está en el `.env`.
+
+> La URL base debe ser siempre una **dirección web pública**, nunca una carpeta del ordenador: es Mensagia quien descarga el archivo para adjuntarlo al correo. Puede terminar en `/` o no; la aplicación lo tiene en cuenta.
+
+---
+
 ## ⚠ Aviso sobre los contactos del grupo
 
 El grupo se usa como **fuente de contactos**, no como lista de suscripción. La aplicación enviará el correo a **todos los contactos que pertenezcan al grupo**, estén suscritos a él o no.
