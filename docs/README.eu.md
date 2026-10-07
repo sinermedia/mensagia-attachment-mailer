@@ -8,26 +8,86 @@
 
 ## Eskakizunak
 
-- Windows 10/11 (exekutagarria erabiltzeko)
+- Windows 10/11 edo macOS (exekutagarriak erabiltzeko)
 - Edo Python 3.11+ (iturburu-kodea erabiltzeko)
 
 ---
 
 ## Exekutagarriaren erabilera (Pythonik gabeko bezeroak)
 
-1. Deskargatu exekutagarria [releases orritik](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest) (GUI modurako `mensagia-mailer-gui.exe`, edo kontsola modurako `mensagia-mailer-console.exe`)
-2. Sortu `.env` fitxategi bat `.exe`-aren **karpeta berean**, zure tokenarekin:
+Deskargatu zure ordenagailurako bertsioa [releases orritik](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest):
+
+| Ordenagailua | GUI modua | Kontsola modua |
+|---|---|---|
+| Windows | `mensagia-mailer-gui-windows.exe` | `mensagia-mailer-console-windows.exe` |
+| Apple Silicon duen Mac-a (M1, M2…) | `mensagia-mailer-gui-macos-apple-silicon.zip` | `mensagia-mailer-console-macos-apple-silicon.zip` |
+| Intel prozesadorea duen Mac-a | `mensagia-mailer-gui-macos-intel.zip` | `mensagia-mailer-console-macos-intel.zip` |
+
+### API tokena
+
+Aplikazioak zure Mensagiako API tokena behar du, [mensagia.com](https://mensagia.com) → Erabiltzaileak atalean lor dezakezuna. Konfiguratuta ez badago, abiatzean eskatuko dizu. Aldi bakoitzean idatzi behar ez izateko, gorde ezazu `.env` fitxategi batean, [aplikazioaren datu-karpetan](#aplikazioaren-fitxategiak):
 
 ```
 MENSAGIA_API_TOKEN=zure_api_tokena_hemen
 ```
 
-> Zure API tokena [mensagia.com](https://mensagia.com) → Erabiltzaileak atalean lor dezakezu.
-> `.env` fitxategia ez badago, aplikazioak tokena eskatuko dizu abiatzean.
+### Windows
 
+1. Deskargatu `.exe`. Aplikazioak bere fitxategiak karpeta berean gordetzen ditu; beraz, komeni da karpeta propio batean jartzea.
+2. Nahi izanez gero, sortu `.env` fitxategia **karpeta berean**.
 3. Exekutatu `.exe`.
 
 > **Windows SmartScreen oharra:** fitxategia lehen aldiz exekutatzen duzunean, Windowsek segurtasun abisua erakuts dezake. Egin klik **"Informazio gehiago"** eta gero **"Exekutatu hala ere"** aukeretan. Deskargatutako bertsio bakoitzeko behin bakarrik egin behar da.
+
+### macOS
+
+> macOS ez dago euskaraz: hemen agertzen diren menuen izenak gaztelaniazko bertsiokoak dira.
+
+1. **Aukeratu zure Mac-aren bertsioa.** Ireki Apple menua → **Acerca de este Mac**:
+   - **Chip** agertzen bada (Apple M1, M2, M3…), deskargatu `apple-silicon` bertsioa.
+   - **Procesador** agertzen bada (Intel…), deskargatu `intel` bertsioa.
+
+   > GitHub Intel duten Mac-etarako konpilatzen duten makinak erretiratzen ari da. Azken bertsioak `intel` fitxategiak ez baditu, deskargatu itzazu haiek dituen bertsio berrienetik, [releases zerrendan](https://github.com/sinermedia/mensagia-attachment-mailer/releases).
+
+2. Egin klik bikoitza `.zip` fitxategian deskonprimitzeko (Safarik automatikoki egin dezake deskargatzean). GUI moduan `mensagia-mailer-gui.app` lortuko duzu, eta **Aplicaciones** karpetara eraman dezakezu.
+3. Nahi izanez gero, gorde `.env` fitxategia zure karpeta pertsonaleko **Mensagia Mailer** karpetan. Biak Terminaletik sor ditzakezu:
+
+   ```
+   mkdir -p ~/"Mensagia Mailer"
+   echo "MENSAGIA_API_TOKEN=zure_api_tokena_hemen" > ~/"Mensagia Mailer/.env"
+   ```
+
+   > Finderrek ezkutatu egiten ditu puntu batekin hasten diren fitxategiak, `.env` bezala. Sakatu **Cmd + Maius + .** erakusteko edo ezkutatzeko.
+
+4. Ireki aplikazioa. Lehen aldian, macOSek blokeatu egingo du, Applek sinatu gabe dagoelako (Windowseko SmartScreen oharraren baliokidea da). Baimentzeko:
+   - **macOS 15 (Sequoia) edo berriagoa:** oharraren ondoren, ireki **Ajustes del Sistema → Privacidad y seguridad**, jaitsi aplikazioari buruzko mezura arte eta sakatu **Abrir igualmente**. Ireki berriro eta berretsi.
+   - **macOS 14 edo zaharragoa:** egin eskuineko klik aplikazioan → **Abrir**, eta berretsi oharrean.
+   - **Edozein bertsiotan, Terminaletik:** `xattr -cr` eta ondoren aplikazioaren bidea, adibidez `xattr -cr /Applications/mensagia-mailer-gui.app`.
+
+   Deskargatutako bertsio bakoitzeko behin bakarrik egin behar da.
+
+> Kontsola bertsioa klik bikoitzarekin irekitzen da eta Terminaleko leiho batean exekutatzen da.
+
+---
+
+## Aplikazioaren fitxategiak
+
+Aplikazioak datu-karpeta batean gordetzen ditu bere fitxategiak, eta karpeta hori nola exekutatzen den araberakoa da:
+
+| Exekuzioa | Datu-karpeta |
+|---|---|
+| Windows (`.exe`) | `.exe` fitxategiaren karpeta bera |
+| macOS | `Mensagia Mailer`, zure karpeta pertsonalaren barruan (`~/Mensagia Mailer`) |
+| Iturburu-kodea | Proiektuaren erroa |
+
+Karpeta horretan daude:
+
+- `.env`: konfigurazioa (API tokena, hizkuntza, eranskinen oinarrizko URLa…). Zuk sortzen duzu, eta aukerakoa da.
+- `logs/`: bidalketa bakoitzaren erregistroa.
+- `last_selections.json`: aukeratutako azken aukerak (ikus [Hautaketen memoria](#hautaketen-memoria-gui-modua)).
+- `send_progress.json`: bidalketen aurrerapena (ikus [Etendako bidalketa berriro hasi](#etendako-bidalketa-berriro-hasi)).
+
+Aplikazioak karpeta eta fitxategiak behar dituen heinean sortzen ditu.
 
 ---
 
@@ -147,7 +207,7 @@ Etenaldia mezu bat programatzen ari zen une berean gertatzen bada, edo Mensagiak
 
 Mensagiaren APIak ez du programatutako bidalketak kontsultatzen uzten; beraz, egiaztapen hori eskuz egin behar da atarian, soberan dagoen programazioa ezabatuz.
 
-> Aurrerapena `send_progress.json` fitxategian gordetzen da, `.env` edo `.exe` fitxategiaren karpeta berean. Bidalketa bat errorerik gabe amaitzen denean, kanpaina fitxategitik ezabatzen da. Ez ezabatu fitxategia berriro hasteko zain dagoen bidalketarik dagoen bitartean.
+> Aurrerapena `send_progress.json` fitxategian gordetzen da, [aplikazioaren datu-karpetan](#aplikazioaren-fitxategiak). Bidalketa bat errorerik gabe amaitzen denean, kanpaina fitxategitik ezabatzen da. Ez ezabatu fitxategia berriro hasteko zain dagoen bidalketarik dagoen bitartean.
 
 ---
 
@@ -156,7 +216,7 @@ Mensagiaren APIak ez du programatutako bidalketak kontsultatzen uzten; beraz, eg
 Bidalketa edo simulazio bakoitzaren ondoren, aplikazioak aukeratutako
 parametroak (txantiloia, bidaltzailea, taldea, eranskin eremua eta
 ziurtagiria) `last_selections.json` fitxategi batean gordetzen ditu,
-`.env` edo `.exe` fitxategiaren karpeta berean.
+[aplikazioaren datu-karpetan](#aplikazioaren-fitxategiak).
 
 Hurrengo exekuzioan, aukera horiek lehenespenez markatuta agertuko dira.
 
@@ -172,21 +232,14 @@ Hizkuntza erabilgarriak: **Español, Català, Galego, Euskera, English**.
 
 ---
 
-## Exekutagarria sortu
+## Exekutagarriak sortu
 
-Garapen-mendekotasunak behar ditu:
+Exekutagarriak automatikoki sortzen dira GitHub Actions-ekin (`.github/workflows/build-release.yml`). PyInstallerrek ezin du beste sistema baterako konpilatu; beraz, bertsio bakoitza dagokion sistemako makina batean konpilatzen da: Windows, Apple Silicon duen Mac-a eta Intel duen Mac-a.
 
-```bash
-pip install -r requirements-dev.txt
-```
+- **`vX.Y.Z` tag bat igotzean**, workflow-ak hiru bertsioak konpilatzen ditu eta **release zirriborro** bat sortzen du sei fitxategiak erantsita. Ondoren, oharrak idatzi eta argitaratu egiten da.
+- **Eskuz**, **Actions** fitxatik → **Run workflow**, hiru bertsioak konpilatzen ditu releaserik sortu gabe, eta fitxategiak exekuzioan bertan uzten ditu deskargatzeko (**Artifacts** atala).
 
-Konpilazio scripta exekutatu:
-
-```bash
-build.bat
-```
-
-`.exe` fitxategiak `dist/` karpetan sortzen dira.
+> Intel duen Mac-erako konpilazioak huts egiten badu GitHubek makina horiek dagoeneko erretiratu dituelako, release zirriborroa sortzen da hala ere, Windows eta Apple Silicon fitxategiekin.
 
 ---
 
@@ -222,7 +275,7 @@ mensagia-attachment-mailer/
 ├── tests/
 ├── main.py                 # Kontsola sarrera-puntua
 ├── main_gui.py             # Sarrera-puntu grafikoa
-├── build.bat               # .exe-ra konpilatzeko scripta
+├── .github/workflows/      # Exekutagarriak konpilatzea (GitHub Actions)
 ├── requirements.txt
 ├── requirements-dev.txt
 └── .env.example

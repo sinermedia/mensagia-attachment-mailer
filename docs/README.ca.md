@@ -8,26 +8,84 @@ Aplicació per enviar correus electrònics amb adjunts personalitzats per contac
 
 ## Requisits
 
-- Windows 10/11 (per a l'executable)
+- Windows 10/11 o macOS (per als executables)
 - O Python 3.11+ (per executar des del codi font)
 
 ---
 
 ## Ús de l'executable (clients sense Python)
 
-1. Descarrega l'executable des de la [pàgina de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest) (`mensagia-mailer-gui.exe` per al mode gràfic, o `mensagia-mailer-console.exe` per al mode consola)
-2. Crea un fitxer `.env` a la **mateixa carpeta** que el `.exe` amb el teu token:
+Descarrega la versió per al teu ordinador des de la [pàgina de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest):
+
+| Ordinador | Mode gràfic | Mode consola |
+|---|---|---|
+| Windows | `mensagia-mailer-gui-windows.exe` | `mensagia-mailer-console-windows.exe` |
+| Mac amb Apple Silicon (M1, M2…) | `mensagia-mailer-gui-macos-apple-silicon.zip` | `mensagia-mailer-console-macos-apple-silicon.zip` |
+| Mac amb processador Intel | `mensagia-mailer-gui-macos-intel.zip` | `mensagia-mailer-console-macos-intel.zip` |
+
+### Token API
+
+L'aplicació necessita el teu token API de Mensagia, que pots obtenir a [mensagia.com](https://mensagia.com) → Usuaris. Si no el tens configurat, te'l demanarà en arrencar. Per no haver-lo d'introduir cada vegada, desa'l en un fitxer `.env` a la [carpeta de dades de l'aplicació](#fitxers-de-laplicació):
 
 ```
 MENSAGIA_API_TOKEN=el_teu_token_api_aqui
 ```
 
-> Pots obtenir el teu token API a [mensagia.com](https://mensagia.com) → Usuaris.
-> Si no existeix el fitxer `.env`, l'aplicació et demanarà el token en arrencar.
+### Windows
 
+1. Descarrega el `.exe`. L'aplicació desa els seus fitxers a la mateixa carpeta, així que convé posar-lo en una carpeta pròpia.
+2. Opcionalment, crea el fitxer `.env` en aquesta **mateixa carpeta**.
 3. Executa el `.exe`.
 
 > **Avís de Windows SmartScreen:** la primera vegada que executis el fitxer, el Windows pot mostrar un avís de seguretat. Fes clic a **"Més informació"** i després a **"Executa de totes maneres"**. Només cal fer-ho una vegada per cada versió descarregada.
+
+### macOS
+
+1. **Tria la versió del teu Mac.** Obre el menú Apple → **Quant a aquest Mac**:
+   - Si hi apareix **Xip** (Apple M1, M2, M3…), descarrega la versió `apple-silicon`.
+   - Si hi apareix **Processador** (Intel…), descarrega la versió `intel`.
+
+   > GitHub està retirant les màquines que compilen per a Mac amb Intel. Si l'última versió no inclou els fitxers `intel`, descarrega'ls de la versió més recent que els tingui a la [llista de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases).
+
+2. Fes doble clic al `.zip` per descomprimir-lo (el Safari ho pot fer automàticament en descarregar-lo). En mode gràfic obtindràs `mensagia-mailer-gui.app`, que pots moure a **Aplicacions**.
+3. Opcionalment, desa el fitxer `.env` a la carpeta **Mensagia Mailer** de la teva carpeta personal. Pots crear totes dues coses des del Terminal:
+
+   ```
+   mkdir -p ~/"Mensagia Mailer"
+   echo "MENSAGIA_API_TOKEN=el_teu_token_api_aqui" > ~/"Mensagia Mailer/.env"
+   ```
+
+   > El Finder amaga els fitxers el nom dels quals comença per un punt, com `.env`. Prem **Ordre + Maj + .** per mostrar-los o amagar-los.
+
+4. Obre l'aplicació. La primera vegada, el macOS la bloquejarà perquè no està signada per Apple (és l'equivalent de l'avís de SmartScreen del Windows). Per permetre-la:
+   - **macOS 15 (Sequoia) o posterior:** després de l'avís, obre **Configuració del Sistema → Privacitat i seguretat**, baixa fins al missatge sobre l'aplicació i prem **Obre igualment**. Torna-la a obrir i confirma-ho.
+   - **macOS 14 o anterior:** fes clic dret sobre l'aplicació → **Obre**, i confirma-ho a l'avís.
+   - **En qualsevol versió, des del Terminal:** `xattr -cr` seguit de la ruta de l'aplicació, per exemple `xattr -cr /Applications/mensagia-mailer-gui.app`.
+
+   Només cal fer-ho una vegada per cada versió descarregada.
+
+> La versió de consola s'obre amb doble clic i funciona dins d'una finestra del Terminal.
+
+---
+
+## Fitxers de l'aplicació
+
+L'aplicació desa els seus fitxers en una carpeta de dades, que depèn de com s'executi:
+
+| Execució | Carpeta de dades |
+|---|---|
+| Windows (`.exe`) | La mateixa carpeta que el `.exe` |
+| macOS | `Mensagia Mailer`, dins de la teva carpeta personal (`~/Mensagia Mailer`) |
+| Codi font | L'arrel del projecte |
+
+En aquesta carpeta hi ha:
+
+- `.env`: la configuració (token API, idioma, URL base dels adjunts…). El crees tu i és opcional.
+- `logs/`: un registre de cada enviament.
+- `last_selections.json`: les últimes opcions triades (vegeu [Memòria de seleccions](#memòria-de-seleccions-mode-gràfic)).
+- `send_progress.json`: el progrés dels enviaments (vegeu [Reprendre un enviament interromput](#reprendre-un-enviament-interromput)).
+
+L'aplicació crea la carpeta i els fitxers a mesura que els necessita.
 
 ---
 
@@ -147,7 +205,7 @@ Si la interrupció es produeix just mentre es programava un correu, o si Mensagi
 
 L'API de Mensagia no permet consultar els enviaments programats, així que aquesta comprovació s'ha de fer a mà al portal, eliminant la programació sobrant.
 
-> El progrés es desa al fitxer `send_progress.json`, a la mateixa carpeta que el `.env` o l'`.exe`. Quan un enviament acaba sense errors, la campanya s'esborra del fitxer. No l'eliminis mentre hi hagi un enviament pendent de reprendre.
+> El progrés es desa al fitxer `send_progress.json`, a la [carpeta de dades de l'aplicació](#fitxers-de-laplicació). Quan un enviament acaba sense errors, la campanya s'esborra del fitxer. No l'eliminis mentre hi hagi un enviament pendent de reprendre.
 
 ---
 
@@ -155,7 +213,7 @@ L'API de Mensagia no permet consultar els enviaments programats, així que aques
 
 Després de cada enviament o simulació, l'aplicació desa els paràmetres escollits
 (plantilla, remitent, grup, camp adjunt i certificat) en un fitxer
-`last_selections.json`, a la mateixa carpeta que el `.env` o el `.exe`.
+`last_selections.json`, a la [carpeta de dades de l'aplicació](#fitxers-de-laplicació).
 
 En la propera execució, aquestes opcions quedaran marcades per defecte.
 
@@ -171,21 +229,14 @@ Idiomes disponibles: **Español, Català, Galego, Euskera, English**.
 
 ---
 
-## Generar l'executable
+## Generar els executables
 
-Requereix les dependències de desenvolupament:
+Els executables es generen automàticament amb GitHub Actions (`.github/workflows/build-release.yml`). El PyInstaller no pot compilar per a un altre sistema, així que cada versió es compila en una màquina del sistema corresponent: Windows, Mac amb Apple Silicon i Mac amb Intel.
 
-```bash
-pip install -r requirements-dev.txt
-```
+- **En pujar un tag `vX.Y.Z`**, el workflow compila les tres versions i crea un **esborrany de release** amb els sis fitxers adjunts. Després es redacten les notes i es publica.
+- **A mà**, des de la pestanya **Actions** → **Run workflow**, compila les tres versions sense crear cap release i deixa els fitxers per descarregar a la mateixa execució (apartat **Artifacts**).
 
-Executa l'script de compilació:
-
-```bash
-build.bat
-```
-
-Els fitxers `.exe` es generen a la carpeta `dist/`.
+> Si la compilació per a Mac amb Intel falla perquè GitHub ja ha retirat aquestes màquines, l'esborrany de release es crea igualment amb els fitxers de Windows i d'Apple Silicon.
 
 ---
 
@@ -221,7 +272,7 @@ mensagia-attachment-mailer/
 ├── tests/
 ├── main.py                 # Punt d'entrada consola
 ├── main_gui.py             # Punt d'entrada gràfic
-├── build.bat               # Script de compilació a .exe
+├── .github/workflows/      # Compilació dels executables (GitHub Actions)
 ├── requirements.txt
 ├── requirements-dev.txt
 └── .env.example

@@ -8,26 +8,84 @@ Application to send emails with per-contact personalised attachments using the [
 
 ## Requirements
 
-- Windows 10/11 (for the executable)
+- Windows 10/11 or macOS (for the executables)
 - Or Python 3.11+ (to run from source)
 
 ---
 
 ## Using the executable (clients without Python)
 
-1. Download the executable from the [releases page](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest) (`mensagia-mailer-gui.exe` for GUI mode, or `mensagia-mailer-console.exe` for console mode)
-2. Create a `.env` file in the **same folder** as the `.exe` with your token:
+Download the version for your computer from the [releases page](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest):
+
+| Computer | GUI mode | Console mode |
+|---|---|---|
+| Windows | `mensagia-mailer-gui-windows.exe` | `mensagia-mailer-console-windows.exe` |
+| Mac with Apple Silicon (M1, M2…) | `mensagia-mailer-gui-macos-apple-silicon.zip` | `mensagia-mailer-console-macos-apple-silicon.zip` |
+| Mac with an Intel processor | `mensagia-mailer-gui-macos-intel.zip` | `mensagia-mailer-console-macos-intel.zip` |
+
+### API token
+
+The app needs your Mensagia API token, which you can get at [mensagia.com](https://mensagia.com) → Users. If it is not configured, the app asks for it on startup. To avoid typing it every time, save it in a `.env` file in the [app data folder](#app-files):
 
 ```
 MENSAGIA_API_TOKEN=your_api_token_here
 ```
 
-> You can get your API token at [mensagia.com](https://mensagia.com) → Users.
-> If the `.env` file does not exist, the app will ask for the token on startup.
+### Windows
 
+1. Download the `.exe`. The app stores its files in the same folder, so it is best to put it in a folder of its own.
+2. Optionally, create the `.env` file in that **same folder**.
 3. Run the `.exe`.
 
 > **Windows SmartScreen warning:** the first time you run the file, Windows may show a security warning. Click **"More info"** and then **"Run anyway"**. This only needs to be done once per downloaded version.
+
+### macOS
+
+1. **Choose the version for your Mac.** Open the Apple menu → **About This Mac**:
+   - If it shows **Chip** (Apple M1, M2, M3…), download the `apple-silicon` version.
+   - If it shows **Processor** (Intel…), download the `intel` version.
+
+   > GitHub is retiring the machines that build for Intel Macs. If the latest version does not include the `intel` files, download them from the most recent version that has them in the [list of releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases).
+
+2. Double-click the `.zip` to unzip it (Safari may do this automatically when downloading). In GUI mode you get `mensagia-mailer-gui.app`, which you can move to **Applications**.
+3. Optionally, save the `.env` file in the **Mensagia Mailer** folder of your home folder. You can create both from Terminal:
+
+   ```
+   mkdir -p ~/"Mensagia Mailer"
+   echo "MENSAGIA_API_TOKEN=your_api_token_here" > ~/"Mensagia Mailer/.env"
+   ```
+
+   > Finder hides files whose name starts with a dot, such as `.env`. Press **Cmd + Shift + .** to show or hide them.
+
+4. Open the app. The first time, macOS blocks it because it is not signed by Apple (the equivalent of the SmartScreen warning on Windows). To allow it:
+   - **macOS 15 (Sequoia) or later:** after the warning, open **System Settings → Privacy & Security**, scroll down to the message about the app and click **Open Anyway**. Open it again and confirm.
+   - **macOS 14 or earlier:** right-click the app → **Open**, and confirm in the warning.
+   - **On any version, from Terminal:** `xattr -cr` followed by the path to the app, for example `xattr -cr /Applications/mensagia-mailer-gui.app`.
+
+   This only needs to be done once per downloaded version.
+
+> The console version opens with a double-click and runs inside a Terminal window.
+
+---
+
+## App files
+
+The app stores its files in a data folder, which depends on how it runs:
+
+| Running | Data folder |
+|---|---|
+| Windows (`.exe`) | The same folder as the `.exe` |
+| macOS | `Mensagia Mailer`, inside your home folder (`~/Mensagia Mailer`) |
+| Source code | The project root |
+
+That folder holds:
+
+- `.env`: the configuration (API token, language, attachment base URL…). You create it, and it is optional.
+- `logs/`: a log of each send.
+- `last_selections.json`: the last options chosen (see [Selection memory](#selection-memory-gui-mode)).
+- `send_progress.json`: the progress of sends (see [Resuming an interrupted send](#resuming-an-interrupted-send)).
+
+The app creates the folder and the files as it needs them.
 
 ---
 
@@ -147,7 +205,7 @@ If the interruption happens right while an email was being scheduled, or if Mens
 
 The Mensagia API does not allow querying scheduled sends, so this check must be done manually in the portal, deleting the extra scheduled send.
 
-> Progress is saved in the `send_progress.json` file, in the same folder as the `.env` or the `.exe`. When a send finishes without errors, the campaign is removed from the file. Do not delete it while there is a send waiting to be resumed.
+> Progress is saved in the `send_progress.json` file, in the [app data folder](#app-files). When a send finishes without errors, the campaign is removed from the file. Do not delete it while there is a send waiting to be resumed.
 
 ---
 
@@ -155,7 +213,7 @@ The Mensagia API does not allow querying scheduled sends, so this check must be 
 
 After each send or simulation, the app saves the chosen parameters
 (template, sender, group, attachment field and certified) to a file
-`last_selections.json`, in the same folder as the `.env` or the `.exe`.
+`last_selections.json`, in the [app data folder](#app-files).
 
 On the next run, those options will be pre-selected by default.
 
@@ -171,21 +229,14 @@ Available languages: **Español, Català, Galego, Euskera, English**.
 
 ---
 
-## Building the executable
+## Building the executables
 
-Requires the development dependencies:
+The executables are built automatically with GitHub Actions (`.github/workflows/build-release.yml`). PyInstaller cannot build for another system, so each version is built on a machine of the matching system: Windows, Mac with Apple Silicon and Mac with Intel.
 
-```bash
-pip install -r requirements-dev.txt
-```
+- **When a `vX.Y.Z` tag is pushed**, the workflow builds the three versions and creates a **draft release** with the six files attached. The notes are then written and the release is published.
+- **Manually**, from the **Actions** tab → **Run workflow**, it builds the three versions without creating any release and leaves the files to download in the run itself (**Artifacts** section).
 
-Run the build script:
-
-```bash
-build.bat
-```
-
-The `.exe` files are generated in the `dist/` folder.
+> If the Intel Mac build fails because GitHub has already retired those machines, the draft release is still created with the Windows and Apple Silicon files.
 
 ---
 
@@ -221,7 +272,7 @@ mensagia-attachment-mailer/
 ├── tests/
 ├── main.py                 # Console entry point
 ├── main_gui.py             # GUI entry point
-├── build.bat               # Build script to .exe
+├── .github/workflows/      # Executable builds (GitHub Actions)
 ├── requirements.txt
 ├── requirements-dev.txt
 └── .env.example
