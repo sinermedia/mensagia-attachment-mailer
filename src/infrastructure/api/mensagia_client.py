@@ -1,7 +1,9 @@
 import time
 
 import requests
-from requests.exceptions import HTTPError, ConnectionError, Timeout
+from requests.exceptions import HTTPError, ConnectionError, ConnectTimeout, Timeout
+from urllib3.exceptions import MaxRetryError, NewConnectionError
+from urllib3.exceptions import SSLError as Urllib3SSLError
 
 
 # Root URL of the Mensagia REST API v1.
@@ -24,19 +26,55 @@ class MensagiaAPIError(Exception):
             in the JSON response body (e.g. 'unauthorized'). None otherwise.
         http_code: HTTP status code of the response (e.g. 401, 404). None
             for transport errors where no response was received.
+        reached_server: False only when the failure happened while opening
+            the connection, which guarantees the request was never
+            processed. True when an answer arrived or when the request may
+            have been sent before the connection failed.
     """
 
-    def __init__(self, message: str, code: str = None, http_code: int = None):
+    def __init__(self, message: str, code: str = None, http_code: int = None, reached_server: bool = True):
         """Initialise the error with a human-readable message and optional metadata.
 
         Args:
             message: Human-readable description of the error.
             code: Mensagia application-level error code, if available.
             http_code: HTTP status code of the response, if available.
+            reached_server: Whether the request may have reached the API.
+                Defaults to True, the safe assumption when in doubt.
         """
         super().__init__(message)
         self.code = code
         self.http_code = http_code
+        self.reached_server = reached_server
+
+
+def _reached_server(exc: Exception) -> bool:
+    """Tell whether a requests transport error may have reached the server.
+
+    requests raises ConnectTimeout, or a ConnectionError wrapping a urllib3
+    MaxRetryError, when the connection could not even be opened (timeout
+    while connecting, refused connection, DNS failure, TLS handshake
+    failure). In those cases the request body was never sent. Any other
+    failure (ReadTimeout, connection aborted mid-request...) happens after
+    sending, so the server may have processed the request.
+
+    Args:
+        exc: The ConnectionError or Timeout raised by requests.
+
+    Returns:
+        False when the request is known not to have been sent; True
+        otherwise, including unrecognised cases, to stay on the safe side.
+    """
+    # ConnectTimeout is explicit: the timeout expired before connecting
+    if isinstance(exc, ConnectTimeout):
+        return False
+
+    # Connection-establishment failures arrive wrapped in MaxRetryError
+    # because requests makes exactly one attempt through urllib3
+    inner = exc.args[0] if exc.args else None
+    if isinstance(inner, MaxRetryError) and isinstance(inner.reason, (NewConnectionError, Urllib3SSLError)):
+        return False
+    return True
 
 
 class MensagiaClient:
@@ -88,7 +126,7 @@ class MensagiaClient:
             self._raise_for_error(response)
             return response.json()
         except (ConnectionError, Timeout) as exc:
-            raise MensagiaAPIError(f"Connection error: {exc}") from exc
+            raise MensagiaAPIError(f"Connection error: {exc}", reached_server=_reached_server(exc)) from exc
 
     def _post(self, endpoint: str, data: dict = None) -> dict:
         """Perform a POST request with form-encoded body and return the parsed JSON.
@@ -112,7 +150,7 @@ class MensagiaClient:
             self._raise_for_error(response)
             return response.json()
         except (ConnectionError, Timeout) as exc:
-            raise MensagiaAPIError(f"Connection error: {exc}") from exc
+            raise MensagiaAPIError(f"Connection error: {exc}", reached_server=_reached_server(exc)) from exc
 
     def _raise_for_error(self, response: requests.Response):
         """Raise MensagiaAPIError if the response indicates a failure.

@@ -16,9 +16,10 @@ from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language, get_language
 from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url, load_show_ids
 from src.infrastructure.config.last_selections import load_last_selections, save_last_selections
-from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
+from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
+from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
 
 
 # Apply the light theme globally before any widget is created;
@@ -98,6 +99,9 @@ class App(ctk.CTk):
         # Load configuration from .env / environment
         self._show_ids = load_show_ids()
         self._last_sel = load_last_selections()
+        # Tracks already-sent contacts per campaign; stateless (file-backed),
+        # so a single instance is reused across the whole app session
+        self._send_registry = JsonSendRegistry()
 
         # Runtime state — populated as the user progresses through the wizard
         self.client: MensagiaClient | None = None
@@ -740,18 +744,42 @@ class App(ctk.CTk):
             c for c in contacts
             if c.email and c.extra_fields.get(self.selected_field.name)
         ]
+        subject = self._subject_entry.get().strip()
+
+        # Detect contacts already sent this exact campaign in a previous,
+        # interrupted run, and attempts it left unconfirmed (possible
+        # duplicates), and let the user decide whether to skip the sent
+        # ones or start the whole campaign over again
+        campaign = (self.selected_agenda.id, self.selected_template.id, self.selected_field.name, subject)
+        pending_ids = self._send_registry.get_sent_contact_ids(*campaign)
+        already_sent_count = len([c for c in eligible if c.id in pending_ids])
+        uncertain = self._send_registry.get_uncertain_attempts(*campaign)
+        if already_sent_count or uncertain:
+            parts = []
+            if already_sent_count:
+                parts.append(t("resume_detected", sent=already_sent_count))
+            if uncertain:
+                parts.append(t("resume_uncertain") + "\n" + "\n".join(resume_uncertain_lines(uncertain, contacts)))
+            parts.append(t("resume_continue_prompt"))
+            continue_pending = messagebox.askyesno(t("resume_title"), "\n\n".join(parts))
+            if not continue_pending:
+                self._send_registry.clear(*campaign)
+                already_sent_count = 0
+
+        # Number of contacts that will actually be sent to in this run
+        to_send_count = len(eligible) - already_sent_count
 
         # Build the multi-line summary text with all selected options
         lines = "\n".join([
             t("summary_from", value=f"{self.selected_sender.name} <{self.selected_sender.email}>" if self.selected_sender.name else self.selected_sender.email),
-            t("summary_subject", value=self._subject_entry.get().strip()),
+            t("summary_subject", value=subject),
             t("summary_template", value=self.selected_template.name),
             t("summary_group", value=self.selected_agenda.name),
             t("summary_field", value=self.selected_field.name),
             t("summary_certified", value=t("yes") if self._certified_var.get() else t("no")),
         ])
         self._summary_text.configure(text=lines)
-        self._summary_contacts_label.configure(text=t("summary_contacts", count=len(eligible)))
+        self._summary_contacts_label.configure(text=t("summary_contacts", count=to_send_count))
         self._summary_skipped_label.configure(text=t("summary_skipped", count=len(contacts) - len(eligible)))
 
         # A group can hold contacts and still have none that can be written to,
@@ -832,104 +860,54 @@ class App(ctk.CTk):
         for w in self._sending_actions.winfo_children():
             w.destroy()
 
+        def _on_progress(current: int, total: int):
+            """Update the progress bar and label; called by the use case per contact."""
+            self._progress_label.configure(text=t("send_progress", current=current, total=total))
+            self._progress_bar.set(current / total if total else 0)
+            # Force a UI redraw so the progress is visible immediately
+            self.update_idletasks()
+
         def _run():
-            """Background thread: send emails and update the UI progressively."""
+            """Background thread: delegate to SendBulkEmailsUseCase and update the UI progressively."""
             try:
                 contact_repo = MensagiaContactRepository(self.client)
                 email_sender_adapter = MensagiaEmailSender(self.client)
-                attachment_base_url = self._base_url_entry.get().strip() or None
-                attachment_checker = HttpAttachmentChecker()
+                use_case = SendBulkEmailsUseCase(contact_repo, email_sender_adapter)
                 _dry_run = dry_run
-
-                # Determine the eligible and skipped contacts before the send loop
-                contacts = contact_repo.get_by_group(self.selected_agenda.id, in_mail_blacklist=False)
-                eligible = [
-                    c for c in contacts
-                    if c.email and c.extra_fields.get(self.selected_field.name)
-                ]
-                skipped = [c for c in contacts if c not in eligible]
-                total = len(eligible)
-
-                from src.domain.scheduling import calculate_start_dates
-                from src.domain.entities.email_message import EmailMessage
-                from datetime import datetime
-
-                # Compute staggered send dates upfront so the timing is consistent
-                start_dates = calculate_start_dates(total)
-                sent, errors = [], []
 
                 # Create a logger only for real sends; dry-runs produce no log file
                 send_logger = SendLogger() if not _dry_run else None
 
-                # Log opening summary and all skipped contacts before the send loop
-                if send_logger:
-                    send_logger.log_start(
-                        self.selected_sender.email,
-                        self._subject_entry.get().strip(),
-                        self.selected_template.id,
-                        self.selected_agenda.id,
-                        self.selected_field.name,
-                        self._certified_var.get(),
-                        len(eligible),
-                        len(skipped),
-                    )
-                    for c in skipped:
-                        reason = "no_email" if not c.email else "no_attachment"
-                        send_logger.log_skip(c, reason)
-
-                # Process each eligible contact, updating progress after each one
-                for i, (contact, start_date) in enumerate(zip(eligible, start_dates), 1):
-                    self._progress_label.configure(text=t("send_progress", current=i, total=total))
-                    self._progress_bar.set(i / total if total else 0)
-                    # Force a UI redraw so the progress is visible immediately
-                    self.update_idletasks()
-
-                    try:
-                        # Resolve relative attachment paths to full URLs
-                        attachment_url = resolve_attachment_url(
-                            contact.extra_fields[self.selected_field.name],
-                            attachment_base_url,
-                        )
-
-                        # Verify the attachment is reachable before spending an API call
-                        if not attachment_checker.is_accessible(attachment_url):
-                            raise ValueError(f"attachment not accessible: {attachment_url}")
-
-                        message = EmailMessage(
-                            from_email=self.selected_sender.email,
-                            to_email=contact.email,
-                            subject=self._subject_entry.get().strip(),
-                            template_id=self.selected_template.id,
-                            start_date=start_date,
-                            attachments=[attachment_url],
-                            certified=self._certified_var.get(),
-                        )
-
-                        # Skip the actual API call in dry-run mode
-                        if not _dry_run:
-                            email_sender_adapter.send(message)
-                        sent.append(contact)
-
-                        if send_logger:
-                            send_logger.log_ok(contact, attachment_url)
-
-                    except Exception as e:
-                        errors.append((contact, str(e)))
-                        if send_logger:
-                            send_logger.log_error(contact, str(e))
-
-                # Log the closing summary once all contacts have been processed
-                if send_logger:
-                    send_logger.log_done(len(sent), len(skipped), len(errors))
+                result = use_case.execute(
+                    from_email=self.selected_sender.email,
+                    group_id=self.selected_agenda.id,
+                    subject=self._subject_entry.get().strip(),
+                    template_id=self.selected_template.id,
+                    extra_field=self.selected_field,
+                    certified=self._certified_var.get(),
+                    attachment_base_url=self._base_url_entry.get().strip() or None,
+                    attachment_checker=HttpAttachmentChecker(),
+                    dry_run=_dry_run,
+                    logger=send_logger,
+                    progress_callback=_on_progress,
+                    send_registry=self._send_registry,
+                )
 
                 # Build the result text, appending per-contact error details if any
                 error_msgs = "\n".join(
-                    t("send_error", email=c.email, error=err) for c, err in errors
+                    t("send_error", email=item["contact"].email, error=item["error"])
+                    for item in result.errors
                 )
                 key = "dry_run_complete" if _dry_run else "send_complete"
-                result_text = t(key, sent=len(sent), skipped=len(skipped), errors=len(errors))
+                result_text = t(key, sent=len(result.sent), skipped=len(result.skipped), errors=len(result.errors))
                 if error_msgs:
                     result_text += "\n\n" + error_msgs
+
+                # Warn about sends that may have been scheduled without
+                # confirmation, with the recipient and slot to check in the portal
+                uncertain_msgs = result_uncertain_lines(result.uncertain)
+                if uncertain_msgs:
+                    result_text += "\n\n" + "\n\n".join(uncertain_msgs)
                 if send_logger:
                     result_text += f"\n\n{t('log_saved', path=str(send_logger.log_path))}"
 

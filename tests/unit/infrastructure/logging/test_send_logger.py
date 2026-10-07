@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from src.domain.entities.contact import Contact
 from src.infrastructure.logging.send_logger import SendLogger
 
@@ -90,6 +91,22 @@ class TestSendLogger:
         content = logger.log_path.read_text(encoding="utf-8")
         assert "err@test.com" in content
         assert "attachment not accessible" in content
+
+    def test_log_uncertain_writes_send_uncertain_keyword(self, tmp_path):
+        """log_uncertain() writes a line containing the [SEND_UNCERTAIN] keyword."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_uncertain(make_contact(1, "a@test.com"), datetime(2024, 1, 15, 14, 40, 12), "timeout")
+        assert "[SEND_UNCERTAIN]" in logger.log_path.read_text(encoding="utf-8")
+
+    def test_log_uncertain_includes_contact_slot_and_reason(self, tmp_path):
+        """log_uncertain() records contact id, email, the slot to check in the portal and the reason."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_uncertain(make_contact(123, "john@test.com"), datetime(2024, 1, 15, 14, 40, 12), "read timeout")
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert "id=123" in content
+        assert "to=john@test.com" in content
+        assert "start_date=2024-01-15T14:40:12" in content
+        assert 'reason="read timeout"' in content
 
     def test_log_done_writes_send_done_keyword(self, tmp_path):
         """log_done() writes a line containing the [SEND_DONE] keyword."""

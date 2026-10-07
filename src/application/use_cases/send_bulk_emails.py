@@ -5,7 +5,7 @@ from datetime import datetime
 from src.domain.entities.email_message import EmailMessage
 from src.domain.entities.extra_field import ExtraField
 from src.domain.ports.contact_repository import ContactRepository
-from src.domain.ports.email_sender import EmailSender
+from src.domain.ports.email_sender import EmailNotSentError, EmailRejectedError, EmailSender
 from src.domain.scheduling import calculate_start_dates
 from src.domain.attachment_url import resolve_attachment_url
 
@@ -24,14 +24,30 @@ class SendResult:
             In dry-run mode the response dict is always empty.
         skipped: List of Contact objects that were excluded before sending
             because they lacked an email address or an attachment URL value.
+        already_sent: List of Contact objects that were excluded because a
+            send_registry showed they already received this exact campaign
+            in a previous, interrupted run. Empty when no send_registry is
+            given.
         errors: List of dicts with keys 'contact' (Contact) and 'error'
             (str). One entry per contact whose send attempt raised an
-            exception (inaccessible attachment, API error, etc.).
+            exception (inaccessible attachment, API error, etc.). Contacts
+            retried at the end of the run appear here only if the retry
+            failed too.
+        uncertain: List of dicts with keys 'contact' (Contact),
+            'start_dates' (sorted list of datetime) and 'sent' (bool). One
+            entry per contact with send attempts that may have been
+            scheduled without the API confirming it, in this run or in a
+            previous interrupted one. The user must check those slots in
+            the Mensagia portal: when 'sent' is True the contact also got a
+            confirmed email, so any of those slots is a duplicate. Always
+            empty in dry-run mode.
     """
 
     sent: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
+    already_sent: list = field(default_factory=list)
     errors: list = field(default_factory=list)
+    uncertain: list = field(default_factory=list)
 
 
 def _skip_reason(contact, field_name: str) -> str:
@@ -94,16 +110,22 @@ class SendBulkEmailsUseCase:
         attachment_checker=None,
         dry_run: bool = False,
         logger=None,
+        progress_callback=None,
+        send_registry=None,
     ) -> SendResult:
         """Run the bulk send for all eligible contacts in the given group.
 
         Workflow:
         1. Fetch all contacts in the group (excluding the email blacklist).
         2. Filter down to contacts that have both an email and an attachment value.
-        3. Compute staggered send dates to respect Mensagia's rate limits.
+        3. Compute staggered send dates to respect Mensagia's rate limits,
+           continuing after the last slot of a previous run when resuming.
         4. For each eligible contact: resolve the attachment URL, optionally
            verify it is reachable, build the EmailMessage, and send it.
-        5. Collect outcomes in a SendResult (sent / skipped / errors).
+        5. Retry once, after all other contacts, every send that got no
+           answer from the API (not processed or uncertain outcome).
+        6. Collect outcomes in a SendResult (sent / skipped / errors /
+           uncertain).
 
         Args:
             from_email: Verified sender email address to use as the 'from' field.
@@ -130,9 +152,29 @@ class SendBulkEmailsUseCase:
                 False, one structured log line is written per contact outcome
                 plus opening and closing summary lines. Pass None to disable
                 logging entirely.
+            progress_callback: Optional callable invoked as
+                progress_callback(current, total) after each eligible contact
+                is processed (sent or errored), where current is the
+                1-indexed position and total is len(eligible). Lets a UI
+                (e.g. a progress bar) reflect progress without needing to
+                reimplement this loop. Fires in dry-run mode too, and not
+                for end-of-run retries. Pass None to disable.
+            send_registry: Optional SendRegistry instance. When provided,
+                contacts already recorded as sent for this exact campaign
+                (group, template, extra field, subject) are excluded from
+                the eligible list and reported in already_sent instead, and
+                the schedule continues after the campaign's last recorded
+                slot. Each API call is recorded with mark_attempt() before
+                being made and resolved with mark_sent() or
+                discard_attempt(); uncertain ones stay on record. The whole
+                campaign record is cleared once a run completes with zero
+                errors. Not written to during dry-run, though filtering and
+                scheduling still apply so the preview matches what a real
+                run would do. Pass None to disable.
 
         Returns:
-            A SendResult containing lists of sent, skipped, and errored contacts.
+            A SendResult containing lists of sent, skipped, already-sent,
+            errored and uncertain contacts.
         """
         # Fetch all contacts in the group, excluding only those on the global
         # email blacklist. The API returns subscribed and unsubscribed contacts
@@ -146,11 +188,36 @@ class SendBulkEmailsUseCase:
         ]
         skipped = [c for c in contacts if c not in eligible]
 
-        # Compute staggered start dates so emails are not sent all at once
-        start_dates = calculate_start_dates(len(eligible), now)
-        result = SendResult(skipped=skipped)
+        # Exclude contacts already sent this exact campaign in a previous,
+        # interrupted run so restarting never double-sends. Filtering (but
+        # not writing) also applies during dry-run so previews stay accurate.
+        campaign = (group_id, template_id, extra_field.name, subject)
+        already_sent = []
+        last_scheduled = None
+        uncertain = {}
+        if send_registry:
+            sent_ids = send_registry.get_sent_contact_ids(*campaign)
+            already_sent = [c for c in eligible if c.id in sent_ids]
+            eligible = [c for c in eligible if c.id not in sent_ids]
 
-        # Log the opening summary and all skipped contacts before the send loop
+            # The emails of a previous run may still be queued: continue the
+            # schedule after its last slot so both runs never overlap
+            last_scheduled = send_registry.get_last_start_date(*campaign)
+
+            # Attempts a previous run left unresolved may have been scheduled;
+            # carry them over so they are reported with this run's outcome.
+            # A dry run never reports them, as it does not contact the API
+            if not dry_run:
+                uncertain = {
+                    cid: list(dates)
+                    for cid, dates in send_registry.get_uncertain_attempts(*campaign).items()
+                }
+
+        # Compute staggered start dates so emails are not sent all at once
+        start_dates = calculate_start_dates(len(eligible), now, last_scheduled)
+        result = SendResult(skipped=skipped, already_sent=already_sent)
+
+        # Log the opening summary and all skipped/already-sent contacts before the send loop
         if logger and not dry_run:
             logger.log_start(
                 from_email, subject, template_id, group_id,
@@ -158,20 +225,41 @@ class SendBulkEmailsUseCase:
             )
             for c in skipped:
                 logger.log_skip(c, _skip_reason(c, extra_field.name))
+            for c in already_sent:
+                logger.log_skip(c, "already_sent")
 
-        # Process each eligible contact paired with its scheduled send time
-        for contact, start_date in zip(eligible, start_dates):
+        def record_error(contact, error: Exception) -> None:
+            """Add a final failure to the result and the log.
+
+            Args:
+                contact: Contact whose send failed for good.
+                error: The exception that caused the failure.
+            """
+            result.errors.append({"contact": contact, "error": str(error)})
+            if logger and not dry_run:
+                logger.log_error(contact, str(error))
+
+        def process(contact, start_date: datetime, final: bool) -> bool:
+            """Build and send the email of one contact, recording its outcome.
+
+            Args:
+                contact: Contact to email.
+                start_date: Send slot assigned to this attempt.
+                final: True for the end-of-run retry, whose failures are
+                    always reported as errors.
+
+            Returns:
+                True when the API gave no answer and the contact must be
+                retried at the end of the run; False otherwise.
+            """
+            # Prepare the message. Failures here happen before any API call,
+            # so they are final: retrying would fail the same way
             try:
-                # Resolve the attachment value to a fully qualified URL
                 attachment_url = resolve_attachment_url(
                     contact.extra_fields[extra_field.name], attachment_base_url
                 )
-
-                # Optionally verify the attachment is reachable before sending
                 if attachment_checker and not attachment_checker.is_accessible(attachment_url):
                     raise ValueError(f"attachment not accessible: {attachment_url}")
-
-                # Build the email message for this contact
                 message = EmailMessage(
                     from_email=from_email,
                     to_email=contact.email,
@@ -181,26 +269,88 @@ class SendBulkEmailsUseCase:
                     attachments=[attachment_url],
                     certified=certified,
                 )
-
-                # Pause before each real API call to stay within the 1 request-per-second
-                # rate limit; skipped in dry-run mode because no request is made
-                if not dry_run:
-                    time.sleep(1)
-                response = {} if dry_run else self.email_sender.send(message)
-                result.sent.append({"contact": contact, "response": response})
-
-                if logger and not dry_run:
-                    logger.log_ok(contact, attachment_url)
-
             except Exception as exc:
-                # Any failure (network, API, inaccessible URL) is recorded and
-                # processing continues with the next contact
-                result.errors.append({"contact": contact, "error": str(exc)})
-                if logger and not dry_run:
-                    logger.log_error(contact, str(exc))
+                record_error(contact, exc)
+                return False
+
+            # A dry run stops here: everything that could fail locally was checked
+            if dry_run:
+                result.sent.append({"contact": contact, "response": {}})
+                return False
+
+            # Record the attempt before calling the API, so an abrupt close
+            # right after the API accepts it leaves it on record as uncertain.
+            # Pause before each API call to stay within the 1 request-per-second limit
+            if send_registry:
+                send_registry.mark_attempt(*campaign, contact.id, start_date)
+            time.sleep(1)
+
+            try:
+                response = self.email_sender.send(message)
+            except (EmailRejectedError, EmailNotSentError) as exc:
+                # Nothing was scheduled, so the attempt is forgotten. Only a
+                # request that was not processed is worth retrying
+                if send_registry:
+                    send_registry.discard_attempt(*campaign, contact.id, start_date)
+                error = exc
+                retry = isinstance(exc, EmailNotSentError) and not final
+            except Exception as exc:
+                # Uncertain outcome, or an unexpected error treated as such to
+                # stay on the safe side: the email may exist, so keep the
+                # attempt on record and remember its slot for the warning
+                uncertain.setdefault(contact.id, []).append(start_date)
+                if logger:
+                    logger.log_uncertain(contact, start_date, str(exc))
+                error = exc
+                retry = not final
+            else:
+                result.sent.append({"contact": contact, "response": response})
+                if logger:
+                    logger.log_ok(contact, attachment_url)
+                if send_registry:
+                    send_registry.mark_sent(*campaign, contact.id, start_date)
+                return False
+
+            if not retry:
+                record_error(contact, error)
+            return retry
+
+        # Process each eligible contact paired with its scheduled send time,
+        # reporting progress after every one regardless of outcome (dry-run
+        # included) so a UI progress bar stays accurate
+        to_retry = []
+        for i, (contact, start_date) in enumerate(zip(eligible, start_dates), 1):
+            if process(contact, start_date, final=False):
+                to_retry.append(contact)
+            if progress_callback:
+                progress_callback(i, len(eligible))
+
+        # Retry unanswered sends once, after every other contact: this gives a
+        # transient network failure time to recover, and the new slots follow
+        # the last one of this run so the sending rhythm is kept
+        if to_retry:
+            retry_dates = calculate_start_dates(len(to_retry), now, start_dates[-1])
+            for contact, start_date in zip(to_retry, retry_dates):
+                process(contact, start_date, final=True)
+
+        # Report every uncertain attempt with whether the contact ended up
+        # sent, which turns those slots into possible duplicates. Contacts no
+        # longer in the group cannot be shown and are left out
+        confirmed_ids = {item["contact"].id for item in result.sent} | {c.id for c in already_sent}
+        contacts_by_id = {c.id: c for c in contacts}
+        result.uncertain = [
+            {"contact": contacts_by_id[cid], "start_dates": sorted(dates), "sent": cid in confirmed_ids}
+            for cid, dates in uncertain.items()
+            if cid in contacts_by_id
+        ]
 
         # Log the closing summary once all contacts have been processed
         if logger and not dry_run:
             logger.log_done(len(result.sent), len(result.skipped), len(result.errors))
+
+        # A clean run (no errors) means nothing is left pending for this
+        # campaign, so forget its progress and stop blocking future re-sends
+        if send_registry and not dry_run and not result.errors:
+            send_registry.clear(group_id, template_id, extra_field.name, subject)
 
         return result

@@ -13,6 +13,8 @@ from src.infrastructure.config.settings import load_api_token, load_language, lo
 from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
+from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
+from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
 
 
 def _choose_language():
@@ -333,6 +335,29 @@ def run():
     ]
     skipped_count = len(contacts) - len(eligible)
 
+    # Detect contacts already sent this exact campaign in a previous,
+    # interrupted run, and attempts it left unconfirmed (possible
+    # duplicates), and let the user decide whether to skip the sent ones
+    # or start the whole campaign over again
+    send_registry = JsonSendRegistry()
+    campaign = (agenda.id, template.id, extra_field.name, subject)
+    pending_ids = send_registry.get_sent_contact_ids(*campaign)
+    already_sent_count = len([c for c in eligible if c.id in pending_ids])
+    uncertain = send_registry.get_uncertain_attempts(*campaign)
+    if already_sent_count or uncertain:
+        if already_sent_count:
+            print(f"\n  {t('resume_detected', sent=already_sent_count)}")
+        if uncertain:
+            print(f"\n  {t('resume_uncertain')}")
+            for line in resume_uncertain_lines(uncertain, contacts):
+                print(f"    {line}")
+        if not _yes_no(f"  {t('resume_continue_prompt')}"):
+            send_registry.clear(*campaign)
+            already_sent_count = 0
+
+    # Number of contacts that will actually be sent to in this run
+    to_send_count = len(eligible) - already_sent_count
+
     # Resolve the base URL for relative attachment paths, prompting if needed
     attachment_base_url = _resolve_attachment_base_url(eligible, extra_field)
 
@@ -344,13 +369,18 @@ def run():
     print(f"  {t('summary_group', value=agenda.name)}")
     print(f"  {t('summary_field', value=extra_field.name)}")
     print(f"  {t('summary_certified', value=t('yes') if certified else t('no'))}")
-    print(f"  {t('summary_contacts', count=len(eligible))}")
+    print(f"  {t('summary_contacts', count=to_send_count)}")
     print(f"  {t('summary_skipped', count=skipped_count)}")
 
     # Nothing to send — say why and exit cleanly without error. The group may
     # well hold contacts: they can all lack an email address or the extra field
     if not eligible:
         print(f"\n  {t('no_eligible_contacts')}")
+        sys.exit(0)
+
+    # Every eligible contact already received this campaign in a previous run;
+    # the summary above already shows a zero counter, so just exit cleanly
+    if to_send_count == 0:
         sys.exit(0)
 
     action = _confirm_action()
@@ -378,6 +408,7 @@ def run():
         attachment_checker=HttpAttachmentChecker(),
         dry_run=dry_run,
         logger=send_logger,
+        send_registry=send_registry,
     )
 
     # Report any per-contact errors to the console
@@ -387,6 +418,11 @@ def run():
     # Print the final outcome summary
     key = "dry_run_complete" if dry_run else "send_complete"
     print(f"\n  {t(key, sent=len(result.sent), skipped=len(result.skipped), errors=len(result.errors))}")
+
+    # Warn about sends that may have been scheduled without confirmation,
+    # with the recipient and slot to check in the Mensagia portal
+    for line in result_uncertain_lines(result.uncertain):
+        print(f"\n  {line}")
 
     if send_logger:
         print(f"  {t('log_saved', path=str(send_logger.log_path))}")

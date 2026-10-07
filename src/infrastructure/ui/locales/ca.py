@@ -66,4 +66,11 @@ STRINGS = {
     "base_url_label": "URL base adjunts:",
     "base_url_placeholder": "https://example.com/files/",
     "log_saved": "Log desat a: {path}",
+    "resume_title": "Enviament anterior incomplet",
+    "resume_detected": "{sent} contacte(s) ja van rebre aquest correu en un enviament anterior interromput.",
+    "resume_continue_prompt": "Vols continuar només amb els contactes pendents? Si respons que no, es tornarà a enviar a tots els contactes, incloent-hi els que ja l'han rebut.",
+    "resume_uncertain": "No es va poder confirmar si aquests correus es van arribar a programar. Si continues, es tornaran a programar: quan acabi l'enviament, revisa al portal de Mensagia si n'hi ha cap de repetit i elimina'n la programació sobrant.",
+    "uncertain_item": "- {email}: {slots}",
+    "possible_duplicate": "Possible duplicat: el correu per a {email} s'ha programat, però potser també es va programar per a {slots}. Revisa-ho al portal de Mensagia i elimina'n la programació sobrant.",
+    "uncertain_unconfirmed": "No s'ha pogut confirmar si el correu per a {email} es va programar per a {slots}. Revisa-ho al portal de Mensagia abans de continuar l'enviament.",
 }

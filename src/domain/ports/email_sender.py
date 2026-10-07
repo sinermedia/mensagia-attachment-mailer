@@ -2,6 +2,39 @@ from abc import ABC, abstractmethod
 from src.domain.entities.email_message import EmailMessage
 
 
+class EmailSendError(Exception):
+    """Base class for failures reported by an EmailSender adapter.
+
+    Subclasses tell the caller what is known about the fate of the email,
+    which decides whether it is safe to retry and whether the user must be
+    warned about a possible duplicate.
+    """
+
+
+class EmailRejectedError(EmailSendError):
+    """The delivery service answered and refused the email.
+
+    Nothing was scheduled, and retrying with the same data would fail again.
+    """
+
+
+class EmailNotSentError(EmailSendError):
+    """The request never got processed by the delivery service.
+
+    Nothing was scheduled (e.g. the connection could not be opened, or the
+    service asked to slow down), so the email can safely be retried.
+    """
+
+
+class EmailSendUncertainError(EmailSendError):
+    """The request may have been processed but no reliable answer arrived.
+
+    The email may or may not have been scheduled (e.g. a response timeout
+    after the request was sent). Retrying may create a duplicate, so the
+    user must be told which recipient and slot to check.
+    """
+
+
 class EmailSender(ABC):
     """Port that defines how to dispatch an email message.
 
@@ -25,7 +58,9 @@ class EmailSender(ABC):
             the assigned message ID and delivery status.
 
         Raises:
-            Any exception raised by the concrete adapter if the delivery
-            attempt fails (network error, API error, etc.).
+            EmailRejectedError: The service refused the email.
+            EmailNotSentError: The request was not processed; safe to retry.
+            EmailSendUncertainError: The outcome is unknown; the email may
+                have been scheduled.
         """
         pass

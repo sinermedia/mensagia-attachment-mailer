@@ -66,4 +66,11 @@ STRINGS = {
     "base_url_label": "Attachment base URL:",
     "base_url_placeholder": "https://example.com/files/",
     "log_saved": "Log saved to: {path}",
+    "resume_title": "Incomplete previous send",
+    "resume_detected": "{sent} contact(s) already received this email in a previous, interrupted send.",
+    "resume_continue_prompt": "Do you want to continue with only the pending contacts? If you answer no, the email will be sent again to every contact, including those who already received it.",
+    "resume_uncertain": "It could not be confirmed whether these emails were scheduled. If you continue, they will be scheduled again: when the send finishes, check the Mensagia portal for any duplicate and delete the extra one.",
+    "uncertain_item": "- {email}: {slots}",
+    "possible_duplicate": "Possible duplicate: the email to {email} has been scheduled, but it may also have been scheduled for {slots}. Check it in the Mensagia portal and delete the extra one.",
+    "uncertain_unconfirmed": "It could not be confirmed whether the email to {email} was scheduled for {slots}. Check it in the Mensagia portal before resuming the send.",
 }
