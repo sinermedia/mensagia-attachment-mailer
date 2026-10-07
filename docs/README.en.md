@@ -212,8 +212,8 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Mensagia API client and adapters
 │       ├── config/          # Configuration loading (.env)
-│       ├── logging/         # Send logs
-│       ├── persistence/     # Send progress (send_progress.json)
+│       ├── logging/         # Writing of send logs
+│       ├── persistence/     # Saving of send progress
 │       └── ui/
 │           ├── console/     # Console interface
 │           ├── gui/         # Graphical interface (customtkinter)

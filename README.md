@@ -212,8 +212,8 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Cliente y adaptadores de la API Mensagia
 │       ├── config/          # Carga de configuración (.env)
-│       ├── logging/         # Registro de envíos (logs)
-│       ├── persistence/     # Progreso de envíos (send_progress.json)
+│       ├── logging/         # Escritura de los logs de envío
+│       ├── persistence/     # Guardado del progreso de envíos
 │       └── ui/
 │           ├── console/     # Interfaz de consola
 │           ├── gui/         # Interfaz gráfica (customtkinter)

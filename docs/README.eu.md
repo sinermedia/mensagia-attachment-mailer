@@ -213,8 +213,8 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Mensagia API bezeroa eta egokitzaileak
 │       ├── config/          # Konfigurazioa kargatzea (.env)
-│       ├── logging/         # Bidalketen erregistroa (logak)
-│       ├── persistence/     # Bidalketen aurrerapena (send_progress.json)
+│       ├── logging/         # Bidalketen logak idaztea
+│       ├── persistence/     # Bidalketen aurrerapena gordetzea
 │       └── ui/
 │           ├── console/     # Kontsola interfazea
 │           ├── gui/         # Interfaze grafikoa (customtkinter)
