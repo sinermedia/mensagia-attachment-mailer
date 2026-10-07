@@ -123,9 +123,31 @@ The program **does not send emails immediately**. For each eligible contact it c
 - The **first send** is executed between **10 and 20 minutes** after launching the application, to allow time to cancel if an error is detected.
 - **Subsequent sends** are spaced **12 seconds** apart (5 per minute).
 
-> **If you need to stop the send once it has started**, you must delete each send configuration individually from the Mensagia portal. There is no global cancel button.
+> **If you need to stop the send once it has started**, closing the app stops new configurations from being created, but those already created will still be sent: you must delete each one individually from the Mensagia portal. There is no global cancel button. You can resume the send later (see [Resuming an interrupted send](#resuming-an-interrupted-send)).
 >
 > Use **Simulate** mode to review what would be sent without creating any real configurations.
+
+---
+
+## Resuming an interrupted send
+
+If a send is interrupted halfway (the app is closed, the connection drops, the computer shuts down…), the app remembers which contacts have already had their email scheduled.
+
+When you prepare **the same campaign** again (same group, template and attachment field, and **exactly the same subject**), on reaching the summary the app warns that there is an incomplete previous send and asks what to do:
+
+- **Continue**: only the pending contacts are sent to. Their emails are scheduled after those of the previous send, without overlapping them.
+- **Don't continue**: the previous send is discarded and the email is sent again to all contacts, including those who already received it.
+
+### Possible duplicates
+
+If the interruption happens right while an email was being scheduled, or if Mensagia does not respond, the app cannot know whether that email was scheduled. In that case it schedules it again, but warns you:
+
+- When resuming, the warning shows the recipient and the date and time to check.
+- When finished, it reports whether there is a **possible duplicate** (the email has been scheduled now, but perhaps also before) or an **unconfirmed** send.
+
+The Mensagia API does not allow querying scheduled sends, so this check must be done manually in the portal, deleting the extra scheduled send.
+
+> Progress is saved in the `send_progress.json` file, in the same folder as the `.env` or the `.exe`. When a send finishes without errors, the campaign is removed from the file. Do not delete it while there is a send waiting to be resumed.
 
 ---
 
@@ -190,6 +212,8 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Mensagia API client and adapters
 │       ├── config/          # Configuration loading (.env)
+│       ├── logging/         # Send logs
+│       ├── persistence/     # Send progress (send_progress.json)
 │       └── ui/
 │           ├── console/     # Console interface
 │           ├── gui/         # Graphical interface (customtkinter)

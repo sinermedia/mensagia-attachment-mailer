@@ -123,9 +123,31 @@ El programa **no envia els correus de forma immediata**. Per cada contacte elegi
 - El **primer enviament** s'executa entre **10 i 20 minuts** després de llançar l'aplicació, per donar marge a cancel·lar si es detecta algun error.
 - Els **enviaments següents** s'espaiïen **12 segons** entre ells (5 per minut).
 
-> **Si cal aturar l'enviament un cop iniciat**, hauràs d'eliminar cada configuració d'enviament de forma individual des del portal de Mensagia. No hi ha cap botó de cancel·lació global.
+> **Si cal aturar l'enviament un cop iniciat**, tancar l'aplicació atura la creació de noves configuracions, però les que ja s'han creat s'enviaran igualment: hauràs d'eliminar-les una per una des del portal de Mensagia. No hi ha cap botó de cancel·lació global. Més endavant podràs reprendre l'enviament (vegeu [Reprendre un enviament interromput](#reprendre-un-enviament-interromput)).
 >
 > Fes servir el mode **Simular** per revisar què s'enviaria sense crear cap configuració real.
+
+---
+
+## Reprendre un enviament interromput
+
+Si un enviament s'interromp a mitges (es tanca l'aplicació, es talla la connexió, s'apaga l'ordinador…), l'aplicació recorda a quins contactes ja se'ls ha programat el correu.
+
+En tornar a preparar **la mateixa campanya** (mateix grup, plantilla i camp adjunt, i **exactament el mateix assumpte**), en arribar al resum l'aplicació avisa que hi ha un enviament anterior incomplet i pregunta què cal fer:
+
+- **Continuar**: només s'envia als contactes pendents. Els seus correus es programen a continuació dels de l'enviament anterior, sense solapar-s'hi.
+- **No continuar**: es descarta l'enviament anterior i es torna a enviar a tots els contactes, inclosos els que ja l'han rebut.
+
+### Possibles duplicats
+
+Si la interrupció es produeix just mentre es programava un correu, o si Mensagia no arriba a respondre, l'aplicació no pot saber si aquell correu va quedar programat. En aquest cas el torna a programar, però avisa:
+
+- En reprendre, l'avís indica el destinatari i la data i hora a revisar.
+- En acabar, indica si hi ha un **possible duplicat** (el correu s'ha programat ara, però potser també abans) o un enviament **no confirmat**.
+
+L'API de Mensagia no permet consultar els enviaments programats, així que aquesta comprovació s'ha de fer a mà al portal, eliminant la programació sobrant.
+
+> El progrés es desa al fitxer `send_progress.json`, a la mateixa carpeta que el `.env` o l'`.exe`. Quan un enviament acaba sense errors, la campanya s'esborra del fitxer. No l'eliminis mentre hi hagi un enviament pendent de reprendre.
 
 ---
 
@@ -190,6 +212,8 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Client i adaptadors de la API Mensagia
 │       ├── config/          # Càrrega de configuració (.env)
+│       ├── logging/         # Registre d'enviaments (logs)
+│       ├── persistence/     # Progrés dels enviaments (send_progress.json)
 │       └── ui/
 │           ├── console/     # Interfície de consola
 │           ├── gui/         # Interfície gràfica (customtkinter)

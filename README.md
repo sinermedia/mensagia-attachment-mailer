@@ -123,9 +123,31 @@ El programa **no envía los correos de forma inmediata**. Por cada contacto eleg
 - El **primer envío** se ejecuta entre **10 y 20 minutos** después de lanzar la aplicación, para dar margen a cancelar si se detecta algún error.
 - Los **envíos siguientes** se espacian **12 segundos** entre sí (5 por minuto).
 
-> **Si necesitas detener el envío una vez iniciado**, deberás eliminar cada configuración de envío de forma individual desde el portal de Mensagia. No existe un botón de cancelación global.
+> **Si necesitas detener el envío una vez iniciado**, cerrar la aplicación detiene la creación de nuevas configuraciones, pero las que ya se han creado se enviarán igualmente: deberás eliminar cada una de forma individual desde el portal de Mensagia. No existe un botón de cancelación global. Más adelante podrás reanudar el envío (ver [Reanudar un envío interrumpido](#reanudar-un-envío-interrumpido)).
 >
 > Usa el modo **Simular** para revisar qué se enviaría sin crear ninguna configuración real.
+
+---
+
+## Reanudar un envío interrumpido
+
+Si un envío se interrumpe a medias (se cierra la aplicación, se corta la conexión, se apaga el ordenador…), la aplicación recuerda a qué contactos ya se les ha programado el correo.
+
+Al volver a preparar **la misma campaña** (mismo grupo, plantilla y campo adjunto, y **exactamente el mismo asunto**), al llegar al resumen la aplicación avisa de que hay un envío anterior incompleto y pregunta qué hacer:
+
+- **Continuar**: solo se envía a los contactos pendientes. Sus correos se programan a continuación de los del envío anterior, sin solaparse con ellos.
+- **No continuar**: se descarta el envío anterior y se vuelve a enviar a todos los contactos, incluidos los que ya lo recibieron.
+
+### Posibles duplicados
+
+Si la interrupción se produce justo mientras se programaba un correo, o si Mensagia no llega a responder, la aplicación no puede saber si ese correo quedó programado. En ese caso lo vuelve a programar, pero avisa:
+
+- Al reanudar, el aviso indica el destinatario y la fecha y hora a revisar.
+- Al terminar, indica si hay un **posible duplicado** (el correo se ha programado ahora, pero quizá también antes) o un envío **no confirmado**.
+
+La API de Mensagia no permite consultar los envíos programados, así que esta comprobación debe hacerse a mano en el portal, eliminando la programación sobrante.
+
+> El progreso se guarda en el archivo `send_progress.json`, en la misma carpeta que el `.env` o el `.exe`. Cuando un envío termina sin errores, la campaña se borra del archivo. No lo elimines mientras haya un envío pendiente de reanudar.
 
 ---
 
@@ -190,6 +212,8 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Cliente y adaptadores de la API Mensagia
 │       ├── config/          # Carga de configuración (.env)
+│       ├── logging/         # Registro de envíos (logs)
+│       ├── persistence/     # Progreso de envíos (send_progress.json)
 │       └── ui/
 │           ├── console/     # Interfaz de consola
 │           ├── gui/         # Interfaz gráfica (customtkinter)

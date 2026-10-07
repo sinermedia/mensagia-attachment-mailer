@@ -123,9 +123,31 @@ Programak **ez ditu mezu elektronikoak berehala bidaltzen**. Kontaktu hautagarri
 - **Lehen bidalketa** aplikazioa abiarazi eta **10 eta 20 minutu** artean exekutatzen da, erroreren bat antzemanez gero denbora izateko ezeztatzen.
 - **Hurrengo bidalketak** **12 segundotan** banatzen dira (minutuko 5).
 
-> **Bidalketa hasita dagoenean gelditu behar baduzu**, Mensagia atarian bidaltzeko konfigurazio bakoitza banaka ezabatu beharko duzu. Ez dago ezeztatze botoi globalik.
+> **Bidalketa hasita dagoenean gelditu behar baduzu**, aplikazioa ixteak konfigurazio berriak sortzea geldiarazten du, baina dagoeneko sortutakoak bidaliko dira hala ere: Mensagia atarian banaka ezabatu beharko dituzu. Ez dago ezeztatze botoi globalik. Geroago bidalketari berriro ekin ahal izango diozu (ikus [Etendako bidalketa berriro hasi](#etendako-bidalketa-berriro-hasi)).
 >
 > Erabili **Simulatu** modua konfigurazio errealik sortu gabe zer bidaliko litzatekeen ikusteko.
+
+---
+
+## Etendako bidalketa berriro hasi
+
+Bidalketa bat erdibidean eteten bada (aplikazioa ixten da, konexioa eteten da, ordenagailua itzaltzen da…), aplikazioak gogoratzen du zein kontakturi programatu zaien dagoeneko mezua.
+
+**Kanpaina bera** berriro prestatzean (talde, txantiloi eta eranskin eremu berak, eta **gai bera, hitzez hitz**), laburpenera iristean aplikazioak aurreko bidalketa osatu gabe dagoela ohartarazten du eta zer egin galdetzen du:
+
+- **Jarraitu**: falta diren kontaktuei bakarrik bidaltzen zaie. Haien mezuak aurreko bidalketakoen ondoren programatzen dira, haiekin gainjarri gabe.
+- **Ez jarraitu**: aurreko bidalketa baztertu eta kontaktu guztiei bidaltzen zaie berriro, dagoeneko jaso dutenei barne.
+
+### Bikoizketa posibleak
+
+Etenaldia mezu bat programatzen ari zen une berean gertatzen bada, edo Mensagiak erantzuten ez badu, aplikazioak ezin du jakin mezu hori programatuta geratu zen. Kasu horretan berriro programatzen du, baina ohartarazi egiten du:
+
+- Berriro hastean, oharrak hartzailea eta berrikusi beharreko data eta ordua adierazten ditu.
+- Amaitzean, **bikoizketa posible** bat dagoen (mezua orain programatu da, baina agian lehen ere bai) edo **berretsi gabeko** bidalketa bat dagoen adierazten du.
+
+Mensagiaren APIak ez du programatutako bidalketak kontsultatzen uzten; beraz, egiaztapen hori eskuz egin behar da atarian, soberan dagoen programazioa ezabatuz.
+
+> Aurrerapena `send_progress.json` fitxategian gordetzen da, `.env` edo `.exe` fitxategiaren karpeta berean. Bidalketa bat errorerik gabe amaitzen denean, kanpaina fitxategitik ezabatzen da. Ez ezabatu fitxategia berriro hasteko zain dagoen bidalketarik dagoen bitartean.
 
 ---
 
@@ -191,6 +213,8 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Mensagia API bezeroa eta egokitzaileak
 │       ├── config/          # Konfigurazioa kargatzea (.env)
+│       ├── logging/         # Bidalketen erregistroa (logak)
+│       ├── persistence/     # Bidalketen aurrerapena (send_progress.json)
 │       └── ui/
 │           ├── console/     # Kontsola interfazea
 │           ├── gui/         # Interfaze grafikoa (customtkinter)
