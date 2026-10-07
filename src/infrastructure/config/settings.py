@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+from src.infrastructure.config.app_paths import user_data_dir
+
 
 def load_api_token() -> str | None:
     """Load the Mensagia API token from environment variables or a .env file.
@@ -72,22 +74,18 @@ def _load_env_files():
     are effectively no-ops because dotenv skips already-set variables.
 
     Candidate locations checked in order:
-    1. Next to the .exe (PyInstaller bundle, by executable directory).
-    2. Next to the .exe (PyInstaller bundle, by argv[0]).
-    3. Current working directory ('.env').
-    4. Repository root (four parent directories up from this file).
+    1. The user data directory (see user_data_dir): next to the .exe on
+       Windows, ~/Mensagia Mailer on macOS, the repository root from source.
+    2. Current working directory ('.env').
     """
+    # The user data directory comes first because it does not depend on the
+    # working directory, which is / when a macOS app is opened from Finder.
+    # The working directory stays as a fallback for anyone launching the app
+    # from a terminal in a folder that holds their .env
     candidates = [
+        user_data_dir() / ".env",
         Path(".env"),
-        Path(__file__).parent.parent.parent.parent / ".env",
     ]
-
-    # When running as a PyInstaller bundle the working directory may differ
-    # from the executable location, so add paths relative to the bundle
-    if hasattr(os, "_MEIPASS"):
-        candidates.insert(0, Path(os.path.dirname(os.path.abspath(__file__))) / ".env")
-        exe_dir = Path(os.path.dirname(os.path.abspath(os.sys.argv[0])))
-        candidates.insert(0, exe_dir / ".env")
 
     # Load the first .env file found; skip missing files silently
     for path in candidates:
