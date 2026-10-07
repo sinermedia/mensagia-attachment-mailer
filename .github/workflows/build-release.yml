@@ -30,9 +30,9 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -57,7 +57,7 @@ jobs:
           --name mensagia-mailer-console-windows
           main.py
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/*.exe
@@ -82,9 +82,9 @@ jobs:
             arch: intel
             machine: x86_64
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -140,7 +140,7 @@ jobs:
           ditto -c -k --keepParent dist/mensagia-mailer-gui.app "release/mensagia-mailer-gui-macos-${{ matrix.arch }}.zip"
           ditto -c -k --keepParent dist/mensagia-mailer-console "release/mensagia-mailer-console-macos-${{ matrix.arch }}.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-${{ matrix.arch }}
           path: release/*.zip
@@ -155,7 +155,7 @@ jobs:
     if: always() && startsWith(github.ref, 'refs/tags/v') && needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
