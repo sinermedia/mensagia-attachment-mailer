@@ -1,10 +1,10 @@
 import hashlib
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 
 from src.domain.ports.send_registry import SendRegistry
+from src.infrastructure.config.app_paths import user_data_dir
 
 
 # Name of the JSON file that persists per-campaign send progress
@@ -14,16 +14,15 @@ _FILE = "send_progress.json"
 def _default_registry_path() -> Path:
     """Return the default absolute path to the send_progress.json file.
 
-    Follows the same location convention as last_selections.json: next to
-    the executable when bundled with PyInstaller (so progress survives app
-    updates), or at the repository root in development mode.
+    Lives in the shared user data directory, like last_selections.json:
+    next to the .exe on Windows (so progress survives app updates), in
+    ~/Mensagia Mailer on macOS, or at the repository root in development
+    mode (see user_data_dir).
 
     Returns:
         Path object pointing to the default send_progress.json location.
     """
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent / _FILE
-    return Path(__file__).parents[3] / _FILE
+    return user_data_dir() / _FILE
 
 
 def _campaign_key(group_id: int, template_id: int, field_name: str, subject: str) -> str:

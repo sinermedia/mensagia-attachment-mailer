@@ -98,6 +98,11 @@ class TestJsonSendRegistry:
         registry.mark_sent(10, 5, "attachment_url", "Hello", 1, T)
         assert json.loads(default_file.read_text(encoding="utf-8"))
 
+    def test_default_path_lives_in_user_data_dir(self, tmp_path, monkeypatch):
+        """By default the registry file is placed in the shared user data directory."""
+        monkeypatch.setattr("src.infrastructure.persistence.json_send_registry.user_data_dir", lambda: tmp_path)
+        assert JsonSendRegistry().path == tmp_path / "send_progress.json"
+
 
 class TestJsonSendRegistryScheduling:
     """Tests for tracking the last scheduled slot of a campaign.
