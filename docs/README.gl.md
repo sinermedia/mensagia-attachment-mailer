@@ -8,26 +8,86 @@ Aplicación para enviar correos electrónicos con adxuntos personalizados por co
 
 ## Requisitos
 
-- Windows 10/11 (para o executable)
+- Windows 10/11 ou macOS (para os executables)
 - Ou Python 3.11+ (para executar dende o código fonte)
 
 ---
 
 ## Uso do executable (clientes sen Python)
 
-1. Descarga o executable dende a [páxina de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest) (`mensagia-mailer-gui.exe` para modo gráfico, ou `mensagia-mailer-console.exe` para modo consola)
-2. Crea un ficheiro `.env` na **mesma carpeta** que o `.exe` co teu token:
+Descarga a versión para o teu ordenador dende a [páxina de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest):
+
+| Ordenador | Modo gráfico | Modo consola |
+|---|---|---|
+| Windows | `mensagia-mailer-gui-windows.exe` | `mensagia-mailer-console-windows.exe` |
+| Mac con Apple Silicon (M1, M2…) | `mensagia-mailer-gui-macos-apple-silicon.zip` | `mensagia-mailer-console-macos-apple-silicon.zip` |
+| Mac con procesador Intel | `mensagia-mailer-gui-macos-intel.zip` | `mensagia-mailer-console-macos-intel.zip` |
+
+### Token API
+
+A aplicación necesita o teu token API de Mensagia, que podes obter en [mensagia.com](https://mensagia.com) → Usuarios. Se non o tes configurado, pedirache o token ao arrancar. Para non ter que introducilo cada vez, gárdao nun ficheiro `.env` no [cartafol de datos da aplicación](#ficheiros-da-aplicación):
 
 ```
 MENSAGIA_API_TOKEN=o_teu_token_api_aqui
 ```
 
-> Podes obter o teu token API en [mensagia.com](https://mensagia.com) → Usuarios.
-> Se non existe o ficheiro `.env`, a aplicación pedirache o token ao arrancar.
+### Windows
 
+1. Descarga o `.exe`. A aplicación garda os seus ficheiros no mesmo cartafol, así que convén poñelo nun cartafol propio.
+2. Opcionalmente, crea o ficheiro `.env` nese **mesmo cartafol**.
 3. Executa o `.exe`.
 
 > **Aviso de Windows SmartScreen:** a primeira vez que executes o ficheiro, Windows pode mostrar un aviso de seguridade. Fai clic en **"Máis información"** e logo en **"Executar de todos modos"**. Só é necesario facelo unha vez por cada versión descargada.
+
+### macOS
+
+> macOS non está dispoñible en galego: os nomes dos menús que aparecen aquí son os da versión en castelán.
+
+1. **Escolle a versión do teu Mac.** Abre o menú Apple → **Acerca de este Mac**:
+   - Se aparece **Chip** (Apple M1, M2, M3…), descarga a versión `apple-silicon`.
+   - Se aparece **Procesador** (Intel…), descarga a versión `intel`.
+
+   > GitHub está a retirar as máquinas que compilan para Mac con Intel. Se a última versión non inclúe os ficheiros `intel`, descárgaos da versión máis recente que os teña na [lista de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases).
+
+2. Fai dobre clic no `.zip` para descomprimilo (Safari pode facelo automaticamente ao descargalo). En modo gráfico obterás `mensagia-mailer-gui.app`, que podes mover a **Aplicaciones**.
+3. Opcionalmente, garda o ficheiro `.env` no cartafol **Mensagia Mailer** do teu cartafol persoal. Podes crear ambos dende o Terminal:
+
+   ```
+   mkdir -p ~/"Mensagia Mailer"
+   echo "MENSAGIA_API_TOKEN=o_teu_token_api_aqui" > ~/"Mensagia Mailer/.env"
+   ```
+
+   > O Finder oculta os ficheiros cuxo nome comeza por un punto, como `.env`. Preme **Cmd + Maiús + .** para amosalos ou ocultalos.
+
+4. Abre a aplicación. A primeira vez, macOS bloqueará a aplicación porque non está asinada por Apple (é o equivalente ao aviso de SmartScreen de Windows). Para permitila:
+   - **macOS 15 (Sequoia) ou posterior:** despois do aviso, abre **Ajustes del Sistema → Privacidad y seguridad**, baixa ata a mensaxe sobre a aplicación e preme **Abrir igualmente**. Volve abrila e confírmao.
+   - **macOS 14 ou anterior:** fai clic dereito sobre a aplicación → **Abrir**, e confírmao no aviso.
+   - **En calquera versión, dende o Terminal:** `xattr -cr` seguido da ruta da aplicación, por exemplo `xattr -cr /Applications/mensagia-mailer-gui.app`.
+
+   Só é necesario facelo unha vez por cada versión descargada.
+
+> A versión de consola ábrese con dobre clic e funciona dentro dunha xanela do Terminal.
+
+---
+
+## Ficheiros da aplicación
+
+A aplicación garda os seus ficheiros nun cartafol de datos, que depende de como se execute:
+
+| Execución | Cartafol de datos |
+|---|---|
+| Windows (`.exe`) | O mesmo cartafol que o `.exe` |
+| macOS | `Mensagia Mailer`, dentro do teu cartafol persoal (`~/Mensagia Mailer`) |
+| Código fonte | A raíz do proxecto |
+
+Nese cartafol atópanse:
+
+- `.env`: a configuración (token API, idioma, URL base dos adxuntos…). Créalo ti e é opcional.
+- `logs/`: un rexistro de cada envío.
+- `last_selections.json`: as últimas opcións escollidas (ver [Memoria de seleccións](#memoria-de-seleccións-modo-gráfico)).
+- `send_progress.json`: o progreso dos envíos (ver [Retomar un envío interrompido](#retomar-un-envío-interrompido)).
+
+A aplicación crea o cartafol e os ficheiros a medida que os necesita.
 
 ---
 
@@ -147,7 +207,7 @@ Se a interrupción se produce xusto mentres se programaba un correo, ou se Mensa
 
 A API de Mensagia non permite consultar os envíos programados, así que esta comprobación debe facerse a man no portal, eliminando a programación sobrante.
 
-> O progreso gárdase no ficheiro `send_progress.json`, no mesmo cartafol que o `.env` ou o `.exe`. Cando un envío remata sen erros, a campaña bórrase do ficheiro. Non o elimines mentres haxa un envío pendente de retomar.
+> O progreso gárdase no ficheiro `send_progress.json`, no [cartafol de datos da aplicación](#ficheiros-da-aplicación). Cando un envío remata sen erros, a campaña bórrase do ficheiro. Non o elimines mentres haxa un envío pendente de retomar.
 
 ---
 
@@ -155,7 +215,7 @@ A API de Mensagia non permite consultar os envíos programados, así que esta co
 
 Tras cada envío ou simulación, a aplicación garda os parámetros escollidos
 (modelo, remitente, grupo, campo adxunto e certificado) nun ficheiro
-`last_selections.json`, na mesma carpeta que o `.env` ou o `.exe`.
+`last_selections.json`, no [cartafol de datos da aplicación](#ficheiros-da-aplicación).
 
 Na seguinte execución, esas opcións quedarán marcadas por defecto.
 
@@ -171,21 +231,14 @@ Idiomas dispoñibles: **Español, Català, Galego, Euskera, English**.
 
 ---
 
-## Xerar o executable
+## Xerar os executables
 
-Require as dependencias de desenvolvemento:
+Os executables xéranse automaticamente con GitHub Actions (`.github/workflows/build-release.yml`). PyInstaller non pode compilar para outro sistema, así que cada versión se compila nunha máquina do sistema correspondente: Windows, Mac con Apple Silicon e Mac con Intel.
 
-```bash
-pip install -r requirements-dev.txt
-```
+- **Ao subir un tag `vX.Y.Z`**, o workflow compila as tres versións e crea un **borrador de release** cos seis ficheiros adxuntos. Despois redáctanse as notas e publícase.
+- **A man**, dende a lapela **Actions** → **Run workflow**, compila as tres versións sen crear ningunha release e deixa os ficheiros para descargar na propia execución (apartado **Artifacts**).
 
-Executa o script de compilación:
-
-```bash
-build.bat
-```
-
-Os ficheiros `.exe` xéranse na carpeta `dist/`.
+> Se a compilación para Mac con Intel falla porque GitHub xa retirou esas máquinas, o borrador de release créase igualmente cos ficheiros de Windows e de Apple Silicon.
 
 ---
 
@@ -221,7 +274,7 @@ mensagia-attachment-mailer/
 ├── tests/
 ├── main.py                 # Punto de entrada consola
 ├── main_gui.py             # Punto de entrada gráfico
-├── build.bat               # Script de compilación a .exe
+├── .github/workflows/      # Compilación dos executables (GitHub Actions)
 ├── requirements.txt
 ├── requirements-dev.txt
 └── .env.example

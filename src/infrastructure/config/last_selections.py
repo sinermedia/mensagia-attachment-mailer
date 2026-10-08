@@ -1,6 +1,7 @@
 import json
-import sys
 from pathlib import Path
+
+from src.infrastructure.config.app_paths import user_data_dir
 
 
 # Name of the JSON file that persists the user's last UI selections
@@ -10,20 +11,14 @@ _FILE = "last_selections.json"
 def _selections_path() -> Path:
     """Return the absolute path to the last_selections.json file.
 
-    The file location depends on whether the application is running as a
-    plain Python script or as a PyInstaller-packaged executable:
-    - Frozen (PyInstaller): next to the .exe so it survives app updates.
-    - Development: at the repository root (three levels above this file)
-      so it is convenient to inspect and is not buried inside the package.
+    The file lives in the shared user data directory: next to the .exe on
+    Windows, in ~/Mensagia Mailer on macOS, or at the repository root when
+    running from source (see user_data_dir).
 
     Returns:
         Path object pointing to the last_selections.json file.
     """
-    # sys.frozen is set by PyInstaller; use the executable's directory
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent / _FILE
-    # In development the repo root is four package levels above this file
-    return Path(__file__).parents[3] / _FILE
+    return user_data_dir() / _FILE
 
 
 def load_last_selections() -> dict:
@@ -64,10 +59,12 @@ def save_last_selections(data: dict) -> None:
             Expected keys: 'template_id', 'sender_id', 'agenda_id',
             'field_id', 'certified'.
     """
+    # The user data directory may not exist yet: on macOS it is a folder in
+    # the home directory that nothing creates before the first save
     try:
-        _selections_path().write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        path = _selections_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         # Silently ignore write failures — preference persistence is best-effort
         pass

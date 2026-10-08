@@ -18,6 +18,13 @@ class TestSendLogger:
         assert logger.log_path.exists()
         assert logger.log_path.parent == tmp_path
 
+    def test_defaults_to_logs_folder_in_user_data_dir(self, tmp_path, monkeypatch):
+        """Without an explicit directory, logs go to a logs/ folder in the user data directory."""
+        monkeypatch.setattr("src.infrastructure.logging.send_logger.user_data_dir", lambda: tmp_path)
+        logger = SendLogger()
+        assert logger.log_path.parent == tmp_path / "logs"
+        assert logger.log_path.exists()
+
     def test_log_file_name_has_expected_prefix_and_suffix(self, tmp_path):
         """The log file name starts with mensagia_send_ and ends with .log."""
         logger = SendLogger(log_dir=str(tmp_path))

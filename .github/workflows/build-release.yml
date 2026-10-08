@@ -1,0 +1,188 @@
+# Build the Windows and macOS executables and attach them to a draft release.
+#
+# PyInstaller cannot cross-compile, so each platform is built on its own
+# runner. Pushing a v* tag builds everything and creates a draft release with
+# the files attached, so the notes can be written before publishing it.
+# A manual run (workflow_dispatch) only builds and leaves the files as
+# downloadable artifacts of the run.
+name: Build release executables
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  build-windows:
+    name: Windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      # The window icon is read from the bundle at runtime, hence --add-data;
+      # on Windows the source;destination separator is a semicolon
+      - name: Build GUI executable
+        run: >
+          python -m PyInstaller --onefile --windowed --noconfirm
+          --name mensagia-mailer-gui-windows
+          --icon assets/icon.ico
+          --add-data "assets/icon.ico;assets"
+          --hidden-import customtkinter --hidden-import PIL
+          --collect-all customtkinter
+          main_gui.py
+
+      - name: Build console executable
+        run: >
+          python -m PyInstaller --onefile --console --noconfirm
+          --name mensagia-mailer-console-windows
+          main.py
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  build-macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    # GitHub is retiring its Intel macOS runners. When that one is gone the
+    # Intel build fails, but it must not block the release: the release job
+    # goes ahead with the Windows and Apple Silicon files
+    continue-on-error: ${{ matrix.arch == 'intel' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: apple-silicon
+            machine: arm64
+          - runner: macos-15-intel
+            arch: intel
+            machine: x86_64
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Each build only runs on its own processor family, so make sure the
+      # runner really is the one the zip names will claim
+      - name: Check processor family
+        run: |
+          if [ "$(uname -m)" != "${{ matrix.machine }}" ]; then
+            echo "::error::Expected ${{ matrix.machine }}, runner is $(uname -m)"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      # Generate the .icns icon from the PNG with the native macOS tools, so
+      # no binary icon file has to be kept in the repository
+      - name: Generate icon
+        run: |
+          ICONSET=build/icon.iconset
+          mkdir -p "$ICONSET"
+          for size in 16 32 128 256 512; do
+            sips -z "$size" "$size" assets/icon.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+            double=$((size * 2))
+            sips -z "$double" "$double" assets/icon.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$ICONSET" -o build/icon.icns
+
+      # --onedir rather than --onefile: PyInstaller deprecates one-file .app
+      # bundles on macOS. The .ico window icon is not bundled, as the .app
+      # already carries the .icns one
+      - name: Build GUI app
+        run: >
+          python -m PyInstaller --onedir --windowed --noconfirm
+          --name mensagia-mailer-gui
+          --icon build/icon.icns
+          --hidden-import customtkinter --hidden-import PIL
+          --collect-all customtkinter
+          main_gui.py
+
+      - name: Build console executable
+        run: >
+          python -m PyInstaller --onefile --console --noconfirm
+          --name mensagia-mailer-console
+          main.py
+
+      # ditto keeps the symlinks and permissions inside the .app bundle and
+      # the console binary's executable bit, which a plain zip can lose,
+      # leaving an app that refuses to start. --keepParent stores the .app
+      # folder itself; for the single console file it would also store the
+      # dist/ folder around it, so it is left out there
+      - name: Package
+        run: |
+          mkdir -p release
+          ditto -c -k --keepParent dist/mensagia-mailer-gui.app "release/mensagia-mailer-gui-macos-${{ matrix.arch }}.zip"
+          ditto -c -k dist/mensagia-mailer-console "release/mensagia-mailer-console-macos-${{ matrix.arch }}.zip"
+          # Fail here rather than ship zips with an unexpected layout
+          unzip -l "release/mensagia-mailer-gui-macos-${{ matrix.arch }}.zip" | grep -q " mensagia-mailer-gui.app/Contents/MacOS/mensagia-mailer-gui$"
+          unzip -l "release/mensagia-mailer-console-macos-${{ matrix.arch }}.zip" | grep -q " mensagia-mailer-console$"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-${{ matrix.arch }}
+          path: release/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Draft release
+    needs: [build-windows, build-macos]
+    # Only for tags. always() lets it run even if the Intel build failed;
+    # the required files are checked explicitly below instead
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.build-windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: release
+          merge-multiple: true
+
+      # Windows and Apple Silicon are mandatory; Intel is optional and only
+      # produces a warning, as a reminder to stop building it once its
+      # runner is gone
+      - name: Check files
+        run: |
+          ls -l release
+          for f in mensagia-mailer-gui-windows.exe mensagia-mailer-console-windows.exe \
+                   mensagia-mailer-gui-macos-apple-silicon.zip mensagia-mailer-console-macos-apple-silicon.zip; do
+            [ -f "release/$f" ] || { echo "::error::Missing $f"; exit 1; }
+          done
+          if [ ! -f release/mensagia-mailer-gui-macos-intel.zip ]; then
+            echo "::warning::No macOS Intel build in this release"
+          fi
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          --repo "${{ github.repository }}"
+          --draft
+          --verify-tag
+          --title "${{ github.ref_name }}"
+          --notes "Borrador generado automáticamente. Redacta las notas antes de publicar."
+          release/*

@@ -64,3 +64,51 @@ def test_load_show_ids_returns_true_when_set_to_true():
     with patch("src.infrastructure.config.settings._load_env_files"):
         with patch.dict(os.environ, {"MENSAGIA_SHOW_IDS": "true"}):
             assert load_show_ids() is True
+
+
+from src.infrastructure.config.settings import _load_env_files
+
+
+class TestEnvFileLocation:
+    """Which .env file is loaded, depending on the user data directory and the working directory."""
+
+    @staticmethod
+    def _load_marker(user_dir, cwd, monkeypatch):
+        """Load the .env files with the given user data dir and cwd, and return the marker value."""
+        monkeypatch.setattr("src.infrastructure.config.settings.user_data_dir", lambda: user_dir)
+        monkeypatch.chdir(cwd)
+        env = {k: v for k, v in os.environ.items() if k != "MENSAGIA_TEST_MARKER"}
+        with patch.dict(os.environ, env, clear=True):
+            _load_env_files()
+            return os.environ.get("MENSAGIA_TEST_MARKER")
+
+    def test_loads_env_from_user_data_dir(self, tmp_path, monkeypatch):
+        """The .env in the user data directory is found even when the working directory is elsewhere."""
+        user_dir, cwd = tmp_path / "user", tmp_path / "cwd"
+        user_dir.mkdir()
+        cwd.mkdir()
+        (user_dir / ".env").write_text("MENSAGIA_TEST_MARKER=user\n", encoding="utf-8")
+        assert self._load_marker(user_dir, cwd, monkeypatch) == "user"
+
+    def test_falls_back_to_working_directory(self, tmp_path, monkeypatch):
+        """A .env in the working directory is used when the user data directory has none."""
+        user_dir, cwd = tmp_path / "user", tmp_path / "cwd"
+        user_dir.mkdir()
+        cwd.mkdir()
+        (cwd / ".env").write_text("MENSAGIA_TEST_MARKER=cwd\n", encoding="utf-8")
+        assert self._load_marker(user_dir, cwd, monkeypatch) == "cwd"
+
+    def test_user_data_dir_takes_precedence_over_working_directory(self, tmp_path, monkeypatch):
+        """When both exist, the .env in the user data directory wins."""
+        user_dir, cwd = tmp_path / "user", tmp_path / "cwd"
+        user_dir.mkdir()
+        cwd.mkdir()
+        (user_dir / ".env").write_text("MENSAGIA_TEST_MARKER=user\n", encoding="utf-8")
+        (cwd / ".env").write_text("MENSAGIA_TEST_MARKER=cwd\n", encoding="utf-8")
+        assert self._load_marker(user_dir, cwd, monkeypatch) == "user"
+
+    def test_missing_user_data_dir_is_not_an_error(self, tmp_path, monkeypatch):
+        """A user data directory that does not exist yet (first run on macOS) is skipped silently."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        assert self._load_marker(tmp_path / "missing", cwd, monkeypatch) is None

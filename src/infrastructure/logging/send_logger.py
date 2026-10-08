@@ -1,20 +1,20 @@
 import logging
-import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from src.infrastructure.config.app_paths import user_data_dir
 
 
 def _default_log_dir() -> Path:
     """Return the default log directory depending on execution context.
 
     Returns:
-        Path next to the executable when bundled with PyInstaller, or the
-        'logs' sub-directory at the repository root in development mode.
+        The 'logs' sub-directory of the shared user data directory: next to
+        the .exe on Windows, in ~/Mensagia Mailer on macOS, or at the
+        repository root in development mode (see user_data_dir).
     """
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent / "logs"
-    return Path(__file__).parents[3] / "logs"
+    return user_data_dir() / "logs"
 
 
 def _q(value: str) -> str:
@@ -65,8 +65,9 @@ class SendLogger:
 
         Args:
             log_dir: Directory to write the log file into. Defaults to a
-                'logs' sub-directory next to the executable (frozen bundle)
-                or at the repository root (development run).
+                'logs' sub-directory of the user data directory (next to
+                the .exe on Windows, ~/Mensagia Mailer on macOS, the
+                repository root in a development run).
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         dir_path = Path(log_dir) if log_dir is not None else _default_log_dir()
