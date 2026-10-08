@@ -205,7 +205,7 @@ Skip reasons (`reason=` in the `[SEND_SKIP]` lines):
 
 The `[SEND_ERROR]` lines are eligible contacts whose attachment could not be prepared (for example, a relative path without a base URL, or a file that cannot be downloaded).
 
-When **no contact in the group is eligible** (or all of them already received the email in a previous send), sending is not possible but simulating is: the log shows why each contact was left out. In GUI mode the **Send** button stays disabled; in console mode the app only offers the simulation.
+When **no contact in the group is eligible** (or all of them already received the email in a previous send), sending is not possible but simulating is: the log shows why each contact was left out. In GUI mode the **Send** button stays disabled; in console mode the app only offers the simulation. Also, after a simulation, GUI mode only offers the **Send** button if some email would be sent (for example, it is not offered when no attachment can be downloaded).
 
 ---
 

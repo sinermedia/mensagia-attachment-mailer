@@ -207,7 +207,7 @@ Motivos de descarte (`reason=` nas liñas `[SEND_SKIP]`):
 
 As liñas `[SEND_ERROR]` corresponden a contactos aptos cuxo adxunto non se puido preparar (por exemplo, unha ruta relativa sen URL base ou un ficheiro que non se pode descargar).
 
-Cando **ningún contacto do grupo é apto** (ou todos recibiron xa o correo nun envío anterior), non se pode enviar, pero si simular: o log permite saber por que se descartou cada contacto. No modo gráfico, o botón **Enviar** queda desactivado; no modo consola, a aplicación só ofrece a simulación.
+Cando **ningún contacto do grupo é apto** (ou todos recibiron xa o correo nun envío anterior), non se pode enviar, pero si simular: o log permite saber por que se descartou cada contacto. No modo gráfico, o botón **Enviar** queda desactivado; no modo consola, a aplicación só ofrece a simulación. Ademais, despois dunha simulación, o modo gráfico só ofrece o botón **Enviar** se se enviaría algún correo (por exemplo, non o ofrece se ningún adxunto se pode descargar).
 
 ---
 

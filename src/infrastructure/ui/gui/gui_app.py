@@ -943,7 +943,7 @@ class App(ctk.CTk):
                     "certified": self._certified_var.get(),
                 })
 
-                self._show_send_actions(_dry_run)
+                self._show_send_actions(_dry_run, would_send=len(result.sent))
 
             except MensagiaAPIError as e:
                 message = t("error_api", error=str(e))
@@ -956,20 +956,27 @@ class App(ctk.CTk):
 
         threading.Thread(target=_run, daemon=True).start()
 
-    def _show_send_actions(self, dry_run: bool):
+    def _show_send_actions(self, dry_run: bool, would_send: int):
         """Offer the buttons that follow a finished send or simulation.
 
         After a simulation the user can go back to the summary or, when the
-        summary allowed it, go ahead with the real send. After a real send
-        only a new campaign makes sense.
+        simulation found emails to send, go ahead with the real send. After
+        a real send only a new campaign makes sense.
 
         Args:
             dry_run: True when the finished run was a simulation.
+            would_send: Number of emails the run sent, or would send in a
+                simulation.
         """
         if dry_run:
-            # The real send is offered only when the summary enabled it: a
-            # simulation is also allowed when there is nothing to send
-            if self._can_send:
+            # The real send is offered only when the summary enabled it (a
+            # simulation is also allowed when there is nothing to send) and
+            # the simulation found at least one email to send: when every
+            # eligible contact failed, for instance because no attachment
+            # can be downloaded, a real send would fail the same way. The
+            # summary keeps its Send button, since the attachments may have
+            # been fixed in the meantime
+            if self._can_send and would_send:
                 ctk.CTkButton(
                     self._sending_actions, text=t("btn_send"),
                     command=lambda: self._do_send(dry_run=False),

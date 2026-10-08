@@ -280,22 +280,29 @@ class TestGuiPostSendActions:
         return [w.cget("text") for w in window._sending_actions.winfo_children()]
 
     def test_offers_the_real_send_after_a_simulation(self, app):
-        """Offers Send and Back to summary after a simulation when there is something to send."""
+        """Offers Send and Back to summary after a simulation that found emails to send."""
         app._can_send = True
-        app._show_send_actions(dry_run=True)
+        app._show_send_actions(dry_run=True, would_send=2)
 
         assert self._button_texts(app) == ["Send", "Back to summary"]
 
     def test_hides_the_real_send_after_a_simulation_with_nothing_to_send(self, app):
-        """Offers only Back to summary after a simulation when no contact can be sent to."""
+        """Offers only Back to summary after a simulation when the summary allowed no send."""
         app._can_send = False
-        app._show_send_actions(dry_run=True)
+        app._show_send_actions(dry_run=True, would_send=0)
+
+        assert self._button_texts(app) == ["Back to summary"]
+
+    def test_hides_the_real_send_when_the_simulation_would_send_nothing(self, app):
+        """Offers only Back to summary when every eligible contact failed in the simulation."""
+        app._can_send = True
+        app._show_send_actions(dry_run=True, would_send=0)
 
         assert self._button_texts(app) == ["Back to summary"]
 
     def test_offers_a_new_send_after_a_real_send(self, app):
         """Offers only New send once a real send finishes."""
-        app._show_send_actions(dry_run=False)
+        app._show_send_actions(dry_run=False, would_send=1)
 
         assert self._button_texts(app) == ["New send"]
 
