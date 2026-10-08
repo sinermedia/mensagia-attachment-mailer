@@ -2,6 +2,7 @@ import hashlib
 from datetime import datetime
 import json
 from src.domain.entities.campaign import Campaign
+from src.domain.scheduling import StartMode
 from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
 
 
@@ -236,3 +237,25 @@ class TestJsonSendRegistryUncertainAttempts:
         registry.clear(Campaign(10, 5, "attachment_url", "Hello"))
         assert registry.get_uncertain_attempts(Campaign(10, 5, "attachment_url", "Hello")) == {}
         assert registry.get_last_start_date(Campaign(10, 5, "attachment_url", "Hello")) is None
+
+
+class TestJsonSendRegistryStartMode:
+    """Tests that the start mode is part of a campaign's identity in the registry."""
+
+    def test_campaigns_with_different_start_modes_are_tracked_independently(self, tmp_path):
+        """Sends recorded with a fixed start do not leak into the same campaign started now."""
+        registry = JsonSendRegistry(tmp_path / "send_progress.json")
+        registry.mark_sent(Campaign(10, 5, "attachment_url", "Hello", StartMode.FIXED), 1, T)
+        assert registry.get_sent_contact_ids(Campaign(10, 5, "attachment_url", "Hello", StartMode.FIXED)) == {1}
+        assert registry.get_sent_contact_ids(Campaign(10, 5, "attachment_url", "Hello")) == set()
+
+    def test_a_campaign_starts_now_by_default(self):
+        """A campaign built without a start mode uses the "now" mode."""
+        assert Campaign(10, 5, "attachment_url", "Hello").start_mode == StartMode.NOW
+
+    def test_the_record_shows_the_start_mode(self, tmp_path):
+        """The stored record names the start mode so the file stays readable."""
+        path = tmp_path / "send_progress.json"
+        JsonSendRegistry(path).mark_sent(Campaign(10, 5, "attachment_url", "Hello", StartMode.FIXED), 1, T)
+        record = next(iter(json.loads(path.read_text(encoding="utf-8")).values()))
+        assert record["start_mode"] == "fixed"

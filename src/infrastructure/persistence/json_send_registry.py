@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.domain.entities.campaign import Campaign
 from src.domain.ports.send_registry import SendRegistry
+from src.domain.scheduling import StartMode
 from src.infrastructure.config.app_paths import user_data_dir
 
 
@@ -30,7 +31,9 @@ def _campaign_key(campaign: Campaign) -> str:
     """Build a stable, filesystem- and JSON-key-safe identifier for a campaign.
 
     Hashing avoids issues with special characters in the subject and
-    keeps the registry file's keys short.
+    keeps the registry file's keys short. The start mode is only added
+    when it is not StartMode.NOW, so campaigns recorded by earlier
+    versions, which always started now, keep their key.
 
     Args:
         campaign: Campaign the progress belongs to.
@@ -39,6 +42,8 @@ def _campaign_key(campaign: Campaign) -> str:
         A hexadecimal SHA-1 digest identifying this exact campaign.
     """
     raw = f"{campaign.group_id}|{campaign.template_id}|{campaign.field_name}|{campaign.subject}"
+    if campaign.start_mode != StartMode.NOW:
+        raw += f"|{campaign.start_mode.value}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
@@ -119,6 +124,7 @@ class JsonSendRegistry(SendRegistry):
             "template_id": campaign.template_id,
             "field": campaign.field_name,
             "subject": campaign.subject,
+            "start_mode": campaign.start_mode.value,
         })
 
         # Fill every key so *change* never deals with missing ones, including

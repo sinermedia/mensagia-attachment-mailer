@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta
 import pytest
-from src.domain.scheduling import next_ten_minute_mark, calculate_start_dates, SECONDS_BETWEEN_EMAILS
+from src.domain.scheduling import (
+    MAX_SCHEDULE_AHEAD, MIN_START_LEAD, SECONDS_BETWEEN_EMAILS, StartTooFarError, StartTooSoonError,
+    calculate_start_dates, default_start_time, next_ten_minute_mark, validate_fixed_start,
+)
 
 
 class TestNextTenMinuteMark:
@@ -158,3 +161,107 @@ class TestCalculateStartDatesWhenResuming:
             last = self.NOW + timedelta(minutes=minutes)
             result = calculate_start_dates(1, self.NOW, last_scheduled=last)
             assert result[0] > last
+
+
+class TestDefaultStartTime:
+    """Tests for default_start_time(), the first slot of the "now" start mode."""
+
+    def test_is_the_second_ten_minute_mark(self):
+        """The default start is the second 10-minute mark after now."""
+        assert default_start_time(datetime(2024, 1, 15, 14, 23, 0)) == datetime(2024, 1, 15, 14, 40, 0)
+
+    def test_matches_the_first_slot_of_a_new_campaign(self):
+        """The default start is the slot calculate_start_dates() gives a new campaign."""
+        now = datetime(2024, 1, 15, 14, 9, 40)
+        assert default_start_time(now) == calculate_start_dates(1, now)[0]
+
+
+class TestCalculateStartDatesWithFixedStart:
+    """Tests for calculate_start_dates() when the user chose a fixed start date and time.
+
+    The first email goes out at the chosen time when it still leaves the
+    minimum lead; otherwise it is postponed to the "now" schedule, so an
+    email is never scheduled earlier than the user asked for.
+    """
+
+    NOW = datetime(2026, 10, 8, 10, 7, 0)
+
+    def test_starts_at_the_chosen_time(self):
+        """The first email is scheduled exactly at the chosen time and the next ones 12 seconds apart."""
+        start = datetime(2026, 10, 15, 9, 0, 0)
+        result = calculate_start_dates(3, self.NOW, start_at=start)
+        assert result == [
+            datetime(2026, 10, 15, 9, 0, 0),
+            datetime(2026, 10, 15, 9, 0, 12),
+            datetime(2026, 10, 15, 9, 0, 24),
+        ]
+
+    def test_starts_at_the_chosen_time_exactly_ten_minutes_ahead(self):
+        """A chosen time exactly 10 minutes ahead still leaves enough lead to be kept."""
+        start = self.NOW + MIN_START_LEAD
+        assert calculate_start_dates(1, self.NOW, start_at=start)[0] == start
+
+    def test_postpones_a_chosen_time_less_than_ten_minutes_ahead(self):
+        """A chosen time under 10 minutes away is postponed to the "now" schedule."""
+        start = datetime(2026, 10, 8, 10, 15, 0)
+        assert calculate_start_dates(1, self.NOW, start_at=start)[0] == datetime(2026, 10, 8, 10, 20, 0)
+
+    def test_postpones_a_chosen_time_already_past(self):
+        """A chosen time already in the past is postponed to the "now" schedule."""
+        start = datetime(2026, 10, 8, 10, 0, 0)
+        assert calculate_start_dates(1, self.NOW, start_at=start)[0] == datetime(2026, 10, 8, 10, 20, 0)
+
+    def test_may_run_past_midnight(self):
+        """Emails starting just before midnight continue on the next day."""
+        start = datetime(2026, 10, 15, 23, 59, 48)
+        result = calculate_start_dates(2, self.NOW, start_at=start)
+        assert result[1] == datetime(2026, 10, 16, 0, 0, 0)
+
+    def test_resuming_continues_after_the_previous_run(self):
+        """A resumed campaign continues after its last slot rather than at the chosen time."""
+        start = datetime(2026, 10, 15, 9, 0, 0)
+        last = datetime(2026, 10, 15, 9, 0, 48)
+        assert calculate_start_dates(1, self.NOW, last_scheduled=last, start_at=start)[0] == datetime(2026, 10, 15, 9, 1, 0)
+
+    def test_resuming_too_late_uses_a_chosen_time_still_ahead(self):
+        """When the previous run's slots are too close, a chosen time with enough lead is used."""
+        start = datetime(2026, 10, 20, 9, 0, 0)
+        last = datetime(2026, 10, 8, 10, 8, 0)
+        assert calculate_start_dates(1, self.NOW, last_scheduled=last, start_at=start)[0] == start
+
+
+class TestValidateFixedStart:
+    """Tests for validate_fixed_start(), the check made when the user picks a fixed start."""
+
+    NOW = datetime(2026, 10, 8, 10, 7, 0)
+
+    def test_accepts_a_time_with_enough_lead(self):
+        """A start more than 10 minutes ahead and within the limit is accepted."""
+        validate_fixed_start(datetime(2026, 10, 15, 9, 0, 0), self.NOW)
+
+    def test_accepts_a_time_exactly_ten_minutes_ahead(self):
+        """A start exactly 10 minutes ahead is accepted."""
+        validate_fixed_start(self.NOW + MIN_START_LEAD, self.NOW)
+
+    def test_rejects_a_time_less_than_ten_minutes_ahead(self):
+        """A start under 10 minutes away is rejected as too soon."""
+        with pytest.raises(StartTooSoonError):
+            validate_fixed_start(datetime(2026, 10, 8, 10, 16, 0), self.NOW)
+
+    def test_rejects_a_time_in_the_past(self):
+        """A start already in the past is rejected as too soon."""
+        with pytest.raises(StartTooSoonError):
+            validate_fixed_start(datetime(2026, 10, 7, 9, 0, 0), self.NOW)
+
+    def test_accepts_a_time_exactly_at_the_maximum_lead(self):
+        """A start exactly MAX_SCHEDULE_AHEAD away is accepted."""
+        validate_fixed_start(self.NOW + MAX_SCHEDULE_AHEAD, self.NOW)
+
+    def test_rejects_a_time_beyond_the_maximum_lead(self):
+        """A start beyond MAX_SCHEDULE_AHEAD is rejected as too far."""
+        with pytest.raises(StartTooFarError):
+            validate_fixed_start(self.NOW + MAX_SCHEDULE_AHEAD + timedelta(minutes=1), self.NOW)
+
+    def test_maximum_lead_is_six_weeks(self):
+        """The maximum lead is six weeks."""
+        assert MAX_SCHEDULE_AHEAD == timedelta(weeks=6)
