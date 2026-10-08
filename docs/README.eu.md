@@ -83,7 +83,7 @@ Aplikazioak datu-karpeta batean gordetzen ditu bere fitxategiak, eta karpeta hor
 Karpeta horretan daude:
 
 - `.env`: konfigurazioa (API tokena, hizkuntza, eranskinen oinarrizko URLa…). Zuk sortzen duzu, eta aukerakoa da.
-- `logs/`: bidalketa bakoitzaren erregistroa.
+- `logs/`: bidalketa eta simulazio bakoitzaren erregistroa (ikus [Bidalketa bat simulatu](#bidalketa-bat-simulatu)).
 - `last_selections.json`: aukeratutako azken aukerak (ikus [Hautaketen memoria](#hautaketen-memoria-gui-modua)).
 - `send_progress.json`: bidalketen aurrerapena (ikus [Etendako bidalketa berriro hasi](#etendako-bidalketa-berriro-hasi)).
 
@@ -186,6 +186,28 @@ Programak **ez ditu mezu elektronikoak berehala bidaltzen**. Kontaktu hautagarri
 > **Bidalketa hasita dagoenean gelditu behar baduzu**, aplikazioa ixteak konfigurazio berriak sortzea geldiarazten du, baina dagoeneko sortutakoak bidaliko dira hala ere: Mensagia atarian banaka ezabatu beharko dituzu. Ez dago ezeztatze botoi globalik. Geroago bidalketari berriro ekin ahal izango diozu (ikus [Etendako bidalketa berriro hasi](#etendako-bidalketa-berriro-hasi)).
 >
 > Erabili **Simulatu** modua konfigurazio errealik sortu gabe zer bidaliko litzatekeen ikusteko.
+
+---
+
+## Bidalketa bat simulatu
+
+**Simulatu** botoiak (kontsola moduan, `Sim` erantzunak) benetako bidalketa baten egiaztapen guztiak egiten ditu (kontaktu egokiak, eranskinen URLak eta deskarga daitezkeen), baina **ez du mezurik programatzen** Mensagian, eta ez du aldatzen [bidalketa berriro hasteko](#etendako-bidalketa-berriro-hasi) gordetako aurrerapena.
+
+Simulazio bakoitzak benetako bidalketa batek bezalako edukia duen loga sortzen du: mezua jasoko luketen kontaktuak eta baztertutakoak, arrazoiarekin. Amaitzean, aplikazioak fitxategiaren bidea erakusten du.
+
+- Logak [aplikazioaren datu-karpetako](#aplikazioaren-fitxategiak) `logs/` karpetan gordetzen dira.
+- Simulazioenak `mensagia_simulation_<data_ordua>.log` dira, eta benetako bidalketenak, `mensagia_send_<data_ordua>.log`. Karpeta izenaren arabera ordenatzen baduzu, bereizita geratzen dira.
+- Simulazio-log baten lehen lerroa `[SIMULATION] This is a simulation: no email was sent.` da. Bertan, `[SEND_OK]` lerroak bidaliko liratekeen mezuak dira.
+
+Baztertzeko arrazoiak (`reason=`, `[SEND_SKIP]` lerroetan):
+
+- `no_email`: kontaktuak ez du helbide elektronikorik.
+- `no_attachment`: eranskinaren eremu pertsonalizatua hutsik dago.
+- `already_sent`: kontaktuak kanpaina bereko aurreko bidalketa eten batean jaso zuen mezua.
+
+`[SEND_ERROR]` lerroak eranskina prestatu ezin izan zaien kontaktu egokiak dira (adibidez, oinarrizko URLrik gabeko bide erlatibo bat edo deskargatu ezin den fitxategi bat).
+
+**Taldeko kontakturen bat ere egokia ez denean** (edo denek aurreko bidalketa batean jaso dutenean mezua), ezin da bidali, baina simulatu bai: logari esker jakin daiteke kontaktu bakoitza zergatik baztertu den. Modu grafikoan, **Bidali** botoia desaktibatuta geratzen da; kontsola moduan, aplikazioak simulazioa bakarrik eskaintzen du.
 
 ---
 

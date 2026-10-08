@@ -81,7 +81,7 @@ The app stores its files in a data folder, which depends on how it runs:
 That folder holds:
 
 - `.env`: the configuration (API token, language, attachment base URL…). You create it, and it is optional.
-- `logs/`: a log of each send.
+- `logs/`: a log of each send and each simulation (see [Simulating a send](#simulating-a-send)).
 - `last_selections.json`: the last options chosen (see [Selection memory](#selection-memory-gui-mode)).
 - `send_progress.json`: the progress of sends (see [Resuming an interrupted send](#resuming-an-interrupted-send)).
 
@@ -184,6 +184,28 @@ The program **does not send emails immediately**. For each eligible contact it c
 > **If you need to stop the send once it has started**, closing the app stops new configurations from being created, but those already created will still be sent: you must delete each one individually from the Mensagia portal. There is no global cancel button. You can resume the send later (see [Resuming an interrupted send](#resuming-an-interrupted-send)).
 >
 > Use **Simulate** mode to review what would be sent without creating any real configurations.
+
+---
+
+## Simulating a send
+
+The **Simulate** button (in console mode, the answer `Sim`) runs every check of a real send (eligible contacts, attachment URLs and whether they can be downloaded), but **schedules no email** in Mensagia and leaves the progress saved for [resuming a send](#resuming-an-interrupted-send) untouched.
+
+Each simulation writes a log with the same content as a real send: the contacts that would receive the email and the ones left out, with the reason. When it finishes, the app shows the path of the file.
+
+- Logs are saved in the `logs/` folder of the [app data folder](#app-files).
+- Simulation logs are named `mensagia_simulation_<date_time>.log`, and real send logs, `mensagia_send_<date_time>.log`. Sorting the folder by name keeps them apart.
+- The first line of a simulation log is `[SIMULATION] This is a simulation: no email was sent.` In it, the `[SEND_OK]` lines are the emails that would be sent.
+
+Skip reasons (`reason=` in the `[SEND_SKIP]` lines):
+
+- `no_email`: the contact has no email address.
+- `no_attachment`: the attachment custom field is empty.
+- `already_sent`: the contact already received the email in a previous, interrupted send of the same campaign.
+
+The `[SEND_ERROR]` lines are eligible contacts whose attachment could not be prepared (for example, a relative path without a base URL, or a file that cannot be downloaded).
+
+When **no contact in the group is eligible** (or all of them already received the email in a previous send), sending is not possible but simulating is: the log shows why each contact was left out. In GUI mode the **Send** button stays disabled; in console mode the app only offers the simulation.
 
 ---
 

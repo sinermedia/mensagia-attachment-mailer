@@ -83,7 +83,7 @@ A aplicación garda os seus ficheiros nun cartafol de datos, que depende de como
 Nese cartafol atópanse:
 
 - `.env`: a configuración (token API, idioma, URL base dos adxuntos…). Créalo ti e é opcional.
-- `logs/`: un rexistro de cada envío.
+- `logs/`: un rexistro de cada envío e de cada simulación (ver [Simular un envío](#simular-un-envío)).
 - `last_selections.json`: as últimas opcións escollidas (ver [Memoria de seleccións](#memoria-de-seleccións-modo-gráfico)).
 - `send_progress.json`: o progreso dos envíos (ver [Retomar un envío interrompido](#retomar-un-envío-interrompido)).
 
@@ -186,6 +186,28 @@ O programa **non envía os correos de forma inmediata**. Por cada contacto elixi
 > **Se necesitas deter o envío unha vez iniciado**, pechar a aplicación detén a creación de novas configuracións, pero as que xa se crearon enviaranse igualmente: deberás eliminar cada unha de forma individual dende o portal de Mensagia. Non existe un botón de cancelación global. Máis adiante poderás retomar o envío (ver [Retomar un envío interrompido](#retomar-un-envío-interrompido)).
 >
 > Usa o modo **Simular** para revisar o que se enviaría sen crear ningunha configuración real.
+
+---
+
+## Simular un envío
+
+O botón **Simular** (no modo consola, a resposta `Sim`) fai todas as comprobacións dun envío real (contactos aptos, URL dos adxuntos e que se poidan descargar), pero **non programa ningún correo** en Mensagia nin modifica o progreso gardado para [retomar un envío](#retomar-un-envío-interrompido).
+
+Cada simulación xera un log co mesmo contido ca o dun envío real: os contactos aos que se lles enviaría o correo e os descartados, co motivo. Ao rematar, a aplicación amosa a ruta do ficheiro.
+
+- Os logs gárdanse no cartafol `logs/` do [cartafol de datos da aplicación](#ficheiros-da-aplicación).
+- Os das simulacións chámanse `mensagia_simulation_<data_hora>.log`, e os dos envíos reais, `mensagia_send_<data_hora>.log`. Se ordenas o cartafol por nome, quedan separados.
+- A primeira liña dun log de simulación é `[SIMULATION] This is a simulation: no email was sent.` Nel, as liñas `[SEND_OK]` son os correos que se enviarían.
+
+Motivos de descarte (`reason=` nas liñas `[SEND_SKIP]`):
+
+- `no_email`: o contacto non ten enderezo de correo.
+- `no_attachment`: o campo personalizado do adxunto está baleiro.
+- `already_sent`: o contacto xa recibiu o correo nun envío anterior interrompido da mesma campaña.
+
+As liñas `[SEND_ERROR]` corresponden a contactos aptos cuxo adxunto non se puido preparar (por exemplo, unha ruta relativa sen URL base ou un ficheiro que non se pode descargar).
+
+Cando **ningún contacto do grupo é apto** (ou todos recibiron xa o correo nun envío anterior), non se pode enviar, pero si simular: o log permite saber por que se descartou cada contacto. No modo gráfico, o botón **Enviar** queda desactivado; no modo consola, a aplicación só ofrece a simulación.
 
 ---
 
