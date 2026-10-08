@@ -3,17 +3,13 @@
 # PyInstaller cannot cross-compile, so each platform is built on its own
 # runner. Pushing a v* tag builds everything and creates a draft release with
 # the files attached, so the notes can be written before publishing it.
-# Any other run (manual, or a push to the testing branch below) only builds
-# and leaves the files as downloadable artifacts of the run.
+# A manual run (workflow_dispatch) only builds and leaves the files as
+# downloadable artifacts of the run.
 name: Build release executables
 
 on:
   push:
     tags: ["v*"]
-    # TEMPORARY (issue #3): build on every push to the feature branch so the
-    # workflow can be tried before it reaches main, where workflow_dispatch
-    # becomes usable. Remove before merging the branch.
-    branches: ["feature/3-macos-build"]
   workflow_dispatch:
 
 permissions:
