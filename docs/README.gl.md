@@ -136,7 +136,7 @@ python main.py
 ## Fluxo de envío
 
 1. **Token API** — Lese do `.env` ou solicítase ao usuario.
-2. **Asunto** — O usuario introduce o asunto do correo.
+2. **Asunto e hora de inicio** — O usuario introduce o asunto do correo e escolle cando sae o primeiro correo (ver [Programar a hora de inicio](#programar-a-hora-de-inicio)).
 3. **Modelo** — Móstrase a lista de modelos de email dispoñibles.
 4. **Remitente** — Móstrase a lista de enderezos de envío verificados.
 5. **Grupo** — Móstrase unha primeira páxina de grupos da axenda. Se o grupo buscado non aparece, pódese filtrar polo nome. Os grupos sen contactos móstranse, pero non se poden seleccionar.
@@ -180,12 +180,36 @@ O grupo úsase como **fonte de contactos**, non como lista de subscrición. A ap
 
 O programa **non envía os correos de forma inmediata**. Por cada contacto elixible crea unha configuración de envío individual na plataforma Mensagia, programada para executarse de forma escalonada:
 
-- O **primeiro envío** execútase entre **10 e 20 minutos** despois de lanzar a aplicación, para dar marxe a cancelar se se detecta algún erro.
+- O **primeiro envío** execútase entre **10 e 20 minutos** despois de lanzar o envío, para dar marxe a cancelar se se detecta algún erro, ou na data e hora escollidas (ver [Programar a hora de inicio](#programar-a-hora-de-inicio)).
 - Os **envíos seguintes** espácianse **12 segundos** entre si (5 por minuto).
 
 > **Se necesitas deter o envío unha vez iniciado**, pechar a aplicación detén a creación de novas configuracións, pero as que xa se crearon enviaranse igualmente: deberás eliminar cada unha de forma individual dende o portal de Mensagia. Non existe un botón de cancelación global. Máis adiante poderás retomar o envío (ver [Retomar un envío interrompido](#retomar-un-envío-interrompido)).
 >
 > Usa o modo **Simular** para revisar o que se enviaría sen crear ningunha configuración real.
+
+---
+
+## Programar a hora de inicio
+
+Na páxina do asunto (no modo consola, xusto despois do asunto) escóllese cando sae o primeiro correo:
+
+- **Agora**: entre 10 e 20 minutos despois de comezar o envío.
+- **Día e hora concretos**: o primeiro correo sae na data e hora indicadas, e os seguintes, cada 12 segundos. Os envíos poden pasar da medianoite.
+
+A data e a hora escríbense sempre na orde `dd/mm/aaaa` e `hh:mm`, sexa cal sexa o idioma. No modo gráfico hai un campo para cada parte, e o cursor pasa só ao seguinte ao completar un. No modo consola tamén se aceptan outras formas habituais (`8/10/26`, `8-10-2026`, `9h30`, `9`…), e con Intro acéptase o valor proposto entre corchetes.
+
+Límites:
+
+- **Marxe mínima de 10 minutos.** Ao pasar á páxina seguinte, a data e a hora deben ser como mínimo 10 minutos posteriores á hora actual.
+- **Aprazamento automático.** Se, mentres se completan os demais pasos, a hora escollida deixa de ter 10 minutos de marxe, ao comezar o envío apránzase automaticamente á primeira hora que a cumpra, como coa opción «Agora». A aplicación non avisa, pero o log do envío indica a hora escollida (`start_at`) e a do primeiro correo (`first_slot`). Os correos nunca saen antes da hora escollida.
+- **Como máximo, 6 semanas de antelación** dende o momento de preparar o envío.
+- A simulación non comproba a hora, só os datos.
+
+> ⚠ **Fuso horario.** A hora envíase a Mensagia sen fuso horario, e Mensagia interprétaa segundo a **«Zona horaria» configurada no usuario de Mensagia** asociado ao token. Comproba que coincide coa do ordenador que executa a aplicación: se non, os correos sairán a unha hora distinta da escollida.
+
+A aplicación propón a data de hoxe e, como hora, a última escollida no modo gráfico ou, se non hai ningunha, a que correspondería á opción «Agora».
+
+Para [retomar un envío interrompido](#retomar-un-envío-interrompido) hai que repetir exactamente as mesmas opcións, incluído o modo de hora de inicio: se se cambia o modo, trátase como un envío novo. En cambio, cambiar a data ou a hora non crea un envío novo: ao retomalo, os correos continúan despois do último programado, e a nova hora só se usa se ese momento xa non ten 10 minutos de marxe.
 
 ---
 
@@ -215,7 +239,7 @@ Cando **ningún contacto do grupo é apto** (ou todos recibiron xa o correo nun 
 
 Se un envío se interrompe a medias (péchase a aplicación, córtase a conexión, apágase o ordenador…), a aplicación lembra a que contactos xa se lles programou o correo.
 
-Ao volver preparar **a mesma campaña** (mesmo grupo, modelo e campo adxunto, e **exactamente o mesmo asunto**), ao chegar ao resumo a aplicación avisa de que hai un envío anterior incompleto e pregunta que facer:
+Ao volver preparar **a mesma campaña** (mesmo grupo, modelo, campo adxunto e modo de hora de inicio, e **exactamente o mesmo asunto**), ao chegar ao resumo a aplicación avisa de que hai un envío anterior incompleto e pregunta que facer:
 
 - **Continuar**: só se envía aos contactos pendentes. Os seus correos prográmanse a continuación dos do envío anterior, sen solaparse con eles.
 - **Non continuar**: descártase o envío anterior e vólvese enviar a todos os contactos, incluídos os que xa o recibiron.
@@ -236,7 +260,7 @@ A API de Mensagia non permite consultar os envíos programados, así que esta co
 ## Memoria de seleccións (modo gráfico)
 
 Tras cada envío ou simulación, a aplicación garda os parámetros escollidos
-(modelo, remitente, grupo, campo adxunto e certificado) nun ficheiro
+(modelo, remitente, grupo, campo adxunto, certificado, e o modo e a hora de inicio) nun ficheiro
 `last_selections.json`, no [cartafol de datos da aplicación](#ficheiros-da-aplicación).
 
 Na seguinte execución, esas opcións quedarán marcadas por defecto.

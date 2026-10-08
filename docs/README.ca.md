@@ -134,7 +134,7 @@ python main.py
 ## Flux d'enviament
 
 1. **Token API** — Es llegeix del `.env` o es demana a l'usuari.
-2. **Assumpte** — L'usuari introdueix l'assumpte del correu.
+2. **Assumpte i hora d'inici** — L'usuari introdueix l'assumpte del correu i tria quan surt el primer correu (vegeu [Programar l'hora d'inici](#programar-lhora-dinici)).
 3. **Plantilla** — Es mostra la llista de plantilles d'email disponibles.
 4. **Remitent** — Es mostra la llista d'adreces d'enviament verificades.
 5. **Grup** — Es mostra una primera pàgina de grups de l'agenda. Si el grup buscat no hi apareix, es pot filtrar pel nom. Els grups sense contactes es mostren, però no es poden seleccionar.
@@ -178,12 +178,36 @@ El grup s'utilitza com a **font de contactes**, no com a llista de subscripció.
 
 El programa **no envia els correus de forma immediata**. Per cada contacte elegible crea una configuració d'enviament individual a la plataforma Mensagia, programada per executar-se de forma escalonada:
 
-- El **primer enviament** s'executa entre **10 i 20 minuts** després de llançar l'aplicació, per donar marge a cancel·lar si es detecta algun error.
+- El **primer enviament** s'executa entre **10 i 20 minuts** després de llançar l'enviament, per donar marge a cancel·lar si es detecta algun error, o en la data i l'hora triades (vegeu [Programar l'hora d'inici](#programar-lhora-dinici)).
 - Els **enviaments següents** s'espaiïen **12 segons** entre ells (5 per minut).
 
 > **Si cal aturar l'enviament un cop iniciat**, tancar l'aplicació atura la creació de noves configuracions, però les que ja s'han creat s'enviaran igualment: hauràs d'eliminar-les una per una des del portal de Mensagia. No hi ha cap botó de cancel·lació global. Més endavant podràs reprendre l'enviament (vegeu [Reprendre un enviament interromput](#reprendre-un-enviament-interromput)).
 >
 > Fes servir el mode **Simular** per revisar què s'enviaria sense crear cap configuració real.
+
+---
+
+## Programar l'hora d'inici
+
+A la pàgina de l'assumpte (en el mode consola, just després de l'assumpte) es tria quan surt el primer correu:
+
+- **Ara**: entre 10 i 20 minuts després de començar l'enviament.
+- **Dia i hora concrets**: el primer correu surt en la data i l'hora indicades, i els següents, cada 12 segons. Els enviaments poden passar de mitjanit.
+
+La data i l'hora s'escriuen sempre en l'ordre `dd/mm/aaaa` i `hh:mm`, sigui quin sigui l'idioma. En el mode gràfic hi ha un camp per a cada part, i el cursor passa sol al següent en completar-ne un. En el mode consola també s'accepten altres formes habituals (`8/10/26`, `8-10-2026`, `9h30`, `9`…), i amb Retorn s'accepta el valor proposat entre claudàtors.
+
+Límits:
+
+- **Marge mínim de 10 minuts.** En passar a la pàgina següent, la data i l'hora han de ser com a mínim 10 minuts posteriors a l'hora actual.
+- **Posposició automàtica.** Si, mentre es completen els altres passos, l'hora triada deixa de tenir 10 minuts de marge, en començar l'enviament es posposa automàticament a la primera hora que el compleixi, com amb l'opció «Ara». L'aplicació no avisa, però el log de l'enviament indica l'hora triada (`start_at`) i la del primer correu (`first_slot`). Els correus no surten mai abans de l'hora triada.
+- **Com a màxim, 6 setmanes d'antelació** des del moment de preparar l'enviament.
+- La simulació no comprova l'hora, només les dades.
+
+> ⚠ **Zona horària.** L'hora s'envia a Mensagia sense zona horària, i Mensagia la interpreta segons la **«Zona horària» configurada a l'usuari de Mensagia** associat al token. Comprova que coincideix amb la de l'ordinador que executa l'aplicació: si no, els correus sortiran a una hora diferent de la triada.
+
+L'aplicació proposa la data d'avui i, com a hora, l'última triada en el mode gràfic o, si no n'hi ha cap, la que correspondria a l'opció «Ara».
+
+Per [reprendre un enviament interromput](#reprendre-un-enviament-interromput) cal repetir exactament les mateixes opcions, inclòs el mode d'hora d'inici: si es canvia el mode, es tracta com un enviament nou. En canvi, canviar la data o l'hora no crea un enviament nou: en reprendre'l, els correus continuen després de l'últim programat, i l'hora nova només es fa servir si aquell moment ja no té 10 minuts de marge.
 
 ---
 
@@ -213,7 +237,7 @@ Quan **cap contacte del grup és apte** (o tots ja han rebut el correu en un env
 
 Si un enviament s'interromp a mitges (es tanca l'aplicació, es talla la connexió, s'apaga l'ordinador…), l'aplicació recorda a quins contactes ja se'ls ha programat el correu.
 
-En tornar a preparar **la mateixa campanya** (mateix grup, plantilla i camp adjunt, i **exactament el mateix assumpte**), en arribar al resum l'aplicació avisa que hi ha un enviament anterior incomplet i pregunta què cal fer:
+En tornar a preparar **la mateixa campanya** (mateix grup, plantilla, camp adjunt i mode d'hora d'inici, i **exactament el mateix assumpte**), en arribar al resum l'aplicació avisa que hi ha un enviament anterior incomplet i pregunta què cal fer:
 
 - **Continuar**: només s'envia als contactes pendents. Els seus correus es programen a continuació dels de l'enviament anterior, sense solapar-s'hi.
 - **No continuar**: es descarta l'enviament anterior i es torna a enviar a tots els contactes, inclosos els que ja l'han rebut.
@@ -234,7 +258,7 @@ L'API de Mensagia no permet consultar els enviaments programats, així que aques
 ## Memòria de seleccions (mode gràfic)
 
 Després de cada enviament o simulació, l'aplicació desa els paràmetres escollits
-(plantilla, remitent, grup, camp adjunt i certificat) en un fitxer
+(plantilla, remitent, grup, camp adjunt, certificat, i el mode i l'hora d'inici) en un fitxer
 `last_selections.json`, a la [carpeta de dades de l'aplicació](#fitxers-de-laplicació).
 
 En la propera execució, aquestes opcions quedaran marcades per defecte.

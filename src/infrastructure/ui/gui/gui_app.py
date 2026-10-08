@@ -1,6 +1,7 @@
 import pathlib
 import queue
 import threading
+from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox, ttk
 import customtkinter as ctk
@@ -18,8 +19,11 @@ from src.infrastructure.config.settings import load_api_token, load_language, lo
 from src.infrastructure.config.last_selections import load_last_selections, save_last_selections
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
+from src.domain.entities.campaign import Campaign
 from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
 from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
+from src.infrastructure.ui.start_time import StartInputError, default_start_fields, read_fixed_start, summary_start_lines
+from src.domain.scheduling import StartMode
 
 
 # Apply the light theme globally before any widget is created;
@@ -34,6 +38,24 @@ WINDOW_H = 560
 
 # How often the main thread drains the UI updates queued by worker threads
 UI_POLL_MS = 50
+
+# Maximum number of digits of each start field: day, month, year, hour, minute
+_START_FIELD_DIGITS = (2, 2, 4, 2, 2)
+
+# Text colour of the start fields while disabled (light and dark themes)
+_DISABLED_TEXT = ("gray60", "gray45")
+
+
+def _now() -> datetime:
+    """Return the current date and time.
+
+    Kept in a function of its own so tests can freeze the clock used to
+    propose and validate the start of a send.
+
+    Returns:
+        The current local date and time.
+    """
+    return datetime.now()
 
 
 def _resource(relative: str) -> pathlib.Path:
@@ -84,6 +106,8 @@ class App(ctk.CTk):
         selected_field: Extra field chosen by the user in step 5.
         _can_send: True when the summary allows a real send; False when
             only a simulation is possible because nothing can be sent.
+        _start_mode: Start mode accepted on the subject step.
+        _start_at: Start date and time accepted in the fixed mode, or None.
     """
 
     def __init__(self):
@@ -117,6 +141,9 @@ class App(ctk.CTk):
         self.selected_sender = None
         self.selected_agenda = None
         self.selected_field = None
+        # Start chosen on the subject step; the fields are only read on Next
+        self._start_mode = StartMode.NOW
+        self._start_at = None
 
         # Updates handed over by background threads, applied by _pump_ui
         self._ui_queue = queue.Queue()
@@ -187,6 +214,8 @@ class App(ctk.CTk):
         self.selected_sender = None
         self.selected_agenda = None
         self.selected_field = None
+        self._start_mode = StartMode.NOW
+        self._start_at = None
 
         self._build_frames()
         self._show_frame("token")
@@ -332,19 +361,143 @@ class App(ctk.CTk):
         self._subject_entry.pack(anchor="w", pady=(4, 0))
         self._subject_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12))
         self._subject_error.pack(anchor="w")
+
+        # Start mode selector. The radio buttons hold StartMode values, so a
+        # later mode only needs one more button here
+        ctk.CTkLabel(f, text=t("start_label"), font=ctk.CTkFont(size=13)).pack(anchor="w", pady=(8, 4))
+        self._start_mode_var = tk.StringVar(value=StartMode.NOW.value)
+        for mode, key in ((StartMode.NOW, "start_now"), (StartMode.FIXED, "start_fixed")):
+            ctk.CTkRadioButton(f, text=t(key), variable=self._start_mode_var, value=mode.value,
+                               command=self._update_start_fields,
+                               font=ctk.CTkFont(size=13)).pack(anchor="w", pady=2)
+
+        # One small field per part, in a fixed day/month/year order whatever
+        # the language, so no date format has to be guessed
+        fields = ctk.CTkFrame(f, fg_color="transparent")
+        fields.pack(anchor="w", padx=(28, 0), pady=(4, 0))
+        self._start_fields = []
+        self._start_labels = []
+        rows = ((t("start_date_label"), ((0, 40), (1, 40), (2, 60)), "/"),
+                (t("start_time_label"), ((3, 40), (4, 40)), ":"))
+        for row, (label, parts, separator) in enumerate(rows):
+            row_label = ctk.CTkLabel(fields, text=label, font=ctk.CTkFont(size=13))
+            row_label.grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
+            self._start_labels.append(row_label)
+            for i, (index, width) in enumerate(parts):
+                if i:
+                    separator_label = ctk.CTkLabel(fields, text=separator)
+                    separator_label.grid(row=row, column=2 * i, padx=2)
+                    self._start_labels.append(separator_label)
+                entry = ctk.CTkEntry(fields, width=width, justify="center")
+                entry.grid(row=row, column=2 * i + 1, pady=2)
+                entry.bind("<KeyRelease>", lambda event, index=index: self._advance_start_field(index, event))
+                self._start_fields.append(entry)
+
+        # A disabled CTkEntry looks exactly like an enabled one, so the text
+        # is greyed out by hand; keep the theme colours to restore them
+        self._start_enabled_colors = (self._start_fields[0].cget("text_color"), self._start_labels[0].cget("text_color"))
+
+        self._start_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12),
+                                         wraplength=460, justify="left")
+        self._start_error.pack(anchor="w")
+        self._restore_start_selection()
         self._nav_buttons(f, back="token", next_cmd=self._subject_next)
 
-    def _subject_next(self):
-        """Validate the subject and trigger template loading.
+    def _restore_start_selection(self):
+        """Select the remembered start mode and propose a date and time.
 
-        Shows an error indicator if the subject is empty. Otherwise clears
-        the error and initiates the API call to fetch templates.
+        The proposal is today's date with the time used last, or the first
+        slot of the "now" mode when no time is remembered.
+        """
+        # An unknown remembered mode (e.g. from a newer version) is ignored
+        saved = self._last_sel.get("start_mode")
+        known = {mode.value for mode in StartMode}
+        self._start_mode_var.set(saved if saved in known else StartMode.NOW.value)
+
+        # Disabled entries ignore insertions, so enable them while filling
+        day, clock = default_start_fields(_now(), self._last_sel.get("start_time"))
+        values = day.split("/") + clock.split(":")
+        for entry, value in zip(self._start_fields, values):
+            entry.configure(state="normal")
+            entry.delete(0, "end")
+            entry.insert(0, value)
+        self._update_start_fields()
+
+    def _update_start_fields(self):
+        """Enable the date and time fields only for the fixed start mode.
+
+        They stay visible in the "now" mode so the page keeps its layout
+        when the mode changes.
+        """
+        enabled = self._start_mode_var.get() == StartMode.FIXED.value
+        entry_color, label_color = self._start_enabled_colors if enabled else (_DISABLED_TEXT, _DISABLED_TEXT)
+        for entry in self._start_fields:
+            entry.configure(state="normal" if enabled else "disabled", text_color=entry_color)
+        for label in self._start_labels:
+            label.configure(text_color=label_color)
+        self._start_error.configure(text="")
+
+    def _advance_start_field(self, index: int, event):
+        """Move the cursor to the next start field once the current one is complete.
+
+        Only a typed digit moves on: Tab, arrows or deletions must leave the
+        cursor where the user put it.
+
+        Args:
+            index: Position of the field that received the key.
+            event: The key event, whose char is the typed character.
+        """
+        entry = self._start_fields[index]
+        if not event.char.isdigit() or len(entry.get()) < _START_FIELD_DIGITS[index]:
+            return
+        if index + 1 < len(self._start_fields):
+            following = self._start_fields[index + 1]
+            following.focus_set()
+            following.select_range(0, "end")
+            following.icursor("end")
+
+    def _start_selections(self) -> dict:
+        """Return the start choices to remember for the next session.
+
+        In the "now" mode the time chosen in an earlier fixed start is
+        kept, so switching back to the fixed mode proposes it again.
+
+        Returns:
+            The 'start_mode' and 'start_time' ('hh:mm') entries to save.
+        """
+        if self._start_at is not None:
+            start_time = self._start_at.strftime("%H:%M")
+        else:
+            start_time = self._last_sel.get("start_time")
+        return {"start_mode": self._start_mode.value, "start_time": start_time}
+
+    def _subject_next(self):
+        """Validate the subject and the start, then trigger template loading.
+
+        Shows an error indicator if the subject is empty, and an explanation
+        if the fixed start cannot be used. Otherwise clears the errors and
+        initiates the API call to fetch templates.
         """
         subject = self._subject_entry.get().strip()
         if not subject:
             self._subject_error.configure(text="  ⚠")
             return
         self._subject_error.configure(text="")
+
+        # The fixed start is checked against the current time now, so a
+        # mistake is reported on this page. If it gets too close while the
+        # user goes through the other steps, the send postpones it
+        mode = StartMode(self._start_mode_var.get())
+        start_at = None
+        if mode == StartMode.FIXED:
+            day, month, year, hour, minute = (entry.get().strip() for entry in self._start_fields)
+            try:
+                start_at = read_fixed_start(f"{day}/{month}/{year}", f"{hour}:{minute}", _now())
+            except StartInputError as e:
+                self._start_error.configure(text=str(e))
+                return
+        self._start_error.configure(text="")
+        self._start_mode, self._start_at = mode, start_at
         self._load_templates()
 
     # ── Step 2: Template ───────────────────────────────────────────────────────
@@ -760,10 +913,11 @@ class App(ctk.CTk):
         # interrupted run, and attempts it left unconfirmed (possible
         # duplicates), and let the user decide whether to skip the sent
         # ones or start the whole campaign over again
-        campaign = (self.selected_agenda.id, self.selected_template.id, self.selected_field.name, subject)
-        pending_ids = self._send_registry.get_sent_contact_ids(*campaign)
+        campaign = Campaign(self.selected_agenda.id, self.selected_template.id, self.selected_field.name,
+                            subject, self._start_mode)
+        pending_ids = self._send_registry.get_sent_contact_ids(campaign)
         already_sent_count = len([c for c in eligible if c.id in pending_ids])
-        uncertain = self._send_registry.get_uncertain_attempts(*campaign)
+        uncertain = self._send_registry.get_uncertain_attempts(campaign)
         if already_sent_count or uncertain:
             parts = []
             if already_sent_count:
@@ -773,7 +927,7 @@ class App(ctk.CTk):
             parts.append(t("resume_continue_prompt"))
             continue_pending = messagebox.askyesno(t("resume_title"), "\n\n".join(parts))
             if not continue_pending:
-                self._send_registry.clear(*campaign)
+                self._send_registry.clear(campaign)
                 already_sent_count = 0
 
         # Number of contacts that will actually be sent to in this run
@@ -787,6 +941,7 @@ class App(ctk.CTk):
             t("summary_group", value=self.selected_agenda.name),
             t("summary_field", value=self.selected_field.name),
             t("summary_certified", value=t("yes") if self._certified_var.get() else t("no")),
+            *summary_start_lines(self._start_mode, self._start_at),
         ])
         self._summary_text.configure(text=lines)
         self._summary_contacts_label.configure(text=t("summary_contacts", count=to_send_count))
@@ -856,6 +1011,9 @@ class App(ctk.CTk):
         self._group_var.set("")
         self._field_var.set("")
 
+        # Propose a fresh date and time: the previous ones may have passed
+        self._restore_start_selection()
+
         self._show_frame("subject")
 
     def _do_send(self, dry_run: bool = False):
@@ -912,6 +1070,8 @@ class App(ctk.CTk):
                     logger=send_logger,
                     progress_callback=_on_progress,
                     send_registry=self._send_registry,
+                    start_mode=self._start_mode,
+                    start_at=self._start_at,
                 )
 
                 # Build the result text, appending per-contact error details if any
@@ -934,14 +1094,18 @@ class App(ctk.CTk):
                 self._result_label.configure(text=result_text)
                 self._progress_bar.set(1)
 
-                # Persist the selections so they are pre-selected on the next run
-                save_last_selections({
+                # Persist the selections so they are pre-selected on the next run,
+                # and keep them for a new send in this same session
+                selections = {
                     "template_id": str(self.selected_template.id),
                     "sender_id": str(self.selected_sender.id),
                     "agenda_id": str(self.selected_agenda.id),
                     "field_id": str(self.selected_field.id),
                     "certified": self._certified_var.get(),
-                })
+                    **self._start_selections(),
+                }
+                save_last_selections(selections)
+                self._last_sel = selections
 
                 self._show_send_actions(_dry_run, would_send=len(result.sent))
 

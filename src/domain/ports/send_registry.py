@@ -1,14 +1,16 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 
+from src.domain.entities.campaign import Campaign
+
 
 class SendRegistry(ABC):
     """Port that defines how to track the progress of an email campaign.
 
-    A campaign is identified by the combination of target group, template,
-    attachment extra field, and subject — the same parameters a user would
-    pick again when restarting an interrupted bulk send. Implementations
-    persist this state locally so that resuming the same campaign:
+    A campaign is identified by a Campaign value (see its attributes): the
+    same choices a user would make again when restarting an interrupted
+    bulk send. Implementations persist this state locally so that resuming
+    the same campaign:
 
     - does not re-send emails to contacts already reached,
     - continues the schedule right after the last slot already queued,
@@ -21,15 +23,12 @@ class SendRegistry(ABC):
 
     @abstractmethod
     def get_sent_contact_ids(
-        self, group_id: int, template_id: int, field_name: str, subject: str
+        self, campaign: Campaign
     ) -> set[int]:
         """Return the IDs of contacts already sent an email in this campaign.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
 
         Returns:
             A set of contact IDs. Empty when the campaign has no recorded
@@ -39,15 +38,12 @@ class SendRegistry(ABC):
 
     @abstractmethod
     def get_last_start_date(
-        self, group_id: int, template_id: int, field_name: str, subject: str
+        self, campaign: Campaign
     ) -> datetime | None:
         """Return the latest send slot ever attempted in this campaign.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
 
         Returns:
             The latest start_date passed to mark_attempt() or mark_sent(),
@@ -57,15 +53,12 @@ class SendRegistry(ABC):
 
     @abstractmethod
     def get_uncertain_attempts(
-        self, group_id: int, template_id: int, field_name: str, subject: str
+        self, campaign: Campaign
     ) -> dict[int, list[datetime]]:
         """Return the attempts of this campaign whose outcome is unknown.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
 
         Returns:
             A dict mapping each contact ID to the list of send slots that
@@ -75,7 +68,7 @@ class SendRegistry(ABC):
 
     @abstractmethod
     def mark_attempt(
-        self, group_id: int, template_id: int, field_name: str, subject: str,
+        self, campaign: Campaign,
         contact_id: int, start_date: datetime,
     ) -> None:
         """Record that an email is about to be sent to a contact for a given slot.
@@ -85,10 +78,7 @@ class SendRegistry(ABC):
         record as uncertain. Also advances the campaign's last start date.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
             contact_id: ID of the contact about to be emailed.
             start_date: Send slot requested for this email.
         """
@@ -96,7 +86,7 @@ class SendRegistry(ABC):
 
     @abstractmethod
     def mark_sent(
-        self, group_id: int, template_id: int, field_name: str, subject: str,
+        self, campaign: Campaign,
         contact_id: int, start_date: datetime,
     ) -> None:
         """Record that a contact successfully received an email in this campaign.
@@ -107,10 +97,7 @@ class SendRegistry(ABC):
         must persist this immediately so progress survives an interruption.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
             contact_id: ID of the contact that was successfully emailed.
             start_date: Send slot the email was scheduled for.
         """
@@ -118,7 +105,7 @@ class SendRegistry(ABC):
 
     @abstractmethod
     def discard_attempt(
-        self, group_id: int, template_id: int, field_name: str, subject: str,
+        self, campaign: Campaign,
         contact_id: int, start_date: datetime,
     ) -> None:
         """Resolve an attempt known not to have scheduled any email.
@@ -127,17 +114,14 @@ class SendRegistry(ABC):
         after this slot.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
             contact_id: ID of the contact whose attempt failed.
             start_date: Send slot of the failed attempt.
         """
         pass
 
     @abstractmethod
-    def clear(self, group_id: int, template_id: int, field_name: str, subject: str) -> None:
+    def clear(self, campaign: Campaign) -> None:
         """Forget everything recorded for this campaign.
 
         Called once a campaign completes with no pending or errored
@@ -145,9 +129,6 @@ class SendRegistry(ABC):
         template and field is not blocked.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
         """
         pass

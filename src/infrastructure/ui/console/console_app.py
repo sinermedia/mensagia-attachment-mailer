@@ -1,5 +1,6 @@
 import getpass
 import sys
+from datetime import datetime
 from src.infrastructure.api.mensagia_client import MensagiaClient, MensagiaAPIError
 from src.infrastructure.api.mensagia_agenda_repository import MensagiaAgendaRepository
 from src.infrastructure.api.mensagia_contact_repository import MensagiaContactRepository
@@ -13,8 +14,12 @@ from src.infrastructure.config.settings import load_api_token, load_language, lo
 from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
+from src.domain.entities.campaign import Campaign
 from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
 from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
+from src.infrastructure.ui.start_time import StartInputError, default_start_fields, read_fixed_start, summary_start_lines
+from src.domain.date_input import parse_date, parse_time
+from src.domain.scheduling import StartMode
 
 
 def _choose_language():
@@ -111,6 +116,60 @@ def _select_from_list(prompt: str, items: list, display_fn) -> object:
         if choice.isdigit() and 1 <= int(choice) <= len(items):
             return items[int(choice) - 1]
         print(f"  (1-{len(items)})")
+
+
+def _ask_with_default(prompt: str, default: str, parse, error_key: str) -> str:
+    """Ask for a value, proposing a default that Enter accepts.
+
+    Keeps asking until *parse* accepts the answer, explaining the error
+    each time.
+
+    Args:
+        prompt: Question shown to the user.
+        default: Value proposed between brackets and used on Enter.
+        parse: Callable that raises ValueError for an unreadable answer.
+        error_key: Translation key of the message shown on an error.
+
+    Returns:
+        The accepted answer, as typed (or the default).
+    """
+    while True:
+        answer = input(f"  {prompt} [{default}]: ").strip() or default
+        try:
+            parse(answer)
+            return answer
+        except ValueError:
+            print(f"  {t(error_key)}")
+
+
+def _choose_start(now: datetime) -> tuple[StartMode, datetime | None]:
+    """Ask when the first email must go out.
+
+    With a fixed start, the date and the time are asked separately and
+    each is asked again until it can be read. If the combination is too
+    soon or too far ahead, both are asked again, proposing the values
+    just typed so only the wrong part has to be changed.
+
+    Args:
+        now: Current date and time, used for the proposals and the limits.
+
+    Returns:
+        The chosen start mode and, for a fixed start, its date and time
+        (None in the "now" mode).
+    """
+    labels = {StartMode.NOW: t("start_now"), StartMode.FIXED: t("start_fixed")}
+    mode = _select_from_list(t("start_label"), [StartMode.NOW, StartMode.FIXED], labels.get)
+    if mode == StartMode.NOW:
+        return mode, None
+
+    date_text, time_text = default_start_fields(now, None)
+    while True:
+        date_text = _ask_with_default(t("start_date_prompt"), date_text, parse_date, "start_error_invalid_date")
+        time_text = _ask_with_default(t("start_time_prompt"), time_text, parse_time, "start_error_invalid_time")
+        try:
+            return mode, read_fixed_start(date_text, time_text, now)
+        except StartInputError as e:
+            print(f"  {e}")
 
 
 def _select_agenda(client, show_ids: bool):
@@ -240,7 +299,7 @@ def run():
 
     Guides the user through a sequential wizard:
     Step 0 — Language selection and API token validation.
-    Step 1 — Email subject input.
+    Step 1 — Email subject input and start time (now or a fixed date).
     Step 2 — Email template selection.
     Step 3 — Sender address selection.
     Step 4 — Agenda group selection.
@@ -288,6 +347,12 @@ def run():
     subject = ""
     while not subject.strip():
         subject = input(f"  {t('subject_label')} ").strip()
+
+    # ── Step 1b: Start time ───────────────────────────────────────────────────
+    # A fixed start is checked against the current time right away; if it
+    # gets too close before the send starts, the send postpones it
+    print(f"\n--- {t('step_start')} ---")
+    start_mode, start_at = _choose_start(datetime.now())
 
     # ── Step 2: Template selection ─────────────────────────────────────────────
     print(f"\n--- {t('step_template')} ---")
@@ -362,10 +427,10 @@ def run():
     # duplicates), and let the user decide whether to skip the sent ones
     # or start the whole campaign over again
     send_registry = JsonSendRegistry()
-    campaign = (agenda.id, template.id, extra_field.name, subject)
-    pending_ids = send_registry.get_sent_contact_ids(*campaign)
+    campaign = Campaign(agenda.id, template.id, extra_field.name, subject, start_mode)
+    pending_ids = send_registry.get_sent_contact_ids(campaign)
     already_sent_count = len([c for c in eligible if c.id in pending_ids])
-    uncertain = send_registry.get_uncertain_attempts(*campaign)
+    uncertain = send_registry.get_uncertain_attempts(campaign)
     if already_sent_count or uncertain:
         if already_sent_count:
             print(f"\n  {t('resume_detected', sent=already_sent_count)}")
@@ -374,7 +439,7 @@ def run():
             for line in resume_uncertain_lines(uncertain, contacts):
                 print(f"    {line}")
         if not _yes_no(f"  {t('resume_continue_prompt')}"):
-            send_registry.clear(*campaign)
+            send_registry.clear(campaign)
             already_sent_count = 0
 
     # Number of contacts that will actually be sent to in this run
@@ -391,6 +456,8 @@ def run():
     print(f"  {t('summary_group', value=agenda.name)}")
     print(f"  {t('summary_field', value=extra_field.name)}")
     print(f"  {t('summary_certified', value=t('yes') if certified else t('no'))}")
+    for line in summary_start_lines(start_mode, start_at):
+        print(f"  {line}")
     print(f"  {t('summary_contacts', count=to_send_count)}")
     print(f"  {t('summary_skipped', count=skipped_count)}")
 
@@ -434,6 +501,8 @@ def run():
         dry_run=dry_run,
         logger=send_logger,
         send_registry=send_registry,
+        start_mode=start_mode,
+        start_at=start_at,
     )
 
     # Report any per-contact errors to the console

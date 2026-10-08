@@ -2,11 +2,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from src.domain.entities.campaign import Campaign
 from src.domain.entities.email_message import EmailMessage
 from src.domain.entities.extra_field import ExtraField
 from src.domain.ports.contact_repository import ContactRepository
 from src.domain.ports.email_sender import EmailNotSentError, EmailRejectedError, EmailSender
-from src.domain.scheduling import calculate_start_dates
+from src.domain.scheduling import StartMode, calculate_start_dates
 from src.domain.attachment_url import resolve_attachment_url
 
 
@@ -112,6 +113,8 @@ class SendBulkEmailsUseCase:
         logger=None,
         progress_callback=None,
         send_registry=None,
+        start_mode: StartMode = StartMode.NOW,
+        start_at: datetime | None = None,
     ) -> SendResult:
         """Run the bulk send for all eligible contacts in the given group.
 
@@ -119,7 +122,9 @@ class SendBulkEmailsUseCase:
         1. Fetch all contacts in the group (excluding the email blacklist).
         2. Filter down to contacts that have both an email and an attachment value.
         3. Compute staggered send dates to respect Mensagia's rate limits,
-           continuing after the last slot of a previous run when resuming.
+           from the chosen start (postponed if it is too close) or 10 to 20
+           minutes from now, continuing after the last slot of a previous
+           run when resuming.
         4. For each eligible contact: resolve the attachment URL, optionally
            verify it is reachable, build the EmailMessage, and send it.
         5. Retry once, after all other contacts, every send that got no
@@ -163,21 +168,37 @@ class SendBulkEmailsUseCase:
                 for end-of-run retries. Pass None to disable.
             send_registry: Optional SendRegistry instance. When provided,
                 contacts already recorded as sent for this exact campaign
-                (group, template, extra field, subject) are excluded from
-                the eligible list and reported in already_sent instead, and
-                the schedule continues after the campaign's last recorded
-                slot. Each API call is recorded with mark_attempt() before
-                being made and resolved with mark_sent() or
-                discard_attempt(); uncertain ones stay on record. The whole
-                campaign record is cleared once a run completes with zero
-                errors. Not written to during dry-run, though filtering and
-                scheduling still apply so the preview matches what a real
-                run would do. Pass None to disable.
+                (group, template, extra field, subject and start mode) are
+                excluded from the eligible list and reported in
+                already_sent instead, and the schedule continues after the
+                campaign's last recorded slot. Each API call is recorded
+                with mark_attempt() before being made and resolved with
+                mark_sent() or discard_attempt(); uncertain ones stay on
+                record. The whole campaign record is cleared once a run
+                completes with zero errors. Not written to during dry-run,
+                though filtering and scheduling still apply so the preview
+                matches what a real run would do. Pass None to disable.
+            start_mode: How the first email is scheduled. Part of the
+                campaign's identity in the send registry. Defaults to
+                StartMode.NOW.
+            start_at: Date and time chosen for the first email; required
+                with StartMode.FIXED and ignored otherwise. A start that no
+                longer leaves 10 minutes is postponed, never brought forward.
+                It is not validated here: a dry run only checks the data.
 
         Returns:
             A SendResult containing lists of sent, skipped, already-sent,
             errored and uncertain contacts.
+
+        Raises:
+            ValueError: If start_mode is StartMode.FIXED and start_at is None.
         """
+        # A fixed start needs its date; fail before touching anything
+        if start_mode == StartMode.FIXED and start_at is None:
+            raise ValueError("a fixed start mode requires start_at")
+        if start_mode != StartMode.FIXED:
+            start_at = None
+
         # Fetch all contacts in the group, excluding only those on the global
         # email blacklist. The API returns subscribed and unsubscribed contacts
         # alike — subscription status is not exposed by the Mensagia API.
@@ -193,18 +214,18 @@ class SendBulkEmailsUseCase:
         # Exclude contacts already sent this exact campaign in a previous,
         # interrupted run so restarting never double-sends. Filtering (but
         # not writing) also applies during dry-run so previews stay accurate.
-        campaign = (group_id, template_id, extra_field.name, subject)
+        campaign = Campaign(group_id, template_id, extra_field.name, subject, start_mode)
         already_sent = []
         last_scheduled = None
         uncertain = {}
         if send_registry:
-            sent_ids = send_registry.get_sent_contact_ids(*campaign)
+            sent_ids = send_registry.get_sent_contact_ids(campaign)
             already_sent = [c for c in eligible if c.id in sent_ids]
             eligible = [c for c in eligible if c.id not in sent_ids]
 
             # The emails of a previous run may still be queued: continue the
             # schedule after its last slot so both runs never overlap
-            last_scheduled = send_registry.get_last_start_date(*campaign)
+            last_scheduled = send_registry.get_last_start_date(campaign)
 
             # Attempts a previous run left unresolved may have been scheduled;
             # carry them over so they are reported with this run's outcome.
@@ -212,11 +233,11 @@ class SendBulkEmailsUseCase:
             if not dry_run:
                 uncertain = {
                     cid: list(dates)
-                    for cid, dates in send_registry.get_uncertain_attempts(*campaign).items()
+                    for cid, dates in send_registry.get_uncertain_attempts(campaign).items()
                 }
 
         # Compute staggered start dates so emails are not sent all at once
-        start_dates = calculate_start_dates(len(eligible), now, last_scheduled)
+        start_dates = calculate_start_dates(len(eligible), now, last_scheduled, start_at)
         result = SendResult(skipped=skipped, already_sent=already_sent)
 
         # Log the opening summary and all skipped/already-sent contacts before the send loop
@@ -224,6 +245,8 @@ class SendBulkEmailsUseCase:
             logger.log_start(
                 from_email, subject, template_id, group_id,
                 extra_field.name, certified, len(eligible), len(skipped),
+                start_mode=start_mode, start_at=start_at,
+                first_slot=start_dates[0] if start_dates else None,
             )
             for c in skipped:
                 logger.log_skip(c, _skip_reason(c, extra_field.name))
@@ -287,7 +310,7 @@ class SendBulkEmailsUseCase:
             # right after the API accepts it leaves it on record as uncertain.
             # Pause before each API call to stay within the 1 request-per-second limit
             if send_registry:
-                send_registry.mark_attempt(*campaign, contact.id, start_date)
+                send_registry.mark_attempt(campaign, contact.id, start_date)
             time.sleep(1)
 
             try:
@@ -296,7 +319,7 @@ class SendBulkEmailsUseCase:
                 # Nothing was scheduled, so the attempt is forgotten. Only a
                 # request that was not processed is worth retrying
                 if send_registry:
-                    send_registry.discard_attempt(*campaign, contact.id, start_date)
+                    send_registry.discard_attempt(campaign, contact.id, start_date)
                 error = exc
                 retry = isinstance(exc, EmailNotSentError) and not final
             except Exception as exc:
@@ -313,7 +336,7 @@ class SendBulkEmailsUseCase:
                 if logger:
                     logger.log_ok(contact, attachment_url)
                 if send_registry:
-                    send_registry.mark_sent(*campaign, contact.id, start_date)
+                    send_registry.mark_sent(campaign, contact.id, start_date)
                 return False
 
             if not retry:
@@ -356,6 +379,6 @@ class SendBulkEmailsUseCase:
         # A clean run (no errors) means nothing is left pending for this
         # campaign, so forget its progress and stop blocking future re-sends
         if send_registry and not dry_run and not result.errors:
-            send_registry.clear(group_id, template_id, extra_field.name, subject)
+            send_registry.clear(campaign)
 
         return result
