@@ -2,7 +2,7 @@ import pathlib
 import queue
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 import customtkinter as ctk
 
 from src.infrastructure.api.mensagia_client import MensagiaClient, MensagiaAPIError
@@ -131,15 +131,20 @@ class App(ctk.CTk):
         loop, and after() is not safe to call from another thread either, so
         worker threads push a callable here instead and this method, which
         always runs on the main thread, invokes it.
-        """
-        while True:
-            try:
-                update = self._ui_queue.get_nowait()
-            except queue.Empty:
-                break
-            update()
 
-        self.after(UI_POLL_MS, self._pump_ui)
+        A failing update still propagates to tkinter, which reports it, but
+        the next poll is always scheduled: otherwise a single error would
+        stop every later update and freeze the interface for good.
+        """
+        try:
+            while True:
+                try:
+                    update = self._ui_queue.get_nowait()
+                except queue.Empty:
+                    break
+                update()
+        finally:
+            self.after(UI_POLL_MS, self._pump_ui)
 
     # ── Language selector (token frame only) ──────────────────────────────────
 
