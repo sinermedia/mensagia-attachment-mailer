@@ -245,3 +245,80 @@ class TestGuiSendFailure:
         actions = app._sending_actions.winfo_children()
         assert len(actions) == 1
         assert "something went wrong" in app._result_label.cget("text")
+
+
+class TestGuiResumeDialog:
+    """Covers the summary step asking whether to resume an interrupted campaign."""
+
+    def _prepare(self, window, sent_ids: set):
+        """Fill in the wizard selections and a registry holding a previous run.
+
+        Args:
+            window: The App instance to prepare.
+            sent_ids: Contact ids the registry reports as already sent.
+        """
+        TestGuiSummaryGuards()._prepare(window)
+        window._send_registry = MagicMock()
+        window._send_registry.get_sent_contact_ids.return_value = sent_ids
+        window._send_registry.get_uncertain_attempts.return_value = {}
+
+    def _load(self, window, answer: bool) -> MagicMock:
+        """Load the summary of a two-contact group, answering the resume dialog.
+
+        Args:
+            window: The App instance to drive.
+            answer: What the user answers to the resume question.
+
+        Returns:
+            The mock standing in for the dialog, to inspect its calls.
+        """
+        repo = MagicMock()
+        repo.get_by_group.return_value = [
+            MagicMock(id=1, email="a@example.com", extra_fields={"attachment": "a.pdf"}),
+            MagicMock(id=2, email="b@example.com", extra_fields={"attachment": "b.pdf"}),
+        ]
+        with patch("src.infrastructure.ui.gui.gui_app.MensagiaContactRepository", return_value=repo), \
+                patch("tkinter.messagebox.askyesno", return_value=answer) as dialog:
+            window._load_summary()
+            _wait_until(window, lambda: window._summary_contacts_label.cget("text") != "Loading...")
+        return dialog
+
+    def test_asks_whether_to_resume_a_pending_campaign(self, app):
+        """Shows the resume dialog when the registry holds contacts already sent."""
+        self._prepare(app, sent_ids={1})
+        dialog = self._load(app, answer=True)
+
+        dialog.assert_called_once()
+
+    def test_counts_only_pending_contacts_when_resuming(self, app):
+        """Leaves the contacts already sent out of the count when the user resumes."""
+        self._prepare(app, sent_ids={1})
+        self._load(app, answer=True)
+
+        assert app._summary_contacts_label.cget("text") == "Eligible contacts: 1"
+
+    def test_starts_over_when_the_user_declines(self, app):
+        """Clears the campaign record and counts every contact when the user declines."""
+        self._prepare(app, sent_ids={1})
+        self._load(app, answer=False)
+
+        app._send_registry.clear.assert_called_once()
+        assert app._summary_contacts_label.cget("text") == "Eligible contacts: 2"
+
+
+class TestGuiUiPump:
+    """Covers the queue that applies UI updates sent by background threads."""
+
+    def test_keeps_applying_updates_after_one_fails(self, app):
+        """Applies later updates even when an earlier one raised an exception."""
+        app.report_callback_exception = MagicMock()
+        applied = []
+
+        def failing_update():
+            """Simulate a UI update that raises."""
+            raise RuntimeError("broken update")
+
+        app._ui_queue.put(failing_update)
+        app._ui_queue.put(lambda: applied.append(True))
+
+        assert _wait_until(app, lambda: applied)
