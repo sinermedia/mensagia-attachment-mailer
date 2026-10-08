@@ -18,6 +18,7 @@ from src.infrastructure.config.settings import load_api_token, load_language, lo
 from src.infrastructure.config.last_selections import load_last_selections, save_last_selections
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
+from src.domain.entities.campaign import Campaign
 from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
 from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
 
@@ -760,10 +761,10 @@ class App(ctk.CTk):
         # interrupted run, and attempts it left unconfirmed (possible
         # duplicates), and let the user decide whether to skip the sent
         # ones or start the whole campaign over again
-        campaign = (self.selected_agenda.id, self.selected_template.id, self.selected_field.name, subject)
-        pending_ids = self._send_registry.get_sent_contact_ids(*campaign)
+        campaign = Campaign(self.selected_agenda.id, self.selected_template.id, self.selected_field.name, subject)
+        pending_ids = self._send_registry.get_sent_contact_ids(campaign)
         already_sent_count = len([c for c in eligible if c.id in pending_ids])
-        uncertain = self._send_registry.get_uncertain_attempts(*campaign)
+        uncertain = self._send_registry.get_uncertain_attempts(campaign)
         if already_sent_count or uncertain:
             parts = []
             if already_sent_count:
@@ -773,7 +774,7 @@ class App(ctk.CTk):
             parts.append(t("resume_continue_prompt"))
             continue_pending = messagebox.askyesno(t("resume_title"), "\n\n".join(parts))
             if not continue_pending:
-                self._send_registry.clear(*campaign)
+                self._send_registry.clear(campaign)
                 already_sent_count = 0
 
         # Number of contacts that will actually be sent to in this run

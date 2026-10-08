@@ -13,6 +13,7 @@ from src.infrastructure.config.settings import load_api_token, load_language, lo
 from src.domain.attachment_url import resolve_attachment_url
 from src.infrastructure.http.http_attachment_checker import HttpAttachmentChecker
 from src.infrastructure.logging.send_logger import SendLogger
+from src.domain.entities.campaign import Campaign
 from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
 from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
 
@@ -362,10 +363,10 @@ def run():
     # duplicates), and let the user decide whether to skip the sent ones
     # or start the whole campaign over again
     send_registry = JsonSendRegistry()
-    campaign = (agenda.id, template.id, extra_field.name, subject)
-    pending_ids = send_registry.get_sent_contact_ids(*campaign)
+    campaign = Campaign(agenda.id, template.id, extra_field.name, subject)
+    pending_ids = send_registry.get_sent_contact_ids(campaign)
     already_sent_count = len([c for c in eligible if c.id in pending_ids])
-    uncertain = send_registry.get_uncertain_attempts(*campaign)
+    uncertain = send_registry.get_uncertain_attempts(campaign)
     if already_sent_count or uncertain:
         if already_sent_count:
             print(f"\n  {t('resume_detected', sent=already_sent_count)}")
@@ -374,7 +375,7 @@ def run():
             for line in resume_uncertain_lines(uncertain, contacts):
                 print(f"    {line}")
         if not _yes_no(f"  {t('resume_continue_prompt')}"):
-            send_registry.clear(*campaign)
+            send_registry.clear(campaign)
             already_sent_count = 0
 
     # Number of contacts that will actually be sent to in this run

@@ -2,6 +2,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from src.domain.entities.campaign import Campaign
 from src.domain.entities.email_message import EmailMessage
 from src.domain.entities.extra_field import ExtraField
 from src.domain.ports.contact_repository import ContactRepository
@@ -193,18 +194,18 @@ class SendBulkEmailsUseCase:
         # Exclude contacts already sent this exact campaign in a previous,
         # interrupted run so restarting never double-sends. Filtering (but
         # not writing) also applies during dry-run so previews stay accurate.
-        campaign = (group_id, template_id, extra_field.name, subject)
+        campaign = Campaign(group_id, template_id, extra_field.name, subject)
         already_sent = []
         last_scheduled = None
         uncertain = {}
         if send_registry:
-            sent_ids = send_registry.get_sent_contact_ids(*campaign)
+            sent_ids = send_registry.get_sent_contact_ids(campaign)
             already_sent = [c for c in eligible if c.id in sent_ids]
             eligible = [c for c in eligible if c.id not in sent_ids]
 
             # The emails of a previous run may still be queued: continue the
             # schedule after its last slot so both runs never overlap
-            last_scheduled = send_registry.get_last_start_date(*campaign)
+            last_scheduled = send_registry.get_last_start_date(campaign)
 
             # Attempts a previous run left unresolved may have been scheduled;
             # carry them over so they are reported with this run's outcome.
@@ -212,7 +213,7 @@ class SendBulkEmailsUseCase:
             if not dry_run:
                 uncertain = {
                     cid: list(dates)
-                    for cid, dates in send_registry.get_uncertain_attempts(*campaign).items()
+                    for cid, dates in send_registry.get_uncertain_attempts(campaign).items()
                 }
 
         # Compute staggered start dates so emails are not sent all at once
@@ -287,7 +288,7 @@ class SendBulkEmailsUseCase:
             # right after the API accepts it leaves it on record as uncertain.
             # Pause before each API call to stay within the 1 request-per-second limit
             if send_registry:
-                send_registry.mark_attempt(*campaign, contact.id, start_date)
+                send_registry.mark_attempt(campaign, contact.id, start_date)
             time.sleep(1)
 
             try:
@@ -296,7 +297,7 @@ class SendBulkEmailsUseCase:
                 # Nothing was scheduled, so the attempt is forgotten. Only a
                 # request that was not processed is worth retrying
                 if send_registry:
-                    send_registry.discard_attempt(*campaign, contact.id, start_date)
+                    send_registry.discard_attempt(campaign, contact.id, start_date)
                 error = exc
                 retry = isinstance(exc, EmailNotSentError) and not final
             except Exception as exc:
@@ -313,7 +314,7 @@ class SendBulkEmailsUseCase:
                 if logger:
                     logger.log_ok(contact, attachment_url)
                 if send_registry:
-                    send_registry.mark_sent(*campaign, contact.id, start_date)
+                    send_registry.mark_sent(campaign, contact.id, start_date)
                 return False
 
             if not retry:
@@ -356,6 +357,6 @@ class SendBulkEmailsUseCase:
         # A clean run (no errors) means nothing is left pending for this
         # campaign, so forget its progress and stop blocking future re-sends
         if send_registry and not dry_run and not result.errors:
-            send_registry.clear(group_id, template_id, extra_field.name, subject)
+            send_registry.clear(campaign)
 
         return result

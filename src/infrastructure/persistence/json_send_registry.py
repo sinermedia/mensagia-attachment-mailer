@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from src.domain.entities.campaign import Campaign
 from src.domain.ports.send_registry import SendRegistry
 from src.infrastructure.config.app_paths import user_data_dir
 
@@ -25,24 +26,19 @@ def _default_registry_path() -> Path:
     return user_data_dir() / _FILE
 
 
-def _campaign_key(group_id: int, template_id: int, field_name: str, subject: str) -> str:
+def _campaign_key(campaign: Campaign) -> str:
     """Build a stable, filesystem- and JSON-key-safe identifier for a campaign.
 
-    A campaign is uniquely defined by the tuple (group, template, extra
-    field, subject) — the same choices a user makes when configuring a
-    send. Hashing avoids issues with special characters in the subject and
+    Hashing avoids issues with special characters in the subject and
     keeps the registry file's keys short.
 
     Args:
-        group_id: ID of the target agenda group.
-        template_id: ID of the email template used.
-        field_name: Name of the extra field holding the attachment URL.
-        subject: Email subject line.
+        campaign: Campaign the progress belongs to.
 
     Returns:
         A hexadecimal SHA-1 digest identifying this exact campaign.
     """
-    raw = f"{group_id}|{template_id}|{field_name}|{subject}"
+    raw = f"{campaign.group_id}|{campaign.template_id}|{campaign.field_name}|{campaign.subject}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
@@ -99,36 +95,30 @@ class JsonSendRegistry(SendRegistry):
         except Exception:
             pass
 
-    def _get_record(self, group_id: int, template_id: int, field_name: str, subject: str) -> dict:
+    def _get_record(self, campaign: Campaign) -> dict:
         """Return the stored record of a campaign, or an empty dict when there is none.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
 
         Returns:
             The campaign's record dict. Callers only read from it.
         """
-        return self._load().get(_campaign_key(group_id, template_id, field_name, subject)) or {}
+        return self._load().get(_campaign_key(campaign)) or {}
 
-    def _update_record(self, group_id: int, template_id: int, field_name: str, subject: str, change) -> None:
+    def _update_record(self, campaign: Campaign, change) -> None:
         """Load the file, apply *change* to the campaign's record and save it.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
             change: Callable receiving the mutable record dict.
         """
         data = self._load()
-        record = data.setdefault(_campaign_key(group_id, template_id, field_name, subject), {
-            "group_id": group_id,
-            "template_id": template_id,
-            "field": field_name,
-            "subject": subject,
+        record = data.setdefault(_campaign_key(campaign), {
+            "group_id": campaign.group_id,
+            "template_id": campaign.template_id,
+            "field": campaign.field_name,
+            "subject": campaign.subject,
         })
 
         # Fill every key so *change* never deals with missing ones, including
@@ -171,67 +161,55 @@ class JsonSendRegistry(SendRegistry):
                 del attempts[key]
 
     def get_sent_contact_ids(
-        self, group_id: int, template_id: int, field_name: str, subject: str
+        self, campaign: Campaign
     ) -> set[int]:
         """Return the IDs of contacts already sent an email in this campaign.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
 
         Returns:
             A set of contact IDs, empty when the campaign has no record.
         """
-        record = self._get_record(group_id, template_id, field_name, subject)
+        record = self._get_record(campaign)
         return set(record.get("sent_contact_ids", []))
 
     def get_last_start_date(
-        self, group_id: int, template_id: int, field_name: str, subject: str
+        self, campaign: Campaign
     ) -> datetime | None:
         """Return the latest send slot ever attempted in this campaign.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
 
         Returns:
             The latest recorded slot, or None when there is none.
         """
-        value = self._get_record(group_id, template_id, field_name, subject).get("last_start_date")
+        value = self._get_record(campaign).get("last_start_date")
         return datetime.fromisoformat(value) if value else None
 
     def get_uncertain_attempts(
-        self, group_id: int, template_id: int, field_name: str, subject: str
+        self, campaign: Campaign
     ) -> dict[int, list[datetime]]:
         """Return the attempts of this campaign whose outcome is unknown.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
 
         Returns:
             A dict mapping contact IDs to their unresolved send slots.
         """
-        attempts = self._get_record(group_id, template_id, field_name, subject).get("uncertain_attempts", {})
+        attempts = self._get_record(campaign).get("uncertain_attempts", {})
         return {int(cid): [datetime.fromisoformat(s) for s in slots] for cid, slots in attempts.items()}
 
     def mark_attempt(
-        self, group_id: int, template_id: int, field_name: str, subject: str,
+        self, campaign: Campaign,
         contact_id: int, start_date: datetime,
     ) -> None:
         """Record that an email is about to be sent to a contact for a given slot.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
             contact_id: ID of the contact about to be emailed.
             start_date: Send slot requested for this email.
         """
@@ -239,19 +217,16 @@ class JsonSendRegistry(SendRegistry):
             record["uncertain_attempts"].setdefault(str(contact_id), []).append(start_date.isoformat())
             self._advance_last_start_date(record, start_date)
 
-        self._update_record(group_id, template_id, field_name, subject, change)
+        self._update_record(campaign, change)
 
     def mark_sent(
-        self, group_id: int, template_id: int, field_name: str, subject: str,
+        self, campaign: Campaign,
         contact_id: int, start_date: datetime,
     ) -> None:
         """Record that a contact successfully received an email in this campaign.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
             contact_id: ID of the contact that was successfully emailed.
             start_date: Send slot the email was scheduled for.
         """
@@ -262,38 +237,32 @@ class JsonSendRegistry(SendRegistry):
             self._remove_attempt(record, contact_id, start_date)
             self._advance_last_start_date(record, start_date)
 
-        self._update_record(group_id, template_id, field_name, subject, change)
+        self._update_record(campaign, change)
 
     def discard_attempt(
-        self, group_id: int, template_id: int, field_name: str, subject: str,
+        self, campaign: Campaign,
         contact_id: int, start_date: datetime,
     ) -> None:
         """Resolve an attempt known not to have scheduled any email.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
             contact_id: ID of the contact whose attempt failed.
             start_date: Send slot of the failed attempt.
         """
         self._update_record(
-            group_id, template_id, field_name, subject,
+            campaign,
             lambda record: self._remove_attempt(record, contact_id, start_date),
         )
 
-    def clear(self, group_id: int, template_id: int, field_name: str, subject: str) -> None:
+    def clear(self, campaign: Campaign) -> None:
         """Forget everything recorded for this campaign.
 
         Args:
-            group_id: ID of the target agenda group.
-            template_id: ID of the email template used.
-            field_name: Name of the extra field holding the attachment URL.
-            subject: Email subject line.
+            campaign: Campaign the progress belongs to.
         """
         data = self._load()
-        key = _campaign_key(group_id, template_id, field_name, subject)
+        key = _campaign_key(campaign)
         if key in data:
             del data[key]
             self._save(data)

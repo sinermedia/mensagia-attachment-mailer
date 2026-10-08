@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, call, patch
 import pytest
+from src.domain.entities.campaign import Campaign
 from src.domain.entities.contact import Contact
 from src.domain.entities.extra_field import ExtraField
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
@@ -715,7 +716,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             now=FIXED_NOW, send_registry=send_registry,
         )
 
-        send_registry.get_sent_contact_ids.assert_called_once_with(10, 5, "attachment_url", "Test")
+        send_registry.get_sent_contact_ids.assert_called_once_with(Campaign(10, 5, "attachment_url", "Test"))
 
     def test_mark_sent_called_for_each_successful_send(self, use_case, contact_repo, email_sender, extra_field, send_registry):
         """mark_sent() is called once per contact with its scheduled slot right after a successful send."""
@@ -728,7 +729,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             now=FIXED_NOW, send_registry=send_registry,
         )
 
-        send_registry.mark_sent.assert_called_once_with(10, 5, "attachment_url", "Test", 1, datetime(2024, 1, 15, 14, 40, 0))
+        send_registry.mark_sent.assert_called_once_with(Campaign(10, 5, "attachment_url", "Test"), 1, datetime(2024, 1, 15, 14, 40, 0))
 
     def test_mark_sent_not_called_when_send_fails(self, use_case, contact_repo, email_sender, extra_field, send_registry):
         """mark_sent() is not called for a contact whose send attempt raised an exception."""
@@ -783,7 +784,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             now=FIXED_NOW, send_registry=send_registry,
         )
 
-        send_registry.clear.assert_called_once_with(10, 5, "attachment_url", "Test")
+        send_registry.clear.assert_called_once_with(Campaign(10, 5, "attachment_url", "Test"))
 
     def test_clear_not_called_when_there_are_errors(self, use_case, contact_repo, email_sender, extra_field, send_registry):
         """clear() is not called if any contact failed, so a retry can pick up where it left off."""
@@ -1090,7 +1091,7 @@ class TestSendBulkEmailsUseCaseRegistryAttempts:
 
         run(use_case, extra_field, send_registry=send_registry)
 
-        assert order == [("attempt", (10, 5, "attachment_url", "Test", 1, slot(0))), ("send", slot(0))]
+        assert order == [("attempt", (Campaign(10, 5, "attachment_url", "Test"), 1, slot(0))), ("send", slot(0))]
 
     @pytest.mark.parametrize("error", [EmailRejectedError("invalid"), EmailNotSentError("no connection")])
     def test_attempt_is_discarded_when_nothing_was_scheduled(self, use_case, email_sender, extra_field, one_contact, send_registry, error):
@@ -1099,7 +1100,7 @@ class TestSendBulkEmailsUseCaseRegistryAttempts:
 
         run(use_case, extra_field, send_registry=send_registry)
 
-        assert call(10, 5, "attachment_url", "Test", 1, slot(0)) in send_registry.discard_attempt.call_args_list
+        assert call(Campaign(10, 5, "attachment_url", "Test"), 1, slot(0)) in send_registry.discard_attempt.call_args_list
 
     def test_uncertain_attempt_is_left_unresolved(self, use_case, email_sender, extra_field, one_contact, send_registry):
         """An uncertain send keeps its attempt on record so a later run can warn about it."""
@@ -1147,5 +1148,5 @@ class TestSendBulkEmailsUseCaseRegistryAttempts:
 
         result = run(use_case, extra_field, send_registry=send_registry, dry_run=True)
 
-        send_registry.get_last_start_date.assert_called_once_with(10, 5, "attachment_url", "Test")
+        send_registry.get_last_start_date.assert_called_once_with(Campaign(10, 5, "attachment_url", "Test"))
         assert len(result.sent) == 1
