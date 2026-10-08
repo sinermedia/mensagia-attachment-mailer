@@ -136,7 +136,7 @@ python main.py
 ## Bidaltzeko fluxua
 
 1. **API tokena** — `.env`-tik irakurtzen da edo erabiltzaileari eskatzen zaio.
-2. **Gaia** — Erabiltzaileak mezu elektronikoaren gaia sartzen du.
+2. **Gaia eta hasiera-ordua** — Erabiltzaileak mezu elektronikoaren gaia sartzen du eta lehen mezua noiz bidaliko den aukeratzen du (ikus [Hasiera-ordua programatu](#hasiera-ordua-programatu)).
 3. **Txantiloia** — Eskuragarri dauden email txantiloien zerrenda erakusten da.
 4. **Bidaltzailea** — Egiaztatutako bidaltzaile helbideen zerrenda erakusten da.
 5. **Taldea** — Agenda-taldeen lehen orria erakusten da. Bilatzen ari zaren taldea agertzen ez bada, izenaren arabera iragaz daiteke. Kontakturik gabeko taldeak erakusten dira, baina ezin dira hautatu.
@@ -180,12 +180,36 @@ Taldea **kontaktu-iturri** gisa erabiltzen da, ez harpidetza-zerrenda gisa. Apli
 
 Programak **ez ditu mezu elektronikoak berehala bidaltzen**. Kontaktu hautagarri bakoitzarentzat banakako bidaltzeko konfigurazio bat sortzen du Mensagia plataforman, modu eskalonatuan exekutatzeko programatuta:
 
-- **Lehen bidalketa** aplikazioa abiarazi eta **10 eta 20 minutu** artean exekutatzen da, erroreren bat antzemanez gero denbora izateko ezeztatzen.
+- **Lehen bidalketa** bidalketa abiarazi eta **10 eta 20 minutu** artean exekutatzen da, erroreren bat antzemanez gero denbora izateko ezeztatzen, edo aukeratutako data eta orduan (ikus [Hasiera-ordua programatu](#hasiera-ordua-programatu)).
 - **Hurrengo bidalketak** **12 segundotan** banatzen dira (minutuko 5).
 
 > **Bidalketa hasita dagoenean gelditu behar baduzu**, aplikazioa ixteak konfigurazio berriak sortzea geldiarazten du, baina dagoeneko sortutakoak bidaliko dira hala ere: Mensagia atarian banaka ezabatu beharko dituzu. Ez dago ezeztatze botoi globalik. Geroago bidalketari berriro ekin ahal izango diozu (ikus [Etendako bidalketa berriro hasi](#etendako-bidalketa-berriro-hasi)).
 >
 > Erabili **Simulatu** modua konfigurazio errealik sortu gabe zer bidaliko litzatekeen ikusteko.
+
+---
+
+## Hasiera-ordua programatu
+
+Gaiaren orrian (kontsola moduan, gaiaren ondoren) lehen mezua noiz bidaliko den aukeratzen da:
+
+- **Orain**: bidalketa hasi eta 10-20 minutu barru.
+- **Data eta ordu jakin batean**: lehen mezua adierazitako data eta orduan bidaltzen da, eta hurrengoak 12 segundoro. Bidalketek gauerdia gaindi dezakete.
+
+Data eta ordua beti `ee/hh/uuuu` eta `oo:mm` ordenan idazten dira, hizkuntza edozein dela ere. Modu grafikoan zati bakoitzak bere eremua du, eta kurtsorea bakarrik pasatzen da hurrengora eremu bat betetzean. Kontsola moduan ohiko beste forma batzuk ere onartzen dira (`8/10/26`, `8-10-2026`, `9h30`, `9`…), eta Sartu tekla sakatuta kortxete artean proposatutako balioa onartzen da.
+
+Mugak:
+
+- **Gutxieneko tartea: 10 minutu.** Hurrengo orrira igarotzean, data eta orduak uneko ordua baino gutxienez 10 minutu geroago izan behar du.
+- **Atzeratze automatikoa.** Gainerako urratsak betetzen diren bitartean aukeratutako orduak 10 minutuko tartea galtzen badu, bidalketa hastean automatikoki atzeratzen da tarte hori betetzen duen lehen ordura, «Orain» aukerarekin bezala. Aplikazioak ez du ohartarazten, baina bidalketaren logak aukeratutako ordua (`start_at`) eta lehen mezuarena (`first_slot`) adierazten ditu. Mezuak ez dira inoiz aukeratutako ordua baino lehenago bidaltzen.
+- **Gehienez 6 aste lehenago**, bidalketa prestatzen den unetik.
+- Simulazioak ez du ordua egiaztatzen, datuak bakarrik.
+
+> ⚠ **Ordu-eremua.** Ordua ordu-eremurik gabe bidaltzen zaio Mensagiari, eta Mensagiak tokenari lotutako **Mensagiako erabiltzailean konfiguratutako «Ordu-eremua»** erabiliz interpretatzen du. Egiaztatu aplikazioa exekutatzen duen ordenagailuarenarekin bat datorrela: bestela, mezuak aukeratutakoaz bestelako ordu batean bidaliko dira.
+
+Aplikazioak gaurko data proposatzen du eta, ordu gisa, modu grafikoan aukeratutako azkena edo, bat ere ez badago, «Orain» aukerari legokiokeena.
+
+[Etendako bidalketa bat berriro hasteko](#etendako-bidalketa-berriro-hasi) aukera berak errepikatu behar dira, hasiera-orduaren modua barne: modua aldatzen bada, bidalketa berritzat hartzen da. Aldiz, data edo ordua aldatzeak ez du bidalketa berririk sortzen: berriro hastean, mezuak programatutako azkenaren ondoren jarraitzen dute, eta ordu berria une horrek 10 minutuko tartea ez badu bakarrik erabiltzen da.
 
 ---
 
@@ -215,7 +239,7 @@ Baztertzeko arrazoiak (`reason=`, `[SEND_SKIP]` lerroetan):
 
 Bidalketa bat erdibidean eteten bada (aplikazioa ixten da, konexioa eteten da, ordenagailua itzaltzen da…), aplikazioak gogoratzen du zein kontakturi programatu zaien dagoeneko mezua.
 
-**Kanpaina bera** berriro prestatzean (talde, txantiloi eta eranskin eremu berak, eta **gai bera, hitzez hitz**), laburpenera iristean aplikazioak aurreko bidalketa osatu gabe dagoela ohartarazten du eta zer egin galdetzen du:
+**Kanpaina bera** berriro prestatzean (talde, txantiloi, eranskin eremu eta hasiera-ordu modu berak, eta **gai bera, hitzez hitz**), laburpenera iristean aplikazioak aurreko bidalketa osatu gabe dagoela ohartarazten du eta zer egin galdetzen du:
 
 - **Jarraitu**: falta diren kontaktuei bakarrik bidaltzen zaie. Haien mezuak aurreko bidalketakoen ondoren programatzen dira, haiekin gainjarri gabe.
 - **Ez jarraitu**: aurreko bidalketa baztertu eta kontaktu guztiei bidaltzen zaie berriro, dagoeneko jaso dutenei barne.
@@ -236,8 +260,8 @@ Mensagiaren APIak ez du programatutako bidalketak kontsultatzen uzten; beraz, eg
 ## Hautaketen memoria (GUI modua)
 
 Bidalketa edo simulazio bakoitzaren ondoren, aplikazioak aukeratutako
-parametroak (txantiloia, bidaltzailea, taldea, eranskin eremua eta
-ziurtagiria) `last_selections.json` fitxategi batean gordetzen ditu,
+parametroak (txantiloia, bidaltzailea, taldea, eranskin eremua,
+ziurtagiria, eta hasiera-orduaren modua eta ordua) `last_selections.json` fitxategi batean gordetzen ditu,
 [aplikazioaren datu-karpetan](#aplikazioaren-fitxategiak).
 
 Hurrengo exekuzioan, aukera horiek lehenespenez markatuta agertuko dira.

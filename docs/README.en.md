@@ -134,7 +134,7 @@ python main.py
 ## Sending flow
 
 1. **API token** — Read from `.env` or prompted from the user.
-2. **Subject** — The user enters the email subject.
+2. **Subject and start time** — The user enters the email subject and chooses when the first email goes out (see [Scheduling the start time](#scheduling-the-start-time)).
 3. **Template** — The list of available email templates is shown.
 4. **Sender** — The list of verified sender addresses is shown.
 5. **Group** — A first page of contact groups is shown. If the group you need is not there, you can filter by name. Groups without contacts are shown but cannot be selected.
@@ -178,12 +178,36 @@ The group is used as a **contact source**, not as a subscription list. The app w
 
 The program **does not send emails immediately**. For each eligible contact it creates an individual send configuration on the Mensagia platform, scheduled to run in a staggered sequence:
 
-- The **first send** is executed between **10 and 20 minutes** after launching the application, to allow time to cancel if an error is detected.
+- The **first send** is executed between **10 and 20 minutes** after starting the send, to allow time to cancel if an error is detected, or at the chosen date and time (see [Scheduling the start time](#scheduling-the-start-time)).
 - **Subsequent sends** are spaced **12 seconds** apart (5 per minute).
 
 > **If you need to stop the send once it has started**, closing the app stops new configurations from being created, but those already created will still be sent: you must delete each one individually from the Mensagia portal. There is no global cancel button. You can resume the send later (see [Resuming an interrupted send](#resuming-an-interrupted-send)).
 >
 > Use **Simulate** mode to review what would be sent without creating any real configurations.
+
+---
+
+## Scheduling the start time
+
+On the subject page (in console mode, right after the subject) you choose when the first email goes out:
+
+- **Now**: 10 to 20 minutes after the send starts.
+- **On a specific date and time**: the first email goes out at the date and time given, and the next ones every 12 seconds. Sends may run past midnight.
+
+The date and time are always typed in the order `dd/mm/yyyy` and `hh:mm`, whatever the language. In GUI mode there is one field per part, and the cursor moves to the next one when a field is complete. In console mode other common forms are also accepted (`8/10/26`, `8-10-2026`, `9h30`, `9`…), and Enter accepts the value proposed between brackets.
+
+Limits:
+
+- **10-minute minimum lead.** When moving on to the next page, the date and time must be at least 10 minutes after the current time.
+- **Automatic postponement.** If, while the other steps are completed, the chosen time no longer has 10 minutes of lead, it is automatically postponed when the send starts to the first time that has it, as with the "Now" option. The app gives no warning, but the send log shows the chosen time (`start_at`) and the time of the first email (`first_slot`). Emails never go out before the chosen time.
+- **At most 6 weeks ahead** of the moment the send is prepared.
+- The simulation does not check the time, only the data.
+
+> ⚠ **Time zone.** The time is sent to Mensagia without a time zone, and Mensagia reads it in the **"Time zone" set on the Mensagia user** linked to the token. Check that it matches the time zone of the computer running the app: otherwise the emails will go out at a different time than the one chosen.
+
+The app proposes today's date and, as the time, the last one chosen in GUI mode or, if there is none, the one the "Now" option would give.
+
+To [resume an interrupted send](#resuming-an-interrupted-send) you must repeat exactly the same options, including the start mode: changing the mode makes it a new send. Changing the date or time, on the other hand, does not create a new send: when resuming, emails continue after the last one scheduled, and the new time is only used if that moment no longer has 10 minutes of lead.
 
 ---
 
@@ -213,7 +237,7 @@ When **no contact in the group is eligible** (or all of them already received th
 
 If a send is interrupted halfway (the app is closed, the connection drops, the computer shuts down…), the app remembers which contacts have already had their email scheduled.
 
-When you prepare **the same campaign** again (same group, template and attachment field, and **exactly the same subject**), on reaching the summary the app warns that there is an incomplete previous send and asks what to do:
+When you prepare **the same campaign** again (same group, template, attachment field and start mode, and **exactly the same subject**), on reaching the summary the app warns that there is an incomplete previous send and asks what to do:
 
 - **Continue**: only the pending contacts are sent to. Their emails are scheduled after those of the previous send, without overlapping them.
 - **Don't continue**: the previous send is discarded and the email is sent again to all contacts, including those who already received it.
@@ -234,7 +258,7 @@ The Mensagia API does not allow querying scheduled sends, so this check must be 
 ## Selection memory (GUI mode)
 
 After each send or simulation, the app saves the chosen parameters
-(template, sender, group, attachment field and certified) to a file
+(template, sender, group, attachment field, certified, and the start mode and time) to a file
 `last_selections.json`, in the [app data folder](#app-files).
 
 On the next run, those options will be pre-selected by default.
