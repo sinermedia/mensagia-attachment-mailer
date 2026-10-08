@@ -34,12 +34,14 @@ def _q(value: str) -> str:
 
 
 class SendLogger:
-    """Writes a structured log file for a single real bulk-send operation.
+    """Writes a structured log file for a single bulk-send operation or simulation.
 
     Produces one log file per send session in the configured directory.
     Every line carries an ISO-8601 timestamp and a keyword tag that makes
     it trivial to filter outcomes with grep:
 
+    - [SIMULATION] — header line, only in simulation logs, stating that no
+      email was sent
     - [SEND_START] — opening summary with all shared send parameters
     - [SEND_OK]    — one entry per successfully dispatched email
     - [SEND_SKIP]  — one entry per contact excluded before sending
@@ -53,11 +55,15 @@ class SendLogger:
         grep SEND_OK  mensagia_send_20240115_143000.log   # all successes
         grep SEND_ERROR mensagia_send_20240115_143000.log  # all failures
 
+    A simulation writes the same entries, where [SEND_OK] means the email
+    would have been sent, to a file named mensagia_simulation_<timestamp>.log
+    so it is never mistaken for the log of a real send.
+
     Attributes:
         log_path: Absolute Path of the log file created for this session.
     """
 
-    def __init__(self, log_dir: str | None = None):
+    def __init__(self, log_dir: str | None = None, simulation: bool = False):
         """Create the log file and configure the underlying Python logger.
 
         The log directory is created if it does not exist. The file is named
@@ -68,11 +74,17 @@ class SendLogger:
                 'logs' sub-directory of the user data directory (next to
                 the .exe on Windows, ~/Mensagia Mailer on macOS, the
                 repository root in a development run).
+            simulation: True to log a simulation (dry run): the file gets the
+                mensagia_simulation_ prefix and opens with a [SIMULATION]
+                header line.
         """
+        # Simulations share the folder of real sends but use their own
+        # prefix, so sorting by name keeps both kinds of log apart
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         dir_path = Path(log_dir) if log_dir is not None else _default_log_dir()
         dir_path.mkdir(parents=True, exist_ok=True)
-        self.log_path = dir_path / f"mensagia_send_{timestamp}.log"
+        prefix = "mensagia_simulation" if simulation else "mensagia_send"
+        self.log_path = dir_path / f"{prefix}_{timestamp}.log"
 
         # Unique logger name prevents handler accumulation across instances
         self._logger = logging.getLogger(f"mensagia_{uuid.uuid4().hex}")
@@ -84,6 +96,11 @@ class SendLogger:
             logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
         )
         self._logger.addHandler(handler)
+
+        # State it on the very first line: a simulation log otherwise reads
+        # exactly like a real one, [SEND_OK] entries included
+        if simulation:
+            self._logger.info("[SIMULATION] This is a simulation: no email was sent.")
 
     def log_start(
         self,

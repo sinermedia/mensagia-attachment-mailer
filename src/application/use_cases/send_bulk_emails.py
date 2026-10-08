@@ -147,11 +147,13 @@ class SendBulkEmailsUseCase:
             dry_run: When True, all logic runs normally (eligibility check,
                 URL resolution, accessibility check) but the email is never
                 actually dispatched. Useful for previewing what would be sent.
-                No log entries are written in dry-run mode.
-            logger: Optional SendLogger instance. When provided and dry_run is
-                False, one structured log line is written per contact outcome
-                plus opening and closing summary lines. Pass None to disable
-                logging entirely.
+                The logger, when given, records the same entries as in a
+                real send, so the preview explains every skipped contact.
+            logger: Optional SendLogger instance. When provided, one
+                structured log line is written per contact outcome plus
+                opening and closing summary lines, in dry-run mode too
+                (where a sent entry means it would be sent). Pass None to
+                disable logging entirely.
             progress_callback: Optional callable invoked as
                 progress_callback(current, total) after each eligible contact
                 is processed (sent or errored), where current is the
@@ -218,7 +220,7 @@ class SendBulkEmailsUseCase:
         result = SendResult(skipped=skipped, already_sent=already_sent)
 
         # Log the opening summary and all skipped/already-sent contacts before the send loop
-        if logger and not dry_run:
+        if logger:
             logger.log_start(
                 from_email, subject, template_id, group_id,
                 extra_field.name, certified, len(eligible), len(skipped),
@@ -236,7 +238,7 @@ class SendBulkEmailsUseCase:
                 error: The exception that caused the failure.
             """
             result.errors.append({"contact": contact, "error": str(error)})
-            if logger and not dry_run:
+            if logger:
                 logger.log_error(contact, str(error))
 
         def process(contact, start_date: datetime, final: bool) -> bool:
@@ -273,9 +275,12 @@ class SendBulkEmailsUseCase:
                 record_error(contact, exc)
                 return False
 
-            # A dry run stops here: everything that could fail locally was checked
+            # A dry run stops here: everything that could fail locally was
+            # checked, so the contact is logged as one that would be sent
             if dry_run:
                 result.sent.append({"contact": contact, "response": {}})
+                if logger:
+                    logger.log_ok(contact, attachment_url)
                 return False
 
             # Record the attempt before calling the API, so an abrupt close
@@ -345,7 +350,7 @@ class SendBulkEmailsUseCase:
         ]
 
         # Log the closing summary once all contacts have been processed
-        if logger and not dry_run:
+        if logger:
             logger.log_done(len(result.sent), len(result.skipped), len(result.errors))
 
         # A clean run (no errors) means nothing is left pending for this

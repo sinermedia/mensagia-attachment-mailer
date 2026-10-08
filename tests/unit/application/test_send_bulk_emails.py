@@ -385,7 +385,7 @@ class TestSendBulkEmailsUseCase:
 
 
 class TestSendBulkEmailsUseCaseWithLogger:
-    """Tests that the use case calls the logger on real sends and stays silent on dry-run."""
+    """Tests that the use case calls the logger on real sends and dry runs alike."""
 
     @pytest.fixture(autouse=True)
     def mock_sleep(self):
@@ -498,9 +498,12 @@ class TestSendBulkEmailsUseCaseWithLogger:
 
         logger.log_done.assert_called_once_with(1, 0, 0)
 
-    def test_no_logging_when_dry_run_is_true(self, use_case, contact_repo, email_sender, extra_field):
-        """No logger methods are called at all when dry_run=True."""
-        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+    def test_dry_run_logs_like_a_real_send(self, use_case, contact_repo, email_sender, extra_field):
+        """A dry run writes the same start, ok, skip and done entries as a real send."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"),
+            make_contact(2, "", "https://example.com/b.pdf"),
+        ]
         logger = MagicMock()
 
         use_case.execute(
@@ -509,11 +512,44 @@ class TestSendBulkEmailsUseCaseWithLogger:
             now=FIXED_NOW, dry_run=True, logger=logger,
         )
 
-        logger.log_start.assert_not_called()
-        logger.log_ok.assert_not_called()
-        logger.log_skip.assert_not_called()
-        logger.log_error.assert_not_called()
-        logger.log_done.assert_not_called()
+        logger.log_start.assert_called_once()
+        logger.log_ok.assert_called_once_with(
+            make_contact(1, "a@test.com", "https://example.com/a.pdf"), "https://example.com/a.pdf"
+        )
+        logger.log_skip.assert_called_once_with(make_contact(2, "", "https://example.com/b.pdf"), "no_email")
+        logger.log_done.assert_called_once_with(1, 1, 0)
+
+    def test_dry_run_logs_errors_found_while_preparing(self, use_case, contact_repo, email_sender, extra_field):
+        """A dry run logs a contact whose attachment cannot be resolved as an error."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "relative.pdf")]
+        logger = MagicMock()
+
+        use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, dry_run=True, logger=logger,
+        )
+
+        logger.log_error.assert_called_once()
+        logger.log_done.assert_called_once_with(0, 0, 1)
+
+    def test_dry_run_with_no_eligible_contacts_logs_every_skip(self, use_case, contact_repo, email_sender, extra_field):
+        """A dry run where no contact is eligible still logs each skipped contact with its reason."""
+        contact_repo.get_by_group.return_value = [
+            make_contact(1, "", "https://example.com/a.pdf"),
+            make_contact(2, "b@test.com", None),
+        ]
+        logger = MagicMock()
+
+        result = use_case.execute(
+            from_email="sender@test.com", group_id=10, subject="Test",
+            template_id=5, extra_field=extra_field, certified=0,
+            now=FIXED_NOW, dry_run=True, logger=logger,
+        )
+
+        assert result.sent == []
+        assert [c.args[1] for c in logger.log_skip.call_args_list] == ["no_email", "no_attachment"]
+        logger.log_done.assert_called_once_with(0, 2, 0)
 
     def test_no_error_when_logger_is_none(self, use_case, contact_repo, email_sender, extra_field):
         """The use case runs without error and returns correct results when logger=None."""

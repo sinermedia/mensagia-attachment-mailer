@@ -154,3 +154,32 @@ class TestSendLogger:
         logger.log_start("f@t.com", "My Subject Line", 1, 1, "field", 0, 1, 0)
         content = logger.log_path.read_text(encoding="utf-8")
         assert 'subject="My Subject Line"' in content
+
+    def test_real_send_log_has_no_simulation_header(self, tmp_path):
+        """A real send log does not carry the [SIMULATION] header."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_done(1, 0, 0)
+        assert "[SIMULATION]" not in logger.log_path.read_text(encoding="utf-8")
+
+
+class TestSendLoggerSimulation:
+    """Tests for SendLogger in simulation mode — file name and header that tell it apart from a real send."""
+
+    def test_simulation_log_file_name_has_simulation_prefix(self, tmp_path):
+        """A simulation log file name starts with mensagia_simulation_ and ends with .log."""
+        logger = SendLogger(log_dir=str(tmp_path), simulation=True)
+        assert logger.log_path.name.startswith("mensagia_simulation_")
+        assert logger.log_path.name.endswith(".log")
+
+    def test_simulation_log_goes_to_the_same_folder_as_send_logs(self, tmp_path, monkeypatch):
+        """Without an explicit directory, simulation logs share the logs/ folder of real sends."""
+        monkeypatch.setattr("src.infrastructure.logging.send_logger.user_data_dir", lambda: tmp_path)
+        assert SendLogger(simulation=True).log_path.parent == SendLogger().log_path.parent
+
+    def test_simulation_log_starts_with_simulation_header(self, tmp_path):
+        """The first line of a simulation log is a [SIMULATION] header saying nothing was sent."""
+        logger = SendLogger(log_dir=str(tmp_path), simulation=True)
+        logger.log_start("f@t.com", "Subj", 1, 1, "field", 0, 1, 0)
+        first_line = logger.log_path.read_text(encoding="utf-8").splitlines()[0]
+        assert "[SIMULATION]" in first_line
+        assert "no email was sent" in first_line
