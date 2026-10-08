@@ -183,11 +183,23 @@ class TestGuiSummaryGuards:
         window.selected_field.name = "attachment"
         window._subject_entry.insert(0, "Subject")
 
-    def test_disables_the_send_actions_when_no_contact_is_eligible(self, app):
-        """Leaves both send buttons disabled when no contact can be written to."""
+    def test_disables_only_the_send_button_when_no_contact_is_eligible(self, app):
+        """Leaves Send disabled but enables Simulate when no contact can be written to."""
         self._prepare(app)
         repo = MagicMock()
         repo.get_by_group.return_value = [MagicMock(email="", extra_fields={})]
+        with patch("src.infrastructure.ui.gui.gui_app.MensagiaContactRepository", return_value=repo):
+            app._load_summary()
+            _wait_until(app, lambda: app._summary_error.cget("text") != "")
+
+        assert str(app._send_btn.cget("state")) == "disabled"
+        assert str(app._dry_run_btn.cget("state")) == "normal"
+
+    def test_disables_both_actions_when_the_group_returns_no_contacts(self, app):
+        """Leaves both buttons disabled when the group yields no contact at all."""
+        self._prepare(app)
+        repo = MagicMock()
+        repo.get_by_group.return_value = []
         with patch("src.infrastructure.ui.gui.gui_app.MensagiaContactRepository", return_value=repo):
             app._load_summary()
             _wait_until(app, lambda: app._summary_error.cget("text") != "")
@@ -220,6 +232,24 @@ class TestGuiSummaryGuards:
         assert str(app._send_btn.cget("state")) == "normal"
         assert app._summary_error.cget("text") == ""
 
+    def test_allows_only_a_simulation_when_every_contact_was_already_sent(self, app):
+        """Enables Simulate but not Send when a resumed campaign has nothing left to send."""
+        self._prepare(app)
+        repo = MagicMock()
+        repo.get_by_group.return_value = [
+            MagicMock(id=1, email="a@example.com", extra_fields={"attachment": "file.pdf"})
+        ]
+        app._send_registry = MagicMock()
+        app._send_registry.get_sent_contact_ids.return_value = {1}
+        app._send_registry.get_uncertain_attempts.return_value = {}
+        with patch("src.infrastructure.ui.gui.gui_app.MensagiaContactRepository", return_value=repo), \
+                patch("src.infrastructure.ui.gui.gui_app.messagebox.askyesno", return_value=True):
+            app._load_summary()
+            _wait_until(app, lambda: str(app._dry_run_btn.cget("state")) == "normal")
+
+        assert str(app._dry_run_btn.cget("state")) == "normal"
+        assert str(app._send_btn.cget("state")) == "disabled"
+
     def test_reports_an_api_failure_without_a_modal_dialog(self, app):
         """Shows an API failure inline so the Back button stays reachable."""
         from src.infrastructure.api.mensagia_client import MensagiaAPIError
@@ -233,6 +263,41 @@ class TestGuiSummaryGuards:
 
         assert "boom" in app._summary_error.cget("text")
         assert str(app._send_btn.cget("state")) == "disabled"
+
+
+class TestGuiPostSendActions:
+    """Covers the buttons offered once a send or a simulation finishes."""
+
+    def _button_texts(self, window) -> list:
+        """Collect the texts of the post-send action buttons.
+
+        Args:
+            window: The App instance to inspect.
+
+        Returns:
+            The button texts, in display order.
+        """
+        return [w.cget("text") for w in window._sending_actions.winfo_children()]
+
+    def test_offers_the_real_send_after_a_simulation(self, app):
+        """Offers Send and Back to summary after a simulation when there is something to send."""
+        app._can_send = True
+        app._show_send_actions(dry_run=True)
+
+        assert self._button_texts(app) == ["Send", "Back to summary"]
+
+    def test_hides_the_real_send_after_a_simulation_with_nothing_to_send(self, app):
+        """Offers only Back to summary after a simulation when no contact can be sent to."""
+        app._can_send = False
+        app._show_send_actions(dry_run=True)
+
+        assert self._button_texts(app) == ["Back to summary"]
+
+    def test_offers_a_new_send_after_a_real_send(self, app):
+        """Offers only New send once a real send finishes."""
+        app._show_send_actions(dry_run=False)
+
+        assert self._button_texts(app) == ["New send"]
 
 
 class TestGuiSendFailure:

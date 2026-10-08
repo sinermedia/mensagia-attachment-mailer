@@ -194,6 +194,27 @@ def _confirm_action() -> str | None:
             return None
 
 
+def _choose_action(can_send: bool) -> str | None:
+    """Ask the user what to do with the campaign shown in the summary.
+
+    When at least one contact can be sent to, the usual send / simulate /
+    cancel question is asked. Otherwise a real send would do nothing, so
+    only a simulation is offered: its log explains why each contact was
+    left out.
+
+    Args:
+        can_send: True when this run has at least one email to send.
+
+    Returns:
+        'send' if the user confirms a real send,
+        'dry_run' if the user requests a simulation,
+        None if the user cancels.
+    """
+    if can_send:
+        return _confirm_action()
+    return "dry_run" if _yes_no(f"\n  {t('confirm_dry_run_only')}") else None
+
+
 def _yes_no(prompt: str) -> bool:
     """Ask a yes/no question and return the boolean result.
 
@@ -225,11 +246,12 @@ def run():
     Step 4 — Agenda group selection.
     Step 5 — Extra field (attachment URL field) selection.
     Step 6 — Certified email option.
-    Step 7 — Contact count summary and confirmation.
-    Step 8 — Bulk send (real or dry-run).
+    Step 7 — Contact count summary and confirmation (simulation only when
+             there is nothing to send).
+    Step 8 — Bulk send (real or dry-run), both logged to a file.
 
     Exits with sys.exit(1) on unrecoverable API errors and sys.exit(0)
-    when the user cancels or there are no eligible contacts.
+    when the user cancels or the group yields no contacts.
     """
     print("=" * 60)
     print("  MENSAGIA ATTACHMENT MAILER")
@@ -372,18 +394,20 @@ def run():
     print(f"  {t('summary_contacts', count=to_send_count)}")
     print(f"  {t('summary_skipped', count=skipped_count)}")
 
-    # Nothing to send — say why and exit cleanly without error. The group may
-    # well hold contacts: they can all lack an email address or the extra field
-    if not eligible:
+    # Without a single contact there is nothing to send nor to explain in a
+    # simulation log, so exit cleanly without error
+    if not contacts:
         print(f"\n  {t('no_eligible_contacts')}")
         sys.exit(0)
 
-    # Every eligible contact already received this campaign in a previous run;
-    # the summary above already shows a zero counter, so just exit cleanly
-    if to_send_count == 0:
-        sys.exit(0)
-
-    action = _confirm_action()
+    # The group may hold contacts and still have none that can be written to,
+    # when they all lack an email address or the extra field: say why. In
+    # that case, or when every eligible contact already received this
+    # campaign in a previous run, only a simulation is offered, since its
+    # log is the way to find out why each contact was left out
+    if not eligible:
+        print(f"\n  {t('no_eligible_contacts')}")
+    action = _choose_action(can_send=to_send_count > 0)
     if action is None:
         sys.exit(0)
 
@@ -393,8 +417,9 @@ def run():
     email_sender = MensagiaEmailSender(client)
     use_case = SendBulkEmailsUseCase(contact_repo, email_sender)
 
-    # Create a logger only for real sends; dry-runs produce no log file
-    send_logger = SendLogger() if not dry_run else None
+    # Simulations are logged too, in a file named so it is never mistaken
+    # for the log of a real send
+    send_logger = SendLogger(simulation=dry_run)
 
     print(f"\n  {t('sending')}")
     result = use_case.execute(
@@ -424,5 +449,4 @@ def run():
     for line in result_uncertain_lines(result.uncertain):
         print(f"\n  {line}")
 
-    if send_logger:
-        print(f"  {t('log_saved', path=str(send_logger.log_path))}")
+    print(f"  {t('log_saved', path=str(send_logger.log_path))}")

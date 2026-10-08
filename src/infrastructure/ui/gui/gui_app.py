@@ -82,6 +82,8 @@ class App(ctk.CTk):
         selected_sender: Sender address chosen by the user in step 3.
         selected_agenda: Agenda group chosen by the user in step 4.
         selected_field: Extra field chosen by the user in step 5.
+        _can_send: True when the summary allows a real send; False when
+            only a simulation is possible because nothing can be sent.
     """
 
     def __init__(self):
@@ -102,6 +104,8 @@ class App(ctk.CTk):
         # Tracks already-sent contacts per campaign; stateless (file-backed),
         # so a single instance is reused across the whole app session
         self._send_registry = JsonSendRegistry()
+        # Whether the summary allows a real send, not just a simulation
+        self._can_send = False
 
         # Runtime state — populated as the user progresses through the wizard
         self.client: MensagiaClient | None = None
@@ -671,6 +675,7 @@ class App(ctk.CTk):
         # to send; an empty campaign is precisely the case that used to hang
         self._dry_run_btn.configure(state="disabled")
         self._send_btn.configure(state="disabled")
+        self._can_send = False
 
         threading.Thread(target=self._fetch_summary, daemon=True).start()
 
@@ -787,15 +792,25 @@ class App(ctk.CTk):
         self._summary_contacts_label.configure(text=t("summary_contacts", count=to_send_count))
         self._summary_skipped_label.configure(text=t("summary_skipped", count=len(contacts) - len(eligible)))
 
-        # A group can hold contacts and still have none that can be written to,
-        # when they lack an email address or the selected extra field. Say so
-        # and leave the send actions disabled instead of starting an empty run
-        if not eligible:
+        # Without a single contact there is nothing to send nor to explain in a
+        # simulation log, so both actions stay disabled
+        if not contacts:
             self._summary_error.configure(text=t("no_eligible_contacts"))
             return
 
+        # A group can hold contacts and still have none that can be written to,
+        # when they lack an email address or the selected extra field. Say so,
+        # and point to the simulation: its log gives the reason for each one
+        if not eligible:
+            self._summary_error.configure(text=t("no_eligible_contacts") + "\n" + t("no_eligible_simulate_hint"))
+
+        # Simulating is always possible from here on, but a real send only
+        # when this run has an email to send (not the case either when every
+        # eligible contact already received this campaign in a previous run)
+        self._can_send = to_send_count > 0
         self._dry_run_btn.configure(state="normal")
-        self._send_btn.configure(state="normal")
+        if self._can_send:
+            self._send_btn.configure(state="normal")
 
     # ── Step 8: Sending ────────────────────────────────────────────────────────
 
@@ -880,8 +895,9 @@ class App(ctk.CTk):
                 use_case = SendBulkEmailsUseCase(contact_repo, email_sender_adapter)
                 _dry_run = dry_run
 
-                # Create a logger only for real sends; dry-runs produce no log file
-                send_logger = SendLogger() if not _dry_run else None
+                # Simulations are logged too, in a file named so it is never
+                # mistaken for the log of a real send
+                send_logger = SendLogger(simulation=_dry_run)
 
                 result = use_case.execute(
                     from_email=self.selected_sender.email,
@@ -913,8 +929,7 @@ class App(ctk.CTk):
                 uncertain_msgs = result_uncertain_lines(result.uncertain)
                 if uncertain_msgs:
                     result_text += "\n\n" + "\n\n".join(uncertain_msgs)
-                if send_logger:
-                    result_text += f"\n\n{t('log_saved', path=str(send_logger.log_path))}"
+                result_text += f"\n\n{t('log_saved', path=str(send_logger.log_path))}"
 
                 self._result_label.configure(text=result_text)
                 self._progress_bar.set(1)
@@ -928,25 +943,7 @@ class App(ctk.CTk):
                     "certified": self._certified_var.get(),
                 })
 
-                # Show contextual post-send buttons depending on dry-run vs real send
-                if _dry_run:
-                    # After a dry-run, offer to proceed with the real send or go back
-                    ctk.CTkButton(
-                        self._sending_actions, text=t("btn_send"),
-                        command=lambda: self._do_send(dry_run=False),
-                        fg_color="#e05", hover_color="#c03"
-                    ).pack(side="left", padx=(0, 8))
-                    ctk.CTkButton(
-                        self._sending_actions, text=t("btn_back_to_summary"),
-                        command=lambda: self._show_frame("summary"),
-                        fg_color="gray", hover_color="#555"
-                    ).pack(side="left")
-                else:
-                    # After a real send, only offer to start a new campaign
-                    ctk.CTkButton(
-                        self._sending_actions, text=t("btn_new_send"),
-                        command=self._reset_for_new_send
-                    ).pack(side="left")
+                self._show_send_actions(_dry_run)
 
             except MensagiaAPIError as e:
                 message = t("error_api", error=str(e))
@@ -958,6 +955,36 @@ class App(ctk.CTk):
                 self._ui_queue.put(lambda: self._fail_send(message))
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _show_send_actions(self, dry_run: bool):
+        """Offer the buttons that follow a finished send or simulation.
+
+        After a simulation the user can go back to the summary or, when the
+        summary allowed it, go ahead with the real send. After a real send
+        only a new campaign makes sense.
+
+        Args:
+            dry_run: True when the finished run was a simulation.
+        """
+        if dry_run:
+            # The real send is offered only when the summary enabled it: a
+            # simulation is also allowed when there is nothing to send
+            if self._can_send:
+                ctk.CTkButton(
+                    self._sending_actions, text=t("btn_send"),
+                    command=lambda: self._do_send(dry_run=False),
+                    fg_color="#e05", hover_color="#c03"
+                ).pack(side="left", padx=(0, 8))
+            ctk.CTkButton(
+                self._sending_actions, text=t("btn_back_to_summary"),
+                command=lambda: self._show_frame("summary"),
+                fg_color="gray", hover_color="#555"
+            ).pack(side="left")
+        else:
+            ctk.CTkButton(
+                self._sending_actions, text=t("btn_new_send"),
+                command=self._reset_for_new_send
+            ).pack(side="left")
 
     def _fail_send(self, message: str):
         """Report a failed send and give the user a way out of the sending step.
