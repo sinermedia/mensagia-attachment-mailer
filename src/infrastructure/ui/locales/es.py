@@ -62,6 +62,8 @@ STRINGS = {
     "btn_back_to_summary": "Volver al resumen",
     "sim": "Sim",
     "dry_run_complete": "Simulación completada: {sent} se enviarían, {skipped} omitidos, {errors} errores. No se ha enviado ningún correo.",
+    "confirm_dry_run_only": "No hay ningún correo para enviar. ¿Quieres hacer una simulación y guardar un log con el motivo de cada contacto?",
+    "no_eligible_simulate_hint": "Haz una simulación para ver en el log por qué se ha descartado cada contacto.",
     "enter_base_url": "Introduce la URL base para construir las rutas de los adjuntos:",
     "base_url_label": "URL base adjuntos:",
     "base_url_placeholder": "https://example.com/files/",

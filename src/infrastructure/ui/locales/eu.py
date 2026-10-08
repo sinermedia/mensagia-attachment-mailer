@@ -62,6 +62,8 @@ STRINGS = {
     "btn_back_to_summary": "Laburpenera itzuli",
     "sim": "Sim",
     "dry_run_complete": "Simulazioa osatua: {sent} bidaliko lirateke, {skipped} saltatuta, {errors} akats. Ez da mezurik bidali.",
+    "confirm_dry_run_only": "Ez dago bidaltzeko mezurik. Simulazio bat egin eta kontaktu bakoitzaren arrazoia duen loga gorde nahi duzu?",
+    "no_eligible_simulate_hint": "Egin simulazio bat logean kontaktu bakoitza zergatik baztertu den ikusteko.",
     "enter_base_url": "Sartu eranskinaren bideak eraikitzeko oinarrizko URLa:",
     "base_url_label": "Eranskinaren oinarrizko URLa:",
     "base_url_placeholder": "https://example.com/files/",

@@ -62,6 +62,8 @@ STRINGS = {
     "btn_back_to_summary": "Tornar al resum",
     "sim": "Sim",
     "dry_run_complete": "Simulació completada: {sent} s'enviarien, {skipped} omesos, {errors} errors. No s'ha enviat cap correu.",
+    "confirm_dry_run_only": "No hi ha cap correu per enviar. Vols fer una simulació i desar un log amb el motiu de cada contacte?",
+    "no_eligible_simulate_hint": "Fes una simulació per veure al log per què s'ha descartat cada contacte.",
     "enter_base_url": "Introdueix la URL base per construir les rutes dels adjunts:",
     "base_url_label": "URL base adjunts:",
     "base_url_placeholder": "https://example.com/files/",

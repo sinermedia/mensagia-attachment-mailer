@@ -81,7 +81,7 @@ L'aplicació desa els seus fitxers en una carpeta de dades, que depèn de com s'
 En aquesta carpeta hi ha:
 
 - `.env`: la configuració (token API, idioma, URL base dels adjunts…). El crees tu i és opcional.
-- `logs/`: un registre de cada enviament.
+- `logs/`: un registre de cada enviament i de cada simulació (vegeu [Simular un enviament](#simular-un-enviament)).
 - `last_selections.json`: les últimes opcions triades (vegeu [Memòria de seleccions](#memòria-de-seleccions-mode-gràfic)).
 - `send_progress.json`: el progrés dels enviaments (vegeu [Reprendre un enviament interromput](#reprendre-un-enviament-interromput)).
 
@@ -184,6 +184,28 @@ El programa **no envia els correus de forma immediata**. Per cada contacte elegi
 > **Si cal aturar l'enviament un cop iniciat**, tancar l'aplicació atura la creació de noves configuracions, però les que ja s'han creat s'enviaran igualment: hauràs d'eliminar-les una per una des del portal de Mensagia. No hi ha cap botó de cancel·lació global. Més endavant podràs reprendre l'enviament (vegeu [Reprendre un enviament interromput](#reprendre-un-enviament-interromput)).
 >
 > Fes servir el mode **Simular** per revisar què s'enviaria sense crear cap configuració real.
+
+---
+
+## Simular un enviament
+
+El botó **Simular** (en el mode consola, la resposta `Sim`) fa totes les comprovacions d'un enviament real (contactes aptes, URL dels adjunts i que es puguin descarregar), però **no programa cap correu** a Mensagia ni modifica el progrés desat per [reprendre un enviament](#reprendre-un-enviament-interromput).
+
+Cada simulació genera un log amb el mateix contingut que el d'un enviament real: els contactes a qui s'enviaria el correu i els descartats, amb el motiu. En acabar, l'aplicació mostra la ruta del fitxer.
+
+- Els logs es desen a la carpeta `logs/` de la [carpeta de dades de l'aplicació](#fitxers-de-laplicació).
+- Els de les simulacions es diuen `mensagia_simulation_<data_hora>.log`, i els dels enviaments reals, `mensagia_send_<data_hora>.log`. Si ordenes la carpeta per nom, queden separats.
+- La primera línia d'un log de simulació és `[SIMULATION] This is a simulation: no email was sent.` En aquest log, les línies `[SEND_OK]` són els correus que s'enviarien.
+
+Motius de descart (`reason=` a les línies `[SEND_SKIP]`):
+
+- `no_email`: el contacte no té adreça de correu.
+- `no_attachment`: el camp personalitzat de l'adjunt és buit.
+- `already_sent`: el contacte ja va rebre el correu en un enviament anterior interromput de la mateixa campanya.
+
+Les línies `[SEND_ERROR]` corresponen a contactes aptes l'adjunt dels quals no s'ha pogut preparar (per exemple, una ruta relativa sense URL base o un fitxer que no es pot descarregar).
+
+Quan **cap contacte del grup és apte** (o tots ja han rebut el correu en un enviament anterior), no es pot enviar, però sí simular: el log permet esbrinar per què s'ha descartat cada contacte. En el mode gràfic, el botó **Enviar** queda desactivat; en el mode consola, l'aplicació només ofereix la simulació. A més, després d'una simulació, el mode gràfic només ofereix el botó **Enviar** si s'enviaria algun correu (per exemple, no l'ofereix si cap adjunt no es pot descarregar).
 
 ---
 
