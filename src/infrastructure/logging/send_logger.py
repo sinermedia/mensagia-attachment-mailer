@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from src.domain.scheduling import StartMode
 from src.infrastructure.config.app_paths import user_data_dir
 
 
@@ -112,6 +113,9 @@ class SendLogger:
         certified: int,
         eligible_count: int,
         skipped_count: int,
+        start_mode: StartMode = StartMode.NOW,
+        start_at: datetime | None = None,
+        first_slot: datetime | None = None,
     ) -> None:
         """Log the opening line of a send session with all shared parameters.
 
@@ -127,11 +131,24 @@ class SendLogger:
             certified: 1 if sending as certified email, 0 otherwise.
             eligible_count: Number of contacts that will be sent to.
             skipped_count: Number of contacts excluded before sending.
+            start_mode: How the first email is scheduled.
+            start_at: Start chosen by the user in the fixed start mode, or
+                None in the "now" mode.
+            first_slot: Slot actually given to the first email, which can
+                differ from *start_at* when it was postponed or the send
+                was resumed. None when no email is scheduled.
         """
+        # The chosen start and the first slot are recorded side by side, so
+        # a postponed start can be spotted in the log
+        schedule = f"start_mode={start_mode.value}"
+        if start_at is not None:
+            schedule += f" start_at={start_at.isoformat()}"
+        if first_slot is not None:
+            schedule += f" first_slot={first_slot.isoformat()}"
         self._logger.info(
             f"[SEND_START] from={from_email} subject={_q(subject)} "
             f"template_id={template_id} group_id={group_id} field={field_name} "
-            f"certified={certified} eligible={eligible_count} skipped={skipped_count}"
+            f"certified={certified} eligible={eligible_count} skipped={skipped_count} {schedule}"
         )
 
     def log_ok(self, contact, attachment_url: str) -> None:

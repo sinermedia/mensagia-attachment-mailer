@@ -6,6 +6,7 @@ from src.domain.entities.contact import Contact
 from src.domain.entities.extra_field import ExtraField
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.domain.ports.email_sender import EmailNotSentError, EmailRejectedError, EmailSendUncertainError
+from src.domain.scheduling import StartMode
 
 
 # Fixed reference datetime used in all tests to make scheduling deterministic
@@ -1150,3 +1151,67 @@ class TestSendBulkEmailsUseCaseRegistryAttempts:
 
         send_registry.get_last_start_date.assert_called_once_with(Campaign(10, 5, "attachment_url", "Test"))
         assert len(result.sent) == 1
+
+
+class TestSendBulkEmailsUseCaseFixedStart:
+    """Tests for the fixed start mode: the first email goes out at the date and time chosen by the user."""
+
+    START = datetime(2024, 1, 16, 9, 0, 0)
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
+
+    def test_first_email_goes_out_at_the_chosen_time(self, use_case, email_sender, extra_field, two_contacts):
+        """The emails are scheduled from the chosen start, 12 seconds apart."""
+        email_sender.send.return_value = {}
+
+        run(use_case, extra_field, start_mode=StartMode.FIXED, start_at=self.START)
+
+        assert sent_slots(email_sender) == [
+            ("a@test.com", self.START),
+            ("b@test.com", self.START + timedelta(seconds=12)),
+        ]
+
+    def test_a_chosen_time_without_enough_lead_is_postponed(self, use_case, email_sender, extra_field, two_contacts):
+        """A chosen start less than 10 minutes ahead is postponed to the "now" schedule."""
+        email_sender.send.return_value = {}
+
+        run(use_case, extra_field, start_mode=StartMode.FIXED, start_at=datetime(2024, 1, 15, 14, 25, 0))
+
+        assert sent_slots(email_sender)[0] == ("a@test.com", FIRST_SLOT)
+
+    def test_the_start_mode_is_part_of_the_campaign(self, use_case, email_sender, extra_field, two_contacts, send_registry):
+        """The registry is queried with a campaign carrying the fixed start mode."""
+        email_sender.send.return_value = {}
+
+        run(use_case, extra_field, start_mode=StartMode.FIXED, start_at=self.START, send_registry=send_registry)
+
+        send_registry.get_sent_contact_ids.assert_called_once_with(
+            Campaign(10, 5, "attachment_url", "Test", StartMode.FIXED)
+        )
+
+    def test_the_log_records_the_start_mode_and_first_slot(self, use_case, email_sender, extra_field, two_contacts):
+        """log_start() receives the start mode, the chosen start and the first slot actually used."""
+        email_sender.send.return_value = {}
+        logger = MagicMock()
+
+        run(use_case, extra_field, start_mode=StartMode.FIXED, start_at=self.START, logger=logger)
+
+        kwargs = logger.log_start.call_args.kwargs
+        assert (kwargs["start_mode"], kwargs["start_at"], kwargs["first_slot"]) == (StartMode.FIXED, self.START, self.START)
+
+    def test_a_fixed_start_requires_a_date(self, use_case, extra_field, two_contacts):
+        """Choosing the fixed start mode without a start date is rejected."""
+        with pytest.raises(ValueError):
+            run(use_case, extra_field, start_mode=StartMode.FIXED)
+
+    def test_starts_now_by_default(self, use_case, email_sender, extra_field, two_contacts):
+        """Without a start mode the first email follows the "now" schedule."""
+        email_sender.send.return_value = {}
+
+        run(use_case, extra_field)
+
+        assert sent_slots(email_sender)[0] == ("a@test.com", FIRST_SLOT)

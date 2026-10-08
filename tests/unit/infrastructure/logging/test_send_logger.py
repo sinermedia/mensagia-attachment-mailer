@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from src.domain.entities.contact import Contact
+from src.domain.scheduling import StartMode
 from src.infrastructure.logging.send_logger import SendLogger
 
 
@@ -50,6 +51,30 @@ class TestSendLogger:
         assert "certified=1" in content
         assert "eligible=10" in content
         assert "skipped=2" in content
+
+    def test_log_start_records_a_now_start(self, tmp_path):
+        """log_start() records the "now" start mode and the first slot."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_start("f@t.com", "Subj", 1, 1, "field", 0, 1, 0,
+                         start_mode=StartMode.NOW, first_slot=datetime(2026, 10, 8, 10, 20, 0))
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert "start_mode=now" in content
+        assert "start_at=" not in content
+        assert "first_slot=2026-10-08T10:20:00" in content
+
+    def test_log_start_records_a_fixed_start(self, tmp_path):
+        """log_start() records the fixed start mode, the chosen start and the first slot."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_start("f@t.com", "Subj", 1, 1, "field", 0, 1, 0, start_mode=StartMode.FIXED,
+                         start_at=datetime(2026, 10, 15, 9, 0, 0), first_slot=datetime(2026, 10, 15, 9, 0, 0))
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert "start_mode=fixed start_at=2026-10-15T09:00:00 first_slot=2026-10-15T09:00:00" in content
+
+    def test_log_start_omits_the_first_slot_when_nothing_is_sent(self, tmp_path):
+        """log_start() leaves out the first slot when no email is scheduled."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_start("f@t.com", "Subj", 1, 1, "field", 0, 0, 3)
+        assert "first_slot=" not in logger.log_path.read_text(encoding="utf-8")
 
     def test_log_ok_writes_send_ok_keyword(self, tmp_path):
         """log_ok() writes a line containing the [SEND_OK] keyword."""
