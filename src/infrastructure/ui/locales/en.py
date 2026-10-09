@@ -67,6 +67,7 @@ STRINGS = {
     "enter_base_url": "Enter the base URL for building attachment paths:",
     "base_url_label": "Attachment base URL:",
     "base_url_placeholder": "https://example.com/files/",
+    "update_available": "A new version is available ({version}):",
     "log_saved": "Log saved to: {path}",
     "resume_title": "Incomplete previous send",
     "resume_detected": "{sent} contact(s) already received this email in a previous, interrupted send.",

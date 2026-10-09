@@ -67,6 +67,7 @@ STRINGS = {
     "enter_base_url": "Sartu eranskinaren bideak eraikitzeko oinarrizko URLa:",
     "base_url_label": "Eranskinaren oinarrizko URLa:",
     "base_url_placeholder": "https://example.com/files/",
+    "update_available": "Bertsio berri bat dago eskuragarri ({version}):",
     "log_saved": "Loga gorde da: {path}",
     "resume_title": "Aurreko bidalketa amaitu gabe",
     "resume_detected": "{sent} kontaktuk jaso zuten dagoeneko mezu hau eten zen aurreko bidalketa batean.",

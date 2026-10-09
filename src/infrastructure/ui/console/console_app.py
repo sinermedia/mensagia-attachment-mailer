@@ -1,5 +1,6 @@
 import getpass
 import sys
+import threading
 from datetime import datetime, time
 from src.infrastructure.api.mensagia_client import MensagiaClient, MensagiaAPIError
 from src.infrastructure.api.mensagia_agenda_repository import MensagiaAgendaRepository
@@ -28,6 +29,32 @@ from src.infrastructure.ui.send_summary import date_format_label, day_lines, rep
 from src.domain.date_input import DateFormat, parse_date, parse_time
 from src.domain.scheduling import StartMode, preview_days, split_by_send_date
 from src.domain.file_rows import rows_on_several_dates
+from src.infrastructure.http.github_release_checker import TIMEOUT_SECONDS
+from src.infrastructure.ui.update_notice import start_update_check, update_notice_text
+
+
+# Longest wait for the new version check before asking for the subject. The
+# check started with the app, so by then it has usually finished long ago
+UPDATE_WAIT_SECONDS = TIMEOUT_SECONDS
+
+
+def _show_update_notice(check: threading.Thread | None, found: list[str]):
+    """Print the new version notice, if the start-up check found one.
+
+    Waits a little for a check still running, but never more than
+    UPDATE_WAIT_SECONDS: the notice is a courtesy and must not hold up the
+    send. A check that has not finished by then is ignored.
+
+    Args:
+        check: Thread started by start_update_check, or None when the check
+            is turned off.
+        found: List the check appends the newer version to.
+    """
+    if check is None:
+        return
+    check.join(UPDATE_WAIT_SECONDS)
+    if found:
+        print(f"\n  {update_notice_text(found[0])}")
 
 
 def _choose_language():
@@ -400,8 +427,9 @@ def run():
 
     Guides the user through a sequential wizard:
     Step 0 — Language selection and API token validation.
-    Step 1 — Email subject input, start time (now or a fixed date) and
-             recipient source (agenda group or file).
+    Step 1 — New version notice, if any, then email subject input, start
+             time (now or a fixed date) and recipient source (agenda group
+             or file).
     Step 2 — Email template selection.
     Step 3 — Sender address selection.
     Step 4 — Agenda group selection, or file, sheet and columns selection.
@@ -417,6 +445,11 @@ def run():
     print("=" * 60)
     print("  MENSAGIA ATTACHMENT MAILER")
     print("=" * 60)
+
+    # Ask GitHub for a newer release while the user goes through the first
+    # steps, so the answer is usually there before the subject is asked
+    found_versions = []
+    update_check = start_update_check(found_versions.append)
 
     _choose_language()
     show_ids = load_show_ids()
@@ -445,6 +478,7 @@ def run():
             client = None
 
     # ── Step 1: Email subject ──────────────────────────────────────────────────
+    _show_update_notice(update_check, found_versions)
     print(f"\n--- {t('step_subject')} ---")
     subject = ""
     while not subject.strip():
