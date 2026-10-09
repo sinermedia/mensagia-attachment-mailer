@@ -13,11 +13,6 @@ def write_csv(path, text: str) -> str:
     return str(path)
 
 
-def _box_text(box) -> str:
-    """Return the text of a subject fields box, without the trailing newline."""
-    return box.get("1.0", "end").strip()
-
-
 def _agenda_ready(window, subject: str):
     """Leave the wizard on the extra field step of an agenda send with *subject*."""
     window._subject_entry.insert(0, subject)
@@ -51,11 +46,6 @@ class TestGuiSubjectHint:
 class TestGuiSubjectFieldsAgenda:
     """Covers the subject fields on the extra field step of an agenda send."""
 
-    def test_lists_the_fields_and_how_to_write_them(self, app):
-        """Lists every custom field with the way it is written in the subject."""
-        app._fill_subject_fields_box(app._field_subject_box, ["num factura", "Cliente"])
-        assert _box_text(app._field_subject_box) == "num factura → #num_factura#\nCliente → #Cliente#"
-
     def test_a_known_field_lets_the_user_go_on(self, app):
         """Binds the subject and moves on when every field matches a custom field."""
         _agenda_ready(app, "Factura #num_factura#")
@@ -85,11 +75,6 @@ class TestGuiSubjectFieldsAgenda:
 
 class TestGuiSubjectFieldsFile:
     """Covers the subject fields on the columns step of a file send."""
-
-    def test_lists_the_columns_and_how_to_write_them(self, app, tmp_path):
-        """Lists every column of the file with the way it is written in the subject."""
-        _file_ready(app, tmp_path, "Hola")
-        assert _box_text(app._columns_subject_box) == "Correo → #Correo#\nAdjunto → #Adjunto#\nNum factura → #Num_factura#"
 
     def test_a_known_column_lets_the_user_go_on(self, app, tmp_path):
         """Binds the subject and moves on when every field matches a column."""
@@ -150,12 +135,12 @@ class TestGuiSubjectBasicFields:
         show.assert_called_once_with("certified")
         assert app._subject_template.fields == {"name": "name", "email": "email", "number": "number"}
 
-    def test_the_list_starts_with_the_basic_fields(self, app):
-        """Lists the basic contact fields before the custom ones."""
+    def test_the_fields_are_listed_from_the_main_thread(self, app):
+        """Lists the custom fields read in the background once the main thread gets them."""
         app.client = MagicMock()
-        fields = [ExtraField(1, "Adjunto")]
+        fields = [ExtraField(1, "Adjunto"), ExtraField(2, "Cliente")]
         with patch("src.infrastructure.ui.gui.gui_app.MensagiaExtraFieldRepository") as repository:
             repository.return_value.get_all.return_value = fields
             app._load_fields()
-            _wait_until(app, lambda: _box_text(app._field_subject_box) != "")
-        assert _box_text(app._field_subject_box) == "email → #email#\nname → #name#\nnumber → #number#\nAdjunto → #Adjunto#"
+            assert _wait_until(app, lambda: len(app._field_list.winfo_children()) == 2)
+        assert app.extra_fields == fields

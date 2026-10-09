@@ -264,7 +264,7 @@ A subject without fields works as always: it is the same for everyone.
 - A field is whatever sits between two `#` signs, **without spaces**. `Order #12 and #34` has no field, because there are spaces between the two # signs.
 - The name is matched with the field or column **ignoring case**, and a space in the field or column name is written `_`. For example, `#num_factura#` matches a column named `num factura`, `Num Factura` or `NUM_FACTURA`.
 - With the agenda, besides the custom fields you can use three basic contact fields: `#email#` (the email address), `#name#` (the name) and `#number#` (the phone number).
-- The attachment field step (with the agenda) or the columns step (with a file) shows how each one is written, for example `num factura → #num_factura#`. In console mode, the list appears when the subject has an error.
+- In console mode, if the subject has an error, it shows how each name that can be used is written, for example `num factura → #num_factura#`.
 
 ### Errors and discarded recipients
 

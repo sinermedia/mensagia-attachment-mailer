@@ -37,7 +37,7 @@ from src.domain.date_input import DateFormat
 from src.domain.file_rows import rows_on_several_dates
 from src.domain.subject_fields import SubjectFieldError, SubjectTemplate
 from src.infrastructure.ui.subject_text import (
-    agenda_subject_names, subject_error_message, subject_example_line, subject_field_lines,
+    agenda_subject_names, subject_error_message, subject_example_line,
 )
 from src.infrastructure.http.github_release_checker import RELEASES_PAGE_URL
 from src.infrastructure.ui.update_notice import start_update_check
@@ -875,41 +875,12 @@ class App(ctk.CTk):
         ctk.CTkLabel(f, text=t("step_field"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
         ctk.CTkLabel(f, text=t("field_label"), font=ctk.CTkFont(size=13)).pack(anchor="w")
         self._field_var = tk.StringVar()
-        self._field_list = ctk.CTkScrollableFrame(f, height=180)
+        self._field_list = ctk.CTkScrollableFrame(f, height=260)
         self._field_list.pack(fill="x", pady=(4, 0))
-        self._field_subject_box = self._build_subject_fields_box(f, "subject_fields_title_agenda")
         self._field_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12),
                                          wraplength=560, justify="left")
         self._field_error.pack(anchor="w")
         self._nav_buttons(f, back="group", next_cmd=self._field_next)
-
-    def _build_subject_fields_box(self, parent, title_key: str):
-        """Add the list of names that can be used in the subject to a step.
-
-        Args:
-            parent: Frame of the step.
-            title_key: Text key of the title above the list.
-
-        Returns:
-            The read-only CTkTextbox that holds the list.
-        """
-        ctk.CTkLabel(parent, text=t(title_key), font=ctk.CTkFont(size=12)).pack(anchor="w", pady=(8, 0))
-        box = ctk.CTkTextbox(parent, height=70, wrap="word", font=ctk.CTkFont(size=12))
-        box.pack(anchor="w", fill="x")
-        box.configure(state="disabled")
-        return box
-
-    def _fill_subject_fields_box(self, box, names: list[str]):
-        """Show how each available name is written in the subject.
-
-        Args:
-            box: Textbox built by _build_subject_fields_box.
-            names: Custom field names of the account, or column names of the file.
-        """
-        box.configure(state="normal")
-        box.delete("1.0", "end")
-        box.insert("1.0", "\n".join(subject_field_lines(names)))
-        box.configure(state="disabled")
 
     def _bind_subject(self, names: list[str], rows: bool, error_label) -> bool:
         """Match the fields of the subject with the names of the chosen source.
@@ -942,7 +913,6 @@ class App(ctk.CTk):
         self._field_error.configure(text=t("loading"))
         for w in self._field_list.winfo_children():
             w.destroy()
-        self._fill_subject_fields_box(self._field_subject_box, [])
 
         def _fetch():
             """Background thread: fetch the extra fields and hand them to the main thread."""
@@ -978,9 +948,6 @@ class App(ctk.CTk):
         saved = self._last_sel.get("field_id")
         if saved and any(str(ef.id) == saved for ef in fields):
             self._field_var.set(saved)
-
-        # The subject may also use the basic contact fields
-        self._fill_subject_fields_box(self._field_subject_box, agenda_subject_names(fields))
 
     def _field_next(self):
         """Validate the extra field and the subject fields, and advance to the date or certified step."""
@@ -1237,7 +1204,6 @@ class App(ctk.CTk):
         ctk.CTkLabel(self._date_column_box, text=t("date_format_hint"), font=ctk.CTkFont(size=12), text_color="gray",
                      wraplength=560, justify="left").pack(anchor="w", pady=(4, 0))
 
-        self._columns_subject_box = self._build_subject_fields_box(f, "subject_fields_title_file")
         self._columns_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12),
                                            wraplength=560, justify="left")
         self._columns_error.pack(anchor="w", pady=(8, 0))
@@ -1266,7 +1232,6 @@ class App(ctk.CTk):
             self._date_column_var.set(remembered if remembered in self._file_columns else "")
             self._column_date_format_var.set(self._remembered_date_format())
             self._date_column_box.pack(anchor="w", fill="x")
-        self._fill_subject_fields_box(self._columns_subject_box, self._file_columns)
         self._columns_error.configure(text="")
         self._show_frame("columns")
 

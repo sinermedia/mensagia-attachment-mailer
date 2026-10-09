@@ -264,7 +264,7 @@ Un assumpte sense camps funciona com sempre: és el mateix per a tothom.
 - Un camp és tot el que hi ha entre dos `#`, **sense espais**. A `Comanda #12 i #34` no hi ha cap camp, perquè entre els dos coixinets hi ha espais.
 - El nom es relaciona amb el camp o la columna **sense distingir majúscules**, i un espai al nom del camp o de la columna s'escriu `_`. Per exemple, `#num_factura#` correspon a una columna anomenada `num factura`, `Num Factura` o `NUM_FACTURA`.
 - Amb l'agenda, a més dels camps personalitzats es poden fer servir tres camps bàsics del contacte: `#email#` (l'adreça de correu), `#name#` (el nom) i `#number#` (el número de telèfon).
-- La pàgina del camp de l'adjunt (amb l'agenda) o de les columnes (amb un fitxer) mostra com s'escriu cadascun, per exemple `num factura → #num_factura#`. En el mode consola, la llista apareix si l'assumpte té algun error.
+- En el mode consola, si l'assumpte té algun error, es mostra com s'escriu cada nom que es pot fer servir, per exemple `num factura → #num_factura#`.
 
 ### Errors i destinataris descartats
 
