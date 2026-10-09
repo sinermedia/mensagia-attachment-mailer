@@ -85,7 +85,7 @@ Para desactivar la comprobación, añade esta línea al archivo `.env`:
 MENSAGIA_CHECK_UPDATES=false
 ```
 
-> Desde el código fuente la aplicación no conoce su número de versión y no comprueba nada. Para probar el aviso, añade al `.env` una versión anterior a la última publicada, por ejemplo `MENSAGIA_APP_VERSION=v1.3.0`. Los ejecutables ignoran esta variable.
+> Desde el código fuente la aplicación no conoce su número de versión y no comprueba nada. Para probar el aviso, crea el archivo `src/build_version.py` con una versión anterior a la última publicada, por ejemplo `VERSION = "v1.3.0"`, y bórralo al terminar. Git ignora este archivo, así que nunca se sube al repositorio.
 
 ---
 

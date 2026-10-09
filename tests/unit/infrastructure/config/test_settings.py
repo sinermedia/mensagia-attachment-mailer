@@ -114,16 +114,16 @@ class TestEnvFileLocation:
         assert self._load_marker(tmp_path / "missing", cwd, monkeypatch) is None
 
 
-from src.infrastructure.config.settings import load_app_version_override, load_check_updates
+from src.infrastructure.config.settings import load_check_updates
 
 
 class TestUpdateSettings:
-    """Covers the .env settings of the new version notice."""
+    """Covers the .env setting that turns the new version check off."""
 
     @staticmethod
     def _load(loader, variables: dict):
         """Call *loader* with only the given notice variables in the environment."""
-        env = {k: v for k, v in os.environ.items() if k not in ("MENSAGIA_CHECK_UPDATES", "MENSAGIA_APP_VERSION")}
+        env = {k: v for k, v in os.environ.items() if k != "MENSAGIA_CHECK_UPDATES"}
         env.update(variables)
         with patch("src.infrastructure.config.settings._load_env_files"):
             with patch.dict(os.environ, env, clear=True):
@@ -140,15 +140,3 @@ class TestUpdateSettings:
     def test_any_other_value_keeps_the_check(self):
         """Keeps checking for any value other than false."""
         assert self._load(load_check_updates, {"MENSAGIA_CHECK_UPDATES": "true"}) is True
-
-    def test_no_version_override_by_default(self):
-        """Returns None when MENSAGIA_APP_VERSION is absent."""
-        assert self._load(load_app_version_override, {}) is None
-
-    def test_reads_the_version_override(self):
-        """Returns MENSAGIA_APP_VERSION without surrounding spaces."""
-        assert self._load(load_app_version_override, {"MENSAGIA_APP_VERSION": " v1.3.0 "}) == "v1.3.0"
-
-    def test_an_empty_override_is_none(self):
-        """Treats an empty MENSAGIA_APP_VERSION as not set."""
-        assert self._load(load_app_version_override, {"MENSAGIA_APP_VERSION": ""}) is None

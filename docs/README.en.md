@@ -85,7 +85,7 @@ To turn the check off, add this line to the `.env` file:
 MENSAGIA_CHECK_UPDATES=false
 ```
 
-> From the source code the app does not know its version number and checks nothing. To try the notice, add to the `.env` a version older than the latest published one, for example `MENSAGIA_APP_VERSION=v1.3.0`. The executables ignore this variable.
+> From the source code the app does not know its version number and checks nothing. To try the notice, create the file `src/build_version.py` with a version older than the latest published one, for example `VERSION = "v1.3.0"`, and delete it when done. Git ignores this file, so it is never pushed to the repository.
 
 ---
 

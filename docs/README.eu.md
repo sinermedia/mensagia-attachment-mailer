@@ -87,7 +87,7 @@ Egiaztapena desaktibatzeko, gehitu lerro hau `.env` fitxategiari:
 MENSAGIA_CHECK_UPDATES=false
 ```
 
-> Iturburu-kodetik, aplikazioak ez daki bere bertsio-zenbakia eta ez du ezer egiaztatzen. Abisua probatzeko, gehitu `.env` fitxategiari argitaratutako azkena baino bertsio zaharragoa, adibidez `MENSAGIA_APP_VERSION=v1.3.0`. Exekutagarriek ez diote aldagai honi kasurik egiten.
+> Iturburu-kodetik, aplikazioak ez daki bere bertsio-zenbakia eta ez du ezer egiaztatzen. Abisua probatzeko, sortu `src/build_version.py` fitxategia argitaratutako azkena baino bertsio zaharragoarekin, adibidez `VERSION = "v1.3.0"`, eta ezabatu amaitzean. Gitek ez dio fitxategi honi kasurik egiten, beraz ez da inoiz biltegira igotzen.
 
 ---
 

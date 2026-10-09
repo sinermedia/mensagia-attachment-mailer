@@ -1,6 +1,3 @@
-from src.infrastructure.config.settings import load_app_version_override
-
-
 # Version reported when the running code does not come from a tagged build
 DEV_VERSION = "dev"
 
@@ -27,11 +24,12 @@ def _built_version() -> str | None:
 def current_version() -> str:
     """Return the version of the running application.
 
-    A tagged build always reports its own tag. Without one, the
-    MENSAGIA_APP_VERSION setting is used if present, so the new version
-    notice can be tried from the source code; otherwise the version is 'dev'.
+    A tagged build reports its own tag. The source code and untagged builds
+    report 'dev', which is never compared with any release. To try the new
+    version notice from the source code, create src/build_version.py by hand
+    (git ignores it) with an older version, such as VERSION = "v1.3.0".
 
     Returns:
         The running version, such as 'v1.4.0', or 'dev'.
     """
-    return _built_version() or load_app_version_override() or DEV_VERSION
+    return _built_version() or DEV_VERSION

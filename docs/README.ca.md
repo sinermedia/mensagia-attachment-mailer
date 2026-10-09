@@ -85,7 +85,7 @@ Per desactivar la comprovació, afegeix aquesta línia al fitxer `.env`:
 MENSAGIA_CHECK_UPDATES=false
 ```
 
-> Des del codi font l'aplicació no coneix el seu número de versió i no comprova res. Per provar l'avís, afegeix al `.env` una versió anterior a l'última publicada, per exemple `MENSAGIA_APP_VERSION=v1.3.0`. Els executables ignoren aquesta variable.
+> Des del codi font l'aplicació no coneix el seu número de versió i no comprova res. Per provar l'avís, crea el fitxer `src/build_version.py` amb una versió anterior a l'última publicada, per exemple `VERSION = "v1.3.0"`, i esborra'l en acabar. Git ignora aquest fitxer, així que no es puja mai al repositori.
 
 ---
 

@@ -78,21 +78,6 @@ def load_check_updates() -> bool:
     return os.environ.get("MENSAGIA_CHECK_UPDATES", "true").strip().lower() != "false"
 
 
-def load_app_version_override() -> str | None:
-    """Load the version to report when running from the source code.
-
-    Reads the MENSAGIA_APP_VERSION environment variable, which lets the new
-    version notice be tried out without building the application. It only
-    applies when no build wrote the version (see current_version). Temporary:
-    to be removed once the notice has been seen working in a real release.
-
-    Returns:
-        The version text without surrounding spaces, or None if not set.
-    """
-    _load_env_files()
-    return os.environ.get("MENSAGIA_APP_VERSION", "").strip() or None
-
-
 def _load_env_files():
     """Locate and load the nearest .env file without overriding existing env vars.
 
