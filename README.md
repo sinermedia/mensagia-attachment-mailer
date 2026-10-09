@@ -134,15 +134,15 @@ python main.py
 ## Flujo de envío
 
 1. **Token API** — Se lee del `.env` o se solicita al usuario.
-2. **Asunto, hora de inicio y origen** — El usuario introduce el asunto del correo, elige cuándo sale el primer correo (ver [Programar la hora de inicio](#programar-la-hora-de-inicio)) y de dónde salen los destinatarios: un **grupo de la agenda** o un **fichero** (ver [Enviar a los destinatarios de un fichero](#enviar-a-los-destinatarios-de-un-fichero)).
+2. **Asunto, hora de inicio y origen** — El usuario introduce el asunto del correo, elige cuándo salen los correos: ahora, en una fecha y hora concretas o el día de cada contacto (ver [Programar la hora de inicio](#programar-la-hora-de-inicio)) y de dónde salen los destinatarios: un **grupo de la agenda** o un **fichero** (ver [Enviar a los destinatarios de un fichero](#enviar-a-los-destinatarios-de-un-fichero)).
 3. **Plantilla** — Se muestra la lista de plantillas de email disponibles.
 4. **Remitente** — Se muestra la lista de direcciones de envío verificadas.
 5. **Grupo o fichero**:
    - Con la agenda, se muestra una primera página de grupos. Si el grupo buscado no aparece, se puede filtrar por nombre. Los grupos sin contactos se muestran, pero no se pueden seleccionar.
    - Con un fichero, se elige el fichero y, si es un Excel con varias hojas, la hoja.
 6. **Campo adjunto o columnas**:
-   - Con la agenda, se elige qué campo personalizado contiene la URL del adjunto.
-   - Con un fichero, se elige qué columna contiene el correo y cuál el adjunto.
+   - Con la agenda, se elige qué campo personalizado contiene la URL del adjunto. Si los correos salen el día de cada contacto, a continuación se elige el campo con la fecha y su formato.
+   - Con un fichero, se elige qué columna contiene el correo y cuál el adjunto. Si los correos salen el día de cada contacto, también la columna con la fecha y su formato.
 7. **Certificado** — El usuario decide si certificar los envíos.
 8. **Envío** — Se descartan los destinatarios sin correo válido o sin adjunto, y se envía un correo por cada uno a razón de 5/minuto.
 
@@ -206,7 +206,7 @@ Se descartan estas filas, y el [log](#simular-un-envío) indica el motivo:
 
 - sin correo (`no_email`) o con un correo no válido (`invalid_email`);
 - sin adjunto (`no_attachment`);
-- con el mismo correo (sin distinguir mayúsculas) y el mismo adjunto que una fila anterior (`duplicate_row`): solo se envía la primera. Un nombre de archivo y la URL completa que se obtiene con la URL base cuentan como el mismo adjunto.
+- con el mismo correo (sin distinguir mayúsculas) y el mismo adjunto que una fila anterior (`duplicate_row`): solo se envía la primera. Si los correos salen el día de cada contacto, también debe coincidir la fecha. Un nombre de archivo y la URL completa que se obtiene con la URL base cuentan como el mismo adjunto.
 
 En el log, cada fila se identifica por su número tal como lo muestra Excel (la cabecera es la fila 1), el correo y el adjunto. Por ejemplo:
 
@@ -250,10 +250,11 @@ El programa **no envía los correos de forma inmediata**. Por cada contacto eleg
 
 ## Programar la hora de inicio
 
-En la página del asunto (en el modo consola, justo después del asunto) se elige cuándo sale el primer correo:
+En la página del asunto (en el modo consola, justo después del asunto) se elige cuándo salen los correos:
 
 - **Ahora**: entre 10 y 20 minutos después de empezar el envío.
 - **Día y hora concretos**: el primer correo sale en la fecha y hora indicadas, y los siguientes, cada 12 segundos. Los envíos pueden pasar de medianoche.
+- **Día de cada contacto, a una hora concreta**: cada correo sale el día indicado en los datos del contacto, a la hora elegida (ver [Enviar cada correo el día del contacto](#enviar-cada-correo-el-día-del-contacto)).
 
 La fecha y la hora se escriben siempre en el orden `dd/mm/aaaa` y `hh:mm`, sea cual sea el idioma. En el modo gráfico hay un campo para cada parte, y el cursor pasa solo al siguiente al completar uno. En el modo consola también se aceptan otras formas habituales (`8/10/26`, `8-10-2026`, `9h30`, `9`…), y con Intro se acepta el valor propuesto entre corchetes.
 
@@ -269,6 +270,54 @@ Límites:
 La aplicación propone la fecha de hoy y, como hora, la última elegida en el modo gráfico o, si no hay ninguna, la que correspondería a la opción «Ahora».
 
 Para [reanudar un envío interrumpido](#reanudar-un-envío-interrumpido) hay que repetir exactamente las mismas opciones, incluido el modo de hora de inicio: si se cambia el modo, se trata como un envío nuevo. En cambio, cambiar la fecha o la hora no crea un envío nuevo: al reanudar, los correos continúan después del último programado, y la nueva hora solo se usa si ese momento ya no tiene 10 minutos de margen.
+
+---
+
+## Enviar cada correo el día del contacto
+
+Con la opción **Día de cada contacto, a una hora concreta**, cada destinatario recibe el correo el día indicado en sus propios datos: en un campo personalizado (agenda) o en una columna (fichero). Solo se elige la hora, que es la misma para todos los días.
+
+- Con la agenda, después del campo del adjunto se elige el campo con la fecha. No puede ser el mismo que el del adjunto.
+- Con un fichero, en la página de columnas se elige también la columna con la fecha. No puede ser ninguna de las otras dos.
+
+Cada día empieza a la hora elegida y añade 12 segundos por cada correo anterior **del mismo día**. Por ejemplo, con las 09:00, tres correos del 15/10 salen a las 09:00:00, 09:00:12 y 09:00:24, y uno del 16/10, a las 09:00:00.
+
+| Fecha del contacto | Qué pasa |
+|---|---|
+| Un día futuro | Sale a la hora elegida de ese día |
+| Hoy | A la hora elegida si faltan al menos 10 minutos; si no, como con «Ahora» (de 10 a 20 minutos después) |
+| Un día pasado | Se descarta (`past_send_date`) |
+| A más de 6 semanas | Se descarta (`send_date_too_far`) |
+| Vacía | Se descarta (`no_send_date`) |
+| Con otro formato | Se descarta (`invalid_send_date`) |
+| Con hora | Se descarta (`send_date_has_time`) |
+
+Por ejemplo, a las 10:07 y con la hora 10:00, los contactos de hoy salen a las 10:20:00, 10:20:12…, y los de los días siguientes, a las 10:00:00, 10:00:12… de su día.
+
+- Los correos de un día pueden pasar de medianoche. El día siguiente no se desplaza, aunque durante un rato salgan más correos por minuto.
+- Los días se programan en orden, del más cercano al más lejano.
+
+### Formato de la fecha
+
+Mensagia no indica el formato de sus campos de fecha, así que hay que elegirlo: `dd/mm/aaaa`, `dd-mm-aaaa`, `aaaa/mm/dd` o `aaaa-mm-dd`.
+
+El orden y el separador deben coincidir con el formato elegido, pero los ceros son opcionales y el año puede tener 2 cifras: con `dd/mm/aaaa`, `3/4/26` es el 3 de abril de 2026. Una fecha con hora (`15/10/2026 10:00`) se descarta.
+
+En un fichero, el formato solo se aplica a las fechas escritas como texto (en un CSV, o en un Excel con la celda en formato de texto). Las celdas que Excel ya reconoce como fecha se leen directamente; si tienen una hora distinta de 00:00, se descartan.
+
+### Resumen previo
+
+Antes de enviar, el resumen muestra:
+
+- una tabla con una fila por día, con el número de correos y la hora aproximada del primero y del último;
+- los descartados, agrupados por motivo (el detalle de cada uno está en el log);
+- con un fichero, las filas que enviarán el mismo adjunto a la misma dirección en fechas distintas. Se envían todas; si alguna sobra, se puede eliminar desde el portal de Mensagia.
+
+Las horas son orientativas: la hora definitiva de cada correo se calcula al programarlo.
+
+### Reanudar
+
+Cada día se reanuda por separado: continúa después del último correo programado de ese día o, si no tenía ninguno, a la hora elegida (hoy, solo si faltan al menos 10 minutos). Los contactos pendientes de días que ya han pasado se descartan. El campo o la columna de la fecha forman parte del envío: si se cambian, es un envío nuevo.
 
 ---
 
@@ -289,6 +338,10 @@ Motivos de descarte (`reason=` en las líneas `[SEND_SKIP]`):
 - `no_attachment`: el campo personalizado o la columna del adjunto está vacío.
 - `duplicate_row`: la fila repite el correo y el adjunto de una fila anterior (solo con un fichero).
 - `already_sent`: el destinatario ya recibió el correo en un envío anterior interrumpido de la misma campaña.
+- `no_send_date`, `invalid_send_date` y `send_date_has_time`: la fecha del contacto está vacía, no tiene el formato elegido o contiene una hora (ver [Enviar cada correo el día del contacto](#enviar-cada-correo-el-día-del-contacto)).
+- `past_send_date` y `send_date_too_far`: la fecha del contacto ya ha pasado o está a más de 6 semanas.
+
+Las líneas `[SEND_OK]` indican también la fecha y la hora para las que se ha programado cada correo (`start_date`), para encontrarlo en el portal de Mensagia. El resumen previo muestra los descartados agrupados por motivo.
 
 Las líneas `[SEND_ERROR]` corresponden a contactos aptos cuyo adjunto no se ha podido preparar (por ejemplo, una ruta relativa sin URL base o un archivo que no se puede descargar).
 
@@ -300,7 +353,7 @@ Cuando **ningún contacto del grupo o fila del fichero es apto** (o todos recibi
 
 Si un envío se interrumpe a medias (se cierra la aplicación, se corta la conexión, se apaga el ordenador…), la aplicación recuerda a qué contactos ya se les ha programado el correo.
 
-Al volver a preparar **la misma campaña** (mismo grupo —o mismo fichero, hoja y columna del correo—, plantilla, campo o columna del adjunto y modo de hora de inicio, y **exactamente el mismo asunto**), al llegar al resumen la aplicación avisa de que hay un envío anterior incompleto y pregunta qué hacer:
+Al volver a preparar **la misma campaña** (mismo grupo —o mismo fichero, hoja y columna del correo—, plantilla, campo o columna del adjunto y modo de hora de inicio —y, si los correos salen el día de cada contacto, el mismo campo o columna de la fecha—, y **exactamente el mismo asunto**), al llegar al resumen la aplicación avisa de que hay un envío anterior incompleto y pregunta qué hacer:
 
 - **Continuar**: solo se envía a los contactos pendientes. Sus correos se programan a continuación de los del envío anterior, sin solaparse con ellos.
 - **No continuar**: se descarta el envío anterior y se vuelve a enviar a todos los contactos, incluidos los que ya lo recibieron.
@@ -322,7 +375,7 @@ La API de Mensagia no permite consultar los envíos programados, así que esta c
 
 Tras cada envío o simulación, la aplicación guarda los parámetros elegidos
 (origen de los destinatarios, plantilla, remitente, grupo, campo adjunto, carpeta del último fichero,
-columnas del correo y del adjunto, certificado, y el modo y la hora de inicio) en un archivo
+columnas del correo y del adjunto, campo o columna de la fecha y su formato, certificado, y el modo y la hora de inicio) en un archivo
 `last_selections.json`, en la [carpeta de datos de la aplicación](#archivos-de-la-aplicación).
 
 En la siguiente ejecución, esas opciones quedarán marcadas por defecto. Las columnas solo se marcan si

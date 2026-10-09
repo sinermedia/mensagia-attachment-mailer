@@ -134,15 +134,15 @@ python main.py
 ## Sending flow
 
 1. **API token** — Read from `.env` or prompted from the user.
-2. **Subject, start time and source** — The user enters the email subject, chooses when the first email goes out (see [Scheduling the start time](#scheduling-the-start-time)) and where the recipients come from: an **agenda group** or a **file** (see [Sending to the recipients of a file](#sending-to-the-recipients-of-a-file)).
+2. **Subject, start time and source** — The user enters the email subject, chooses when the emails go out: now, on a specific date and time, or on each contact's date (see [Scheduling the start time](#scheduling-the-start-time)) and where the recipients come from: an **agenda group** or a **file** (see [Sending to the recipients of a file](#sending-to-the-recipients-of-a-file)).
 3. **Template** — The list of available email templates is shown.
 4. **Sender** — The list of verified sender addresses is shown.
 5. **Group or file**:
    - With the agenda, a first page of contact groups is shown. If the group you need is not there, you can filter by name. Groups without contacts are shown but cannot be selected.
    - With a file, choose the file and, if it is an Excel file with several sheets, the sheet.
 6. **Attachment field or columns**:
-   - With the agenda, choose which custom field contains the attachment URL.
-   - With a file, choose which column contains the email and which one the attachment.
+   - With the agenda, choose which custom field contains the attachment URL. If the emails go out on each contact's date, the field with the date and its format are chosen next.
+   - With a file, choose which column contains the email and which one the attachment. If the emails go out on each contact's date, also the column with the date and its format.
 7. **Certified** — The user decides whether to certify the sends.
 8. **Send** — Recipients without a valid email or without an attachment are left out, and one email is sent to each of the others at a rate of 5/minute.
 
@@ -206,7 +206,7 @@ These rows are left out, and the [log](#simulating-a-send) gives the reason:
 
 - without an email (`no_email`) or with an invalid one (`invalid_email`);
 - without an attachment (`no_attachment`);
-- with the same email (ignoring case) and the same attachment as an earlier row (`duplicate_row`): only the first one is sent. A file name and the full URL it becomes with the base URL count as the same attachment.
+- with the same email (ignoring case) and the same attachment as an earlier row (`duplicate_row`): only the first one is sent. If the emails go out on each contact's date, the date must match too. A file name and the full URL it becomes with the base URL count as the same attachment.
 
 In the log, each row is identified by its number as Excel shows it (the header is row 1), its email and its attachment. For example:
 
@@ -250,10 +250,11 @@ The program **does not send emails immediately**. For each eligible contact it c
 
 ## Scheduling the start time
 
-On the subject page (in console mode, right after the subject) you choose when the first email goes out:
+On the subject page (in console mode, right after the subject) you choose when the emails go out:
 
 - **Now**: 10 to 20 minutes after the send starts.
 - **On a specific date and time**: the first email goes out at the date and time given, and the next ones every 12 seconds. Sends may run past midnight.
+- **On each contact's date, at a specific time**: each email goes out on the day given in the contact's data, at the chosen time (see [Sending each email on the contact's date](#sending-each-email-on-the-contacts-date)).
 
 The date and time are always typed in the order `dd/mm/yyyy` and `hh:mm`, whatever the language. In GUI mode there is one field per part, and the cursor moves to the next one when a field is complete. In console mode other common forms are also accepted (`8/10/26`, `8-10-2026`, `9h30`, `9`…), and Enter accepts the value proposed between brackets.
 
@@ -269,6 +270,54 @@ Limits:
 The app proposes today's date and, as the time, the last one chosen in GUI mode or, if there is none, the one the "Now" option would give.
 
 To [resume an interrupted send](#resuming-an-interrupted-send) you must repeat exactly the same options, including the start mode: changing the mode makes it a new send. Changing the date or time, on the other hand, does not create a new send: when resuming, emails continue after the last one scheduled, and the new time is only used if that moment no longer has 10 minutes of lead.
+
+---
+
+## Sending each email on the contact's date
+
+With the option **On each contact's date, at a specific time**, each recipient receives the email on the day given in their own data: in a custom field (agenda) or in a column (file). Only the time is chosen, and it is the same for every day.
+
+- With the agenda, after the attachment field you choose the field with the date. It cannot be the attachment field.
+- With a file, the columns page also asks for the column with the date. It cannot be either of the other two.
+
+Each day starts at the chosen time and adds 12 seconds for each earlier email **of the same day**. For example, with 09:00, three emails on 15/10 go out at 09:00:00, 09:00:12 and 09:00:24, and one on 16/10 at 09:00:00.
+
+| Contact's date | What happens |
+|---|---|
+| A future day | Goes out at the chosen time of that day |
+| Today | At the chosen time if it is at least 10 minutes ahead; otherwise, as with "Now" (10 to 20 minutes later) |
+| A past day | Left out (`past_send_date`) |
+| More than 6 weeks ahead | Left out (`send_date_too_far`) |
+| Empty | Left out (`no_send_date`) |
+| In another format | Left out (`invalid_send_date`) |
+| With a time | Left out (`send_date_has_time`) |
+
+For example, at 10:07 with 10:00 chosen, today's contacts go out at 10:20:00, 10:20:12…, and those of later days at 10:00:00, 10:00:12… of their day.
+
+- A day's emails may run past midnight. The next day is not moved, even if more emails per minute go out for a while.
+- Days are scheduled in order, nearest first.
+
+### Date format
+
+Mensagia does not tell the format of its date fields, so you choose it: `dd/mm/yyyy`, `dd-mm-yyyy`, `yyyy/mm/dd` or `yyyy-mm-dd`.
+
+The order and the separator must match the chosen format, but leading zeros are optional and the year may have 2 digits: with `dd/mm/yyyy`, `3/4/26` is 3 April 2026. A date with a time (`15/10/2026 10:00`) is left out.
+
+In a file, the format only applies to dates written as text (in a CSV, or in an Excel cell formatted as text). Cells that Excel already treats as dates are read directly; if they hold a time other than 00:00, they are left out.
+
+### Summary before sending
+
+Before sending, the summary shows:
+
+- a table with one row per day, with the number of emails and the approximate time of the first and the last;
+- the discarded recipients, grouped by reason (the details of each one are in the log);
+- with a file, the rows that will send the same attachment to the same address on different dates. All of them are sent; if any is not wanted, it can be deleted in the Mensagia portal.
+
+The times are approximate: the final time of each email is set when it is scheduled.
+
+### Resuming
+
+Each day is resumed on its own: it continues after the last email scheduled for that day or, if it had none, at the chosen time (today, only if it is at least 10 minutes ahead). Pending contacts of days that have passed are left out. The date field or column is part of the send: changing it makes a new send.
 
 ---
 
@@ -289,6 +338,10 @@ Skip reasons (`reason=` in the `[SEND_SKIP]` lines):
 - `no_attachment`: the attachment custom field or column is empty.
 - `duplicate_row`: the row repeats the email and the attachment of an earlier row (only with a file).
 - `already_sent`: the recipient already received the email in a previous, interrupted send of the same campaign.
+- `no_send_date`, `invalid_send_date` and `send_date_has_time`: the contact's date is empty, is not in the chosen format or has a time (see [Sending each email on the contact's date](#sending-each-email-on-the-contacts-date)).
+- `past_send_date` and `send_date_too_far`: the contact's date has passed or is more than 6 weeks ahead.
+
+The `[SEND_OK]` lines also give the date and time each email was scheduled for (`start_date`), to find it in the Mensagia portal. The summary before sending shows the discarded recipients grouped by reason.
 
 The `[SEND_ERROR]` lines are eligible contacts whose attachment could not be prepared (for example, a relative path without a base URL, or a file that cannot be downloaded).
 
@@ -300,7 +353,7 @@ When **no contact in the group or row of the file is eligible** (or all of them 
 
 If a send is interrupted halfway (the app is closed, the connection drops, the computer shuts down…), the app remembers which contacts have already had their email scheduled.
 
-When you prepare **the same campaign** again (same group —or same file, sheet and email column—, template, attachment field or column and start mode, and **exactly the same subject**), on reaching the summary the app warns that there is an incomplete previous send and asks what to do:
+When you prepare **the same campaign** again (same group —or same file, sheet and email column—, template, attachment field or column and start mode —and, if the emails go out on each contact's date, the same date field or column—, and **exactly the same subject**), on reaching the summary the app warns that there is an incomplete previous send and asks what to do:
 
 - **Continue**: only the pending contacts are sent to. Their emails are scheduled after those of the previous send, without overlapping them.
 - **Don't continue**: the previous send is discarded and the email is sent again to all contacts, including those who already received it.
@@ -322,7 +375,7 @@ The Mensagia API does not allow querying scheduled sends, so this check must be 
 
 After each send or simulation, the app saves the chosen parameters
 (recipient source, template, sender, group, attachment field, folder of the last file,
-email and attachment columns, certified, and the start mode and time) to a file
+email and attachment columns, date field or column and its format, certified, and the start mode and time) to a file
 `last_selections.json`, in the [app data folder](#app-files).
 
 On the next run, those options will be pre-selected by default. The columns are only selected if
