@@ -155,7 +155,7 @@ python main.py
 ## Flux d'enviament
 
 1. **Token API** — Es llegeix del `.env` o es demana a l'usuari.
-2. **Assumpte, hora d'inici i origen** — L'usuari introdueix l'assumpte del correu, tria quan surten els correus: ara, en una data i hora concretes o el dia de cada contacte (vegeu [Programar l'hora d'inici](#programar-lhora-dinici)) i d'on surten els destinataris: un **grup de l'agenda** o un **fitxer** (vegeu [Enviar als destinataris d'un fitxer](#enviar-als-destinataris-dun-fitxer)).
+2. **Assumpte, hora d'inici i origen** — L'usuari introdueix l'assumpte del correu, tria quan surten els correus: ara, en una data i hora concretes o el dia de cada contacte (vegeu [Programar l'hora d'inici](#programar-lhora-dinici)) i d'on surten els destinataris: un **grup de l'agenda** o un **fitxer** (vegeu [Enviar als destinataris d'un fitxer](#enviar-als-destinataris-dun-fitxer)). L'assumpte pot incloure camps personalitzats o columnes (vegeu [Assumpte amb camps personalitzats o columnes](#assumpte-amb-camps-personalitzats-o-columnes)).
 3. **Plantilla** — Es mostra la llista de plantilles d'email disponibles.
 4. **Remitent** — Es mostra la llista d'adreces d'enviament verificades.
 5. **Grup o fitxer**:
@@ -165,7 +165,7 @@ python main.py
    - Amb l'agenda, es tria quin camp personalitzat conté la URL de l'adjunt. Si els correus surten el dia de cada contacte, a continuació es tria el camp amb la data i el seu format.
    - Amb un fitxer, es tria quina columna conté el correu i quina l'adjunt. Si els correus surten el dia de cada contacte, també la columna amb la data i el seu format.
 7. **Certificat** — L'usuari decideix si certificar els enviaments.
-8. **Enviament** — Es descarten els destinataris sense un correu vàlid o sense adjunt, i s'envia un correu per cada un a raó de 5/minut.
+8. **Enviament** — Es descarten els destinataris sense un correu vàlid, sense adjunt o amb un camp de l'assumpte buit, i s'envia un correu per cada un a raó de 5/minut.
 
 ---
 
@@ -198,7 +198,7 @@ A més d'un grup de l'agenda, els destinataris poden sortir d'un fitxer **Excel 
 ### Com ha de ser el fitxer
 
 - **La primera fila és la capçalera** i és obligatòria: conté el nom de cada columna.
-- Els noms, l'ordre i el nombre de columnes són lliures. En preparar l'enviament es tria quina columna conté el correu i quina l'adjunt; les altres s'ignoren.
+- Els noms, l'ordre i el nombre de columnes són lliures. En preparar l'enviament es tria quina columna conté el correu i quina l'adjunt; les altres només es fan servir si l'[assumpte](#assumpte-amb-camps-personalitzats-o-columnes) les inclou.
 - Les files i les columnes completament buides s'ignoren.
 - Si l'Excel té diversos fulls, es tria quin s'ha de fer servir. Si només en té un, no es pregunta.
 - En els CSV, el separador (`;` o `,`) i la codificació (UTF-8 o la de Windows) es detecten automàticament.
@@ -245,6 +245,45 @@ Per [reprendre un enviament interromput](#reprendre-un-enviament-interromput), u
 - Si es canvia el nom del fitxer, el full o alguna de les columnes, es tracta com un enviament nou.
 
 > En el mode consola, la ruta del fitxer s'escriu o s'enganxa. S'accepten les cometes que afegeix l'opció «Copia com a camí» de Windows.
+
+---
+
+## Assumpte amb camps personalitzats o columnes
+
+L'assumpte pot ser diferent per a cada destinatari: només cal escriure-hi el nom d'un camp personalitzat (amb l'agenda) o d'una columna (amb un fitxer) entre coixinets, `#nom#`, la mateixa notació que fa servir Mensagia. Per exemple:
+
+| Assumpte escrit | Dades del destinatari | Assumpte que rep |
+|---|---|---|
+| `Factura #num_factura# - #client#` | `num factura` = 123, `client` = ACME | `Factura 123 - ACME` |
+| `#assumpte#` | `assumpte` = Documentació d'octubre | `Documentació d'octubre` |
+
+Un assumpte sense camps funciona com sempre: és el mateix per a tothom.
+
+### Com s'escriu un camp
+
+- Un camp és tot el que hi ha entre dos `#`, **sense espais**. A `Comanda #12 i #34` no hi ha cap camp, perquè entre els dos coixinets hi ha espais.
+- El nom es relaciona amb el camp o la columna **sense distingir majúscules**, i un espai al nom del camp o de la columna s'escriu `_`. Per exemple, `#num_factura#` correspon a una columna anomenada `num factura`, `Num Factura` o `NUM_FACTURA`.
+- La pàgina del camp de l'adjunt (amb l'agenda) o de les columnes (amb un fitxer) mostra com s'escriu cadascun, per exemple `num factura → #num_factura#`. En el mode consola, la llista apareix si l'assumpte té algun error.
+
+### Errors i destinataris descartats
+
+- **Nom que no existeix** (per exemple, `#num_factur#`): l'aplicació no deixa continuar i n'indica el nom. Es comprova a la pàgina del camp de l'adjunt o de les columnes, que és quan es coneixen els camps disponibles. En el mode gràfic cal tornar enrere fins a la pàgina de l'assumpte per corregir-lo; en el mode consola, l'aplicació torna a demanar l'assumpte.
+- **Nom ambigu**: si dos camps o columnes s'escriuen igual a l'assumpte (per exemple, `num factura` i `num_factura`) i l'assumpte fa servir aquest nom, l'aplicació no deixa continuar.
+- **Valor buit**: el destinatari es descarta amb el motiu «el camp X és buit» (`empty_subject_field` al log), perquè el correu sortiria amb l'assumpte incomplet i un enviament no es pot desfer.
+
+### Valors
+
+- S'eliminen els espais del principi i del final, i els salts de línia se substitueixen per espais.
+- A l'Excel, els nombres enters s'escriuen sense decimals (`123`, no `123.0`) i les dates com a `dd/mm/aaaa`.
+
+### Resum, log i represa
+
+- El resum mostra l'assumpte tal com s'ha escrit i, com a exemple, l'assumpte que rebrà el primer destinatari.
+- Al log, cada correu enviat (o que s'enviaria, en una simulació) inclou el seu assumpte final:
+  ```
+  [SEND_OK]    row=2 to=agencia@ejemplo.com attachment=https://cdn.empresa.com/docs/a.pdf start_date=2026-10-15T09:00:00 subject="Factura 123 - ACME"
+  ```
+- Per [reprendre un enviament interromput](#reprendre-un-enviament-interromput), l'enviament s'identifica per l'assumpte **tal com s'ha escrit** (`Factura #num_factura#`). Corregir el valor d'un destinatari no el converteix en un enviament nou.
 
 ---
 
@@ -361,8 +400,9 @@ Motius de descart (`reason=` a les línies `[SEND_SKIP]`):
 - `already_sent`: el destinatari ja va rebre el correu en un enviament anterior interromput de la mateixa campanya.
 - `no_send_date`, `invalid_send_date` i `send_date_has_time`: la data del contacte és buida, no té el format triat o conté una hora (vegeu [Enviar cada correu el dia del contacte](#enviar-cada-correu-el-dia-del-contacte)).
 - `past_send_date` i `send_date_too_far`: la data del contacte ja ha passat o és a més de 6 setmanes.
+- `empty_subject_field`: un camp personalitzat o una columna que fa servir l'assumpte és buit; `field=` indica quin (vegeu [Assumpte amb camps personalitzats o columnes](#assumpte-amb-camps-personalitzats-o-columnes)).
 
-Les línies `[SEND_OK]` també indiquen la data i l'hora per a les quals s'ha programat cada correu (`start_date`), per trobar-lo al portal de Mensagia. El resum previ mostra els descartats agrupats per motiu.
+Les línies `[SEND_OK]` també indiquen la data i l'hora per a les quals s'ha programat cada correu (`start_date`), per trobar-lo al portal de Mensagia, i l'assumpte amb què surt (`subject`). El resum previ mostra els descartats agrupats per motiu.
 
 Les línies `[SEND_ERROR]` corresponen a contactes aptes l'adjunt dels quals no s'ha pogut preparar (per exemple, una ruta relativa sense URL base o un fitxer que no es pot descarregar).
 
@@ -374,7 +414,7 @@ Quan **cap contacte del grup ni cap fila del fitxer és apte** (o tots ja han re
 
 Si un enviament s'interromp a mitges (es tanca l'aplicació, es talla la connexió, s'apaga l'ordinador…), l'aplicació recorda a quins contactes ja se'ls ha programat el correu.
 
-En tornar a preparar **la mateixa campanya** (mateix grup —o mateix fitxer, full i columna del correu—, plantilla, camp o columna de l'adjunt i mode d'hora d'inici —i, si els correus surten el dia de cada contacte, el mateix camp o columna de la data—, i **exactament el mateix assumpte**), en arribar al resum l'aplicació avisa que hi ha un enviament anterior incomplet i pregunta què cal fer:
+En tornar a preparar **la mateixa campanya** (mateix grup —o mateix fitxer, full i columna del correu—, plantilla, camp o columna de l'adjunt i mode d'hora d'inici —i, si els correus surten el dia de cada contacte, el mateix camp o columna de la data—, i **exactament el mateix assumpte** tal com s'ha escrit, amb els seus camps `#nom#`), en arribar al resum l'aplicació avisa que hi ha un enviament anterior incomplet i pregunta què cal fer:
 
 - **Continuar**: només s'envia als contactes pendents. Els seus correus es programen a continuació dels de l'enviament anterior, sense solapar-s'hi.
 - **No continuar**: es descarta l'enviament anterior i es torna a enviar a tots els contactes, inclosos els que ja l'han rebut.

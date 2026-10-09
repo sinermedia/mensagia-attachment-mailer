@@ -155,7 +155,7 @@ python main.py
 ## Sending flow
 
 1. **API token** — Read from `.env` or prompted from the user.
-2. **Subject, start time and source** — The user enters the email subject, chooses when the emails go out: now, on a specific date and time, or on each contact's date (see [Scheduling the start time](#scheduling-the-start-time)) and where the recipients come from: an **agenda group** or a **file** (see [Sending to the recipients of a file](#sending-to-the-recipients-of-a-file)).
+2. **Subject, start time and source** — The user enters the email subject, chooses when the emails go out: now, on a specific date and time, or on each contact's date (see [Scheduling the start time](#scheduling-the-start-time)) and where the recipients come from: an **agenda group** or a **file** (see [Sending to the recipients of a file](#sending-to-the-recipients-of-a-file)). The subject may include custom fields or columns (see [Subject with custom fields or columns](#subject-with-custom-fields-or-columns)).
 3. **Template** — The list of available email templates is shown.
 4. **Sender** — The list of verified sender addresses is shown.
 5. **Group or file**:
@@ -165,7 +165,7 @@ python main.py
    - With the agenda, choose which custom field contains the attachment URL. If the emails go out on each contact's date, the field with the date and its format are chosen next.
    - With a file, choose which column contains the email and which one the attachment. If the emails go out on each contact's date, also the column with the date and its format.
 7. **Certified** — The user decides whether to certify the sends.
-8. **Send** — Recipients without a valid email or without an attachment are left out, and one email is sent to each of the others at a rate of 5/minute.
+8. **Send** — Recipients without a valid email, without an attachment or with an empty subject field are left out, and one email is sent to each of the others at a rate of 5/minute.
 
 ---
 
@@ -198,7 +198,7 @@ Besides an agenda group, the recipients can come from an **Excel (`.xlsx`)** or 
 ### What the file must look like
 
 - **The first row is the header** and it is required: it holds the name of each column.
-- Column names, order and number are free. When preparing the send you choose which column holds the email and which one the attachment; the others are ignored.
+- Column names, order and number are free. When preparing the send you choose which column holds the email and which one the attachment; the others are only used if the [subject](#subject-with-custom-fields-or-columns) includes them.
 - Completely empty rows and columns are ignored.
 - If the Excel file has several sheets, you choose which one to use. If it has only one, you are not asked.
 - In CSV files, the separator (`;` or `,`) and the encoding (UTF-8 or the Windows one) are detected automatically.
@@ -245,6 +245,45 @@ To [resume an interrupted send](#resuming-an-interrupted-send), a send from a fi
 - If you rename the file, or change the sheet or any of the columns, it is treated as a new send.
 
 > In console mode, the file path is typed or pasted. The quotes added by Windows' "Copy as path" option are accepted.
+
+---
+
+## Subject with custom fields or columns
+
+The subject can be different for each recipient: just write in it the name of a custom field (with the agenda) or of a column (with a file) between # signs, `#name#`, the same notation Mensagia uses. For example:
+
+| Subject as written | Recipient's data | Subject received |
+|---|---|---|
+| `Invoice #num_factura# - #client#` | `num factura` = 123, `client` = ACME | `Invoice 123 - ACME` |
+| `#subject#` | `subject` = October documents | `October documents` |
+
+A subject without fields works as always: it is the same for everyone.
+
+### How a field is written
+
+- A field is whatever sits between two `#` signs, **without spaces**. `Order #12 and #34` has no field, because there are spaces between the two # signs.
+- The name is matched with the field or column **ignoring case**, and a space in the field or column name is written `_`. For example, `#num_factura#` matches a column named `num factura`, `Num Factura` or `NUM_FACTURA`.
+- The attachment field step (with the agenda) or the columns step (with a file) shows how each one is written, for example `num factura → #num_factura#`. In console mode, the list appears when the subject has an error.
+
+### Errors and discarded recipients
+
+- **Name that does not exist** (for example, `#num_factur#`): the app does not let you go on and names it. It is checked on the attachment field or columns step, when the available fields are known. In GUI mode, go back to the subject step to fix it; in console mode, the app asks for the subject again.
+- **Ambiguous name**: if two fields or columns are written the same way in the subject (for example, `num factura` and `num_factura`) and the subject uses that name, the app does not let you go on.
+- **Empty value**: the recipient is discarded with the reason "the field X is empty" (`empty_subject_field` in the log), because the email would go out with an incomplete subject and a send cannot be undone.
+
+### Values
+
+- Spaces at the start and end are removed, and line breaks are replaced with spaces.
+- In Excel, whole numbers are written without decimals (`123`, not `123.0`) and dates as `dd/mm/yyyy`.
+
+### Summary, log and resuming
+
+- The summary shows the subject as written and, as an example, the subject the first recipient will get.
+- In the log, each email sent (or that would be sent, in a simulation) includes its final subject:
+  ```
+  [SEND_OK]    row=2 to=agencia@ejemplo.com attachment=https://cdn.empresa.com/docs/a.pdf start_date=2026-10-15T09:00:00 subject="Factura 123 - ACME"
+  ```
+- To [resume an interrupted send](#resuming-an-interrupted-send), the send is identified by the subject **as written** (`Invoice #num_factura#`). Fixing a recipient's value does not turn it into a new send.
 
 ---
 
@@ -361,8 +400,9 @@ Skip reasons (`reason=` in the `[SEND_SKIP]` lines):
 - `already_sent`: the recipient already received the email in a previous, interrupted send of the same campaign.
 - `no_send_date`, `invalid_send_date` and `send_date_has_time`: the contact's date is empty, is not in the chosen format or has a time (see [Sending each email on the contact's date](#sending-each-email-on-the-contacts-date)).
 - `past_send_date` and `send_date_too_far`: the contact's date has passed or is more than 6 weeks ahead.
+- `empty_subject_field`: a custom field or column used by the subject is empty; `field=` says which (see [Subject with custom fields or columns](#subject-with-custom-fields-or-columns)).
 
-The `[SEND_OK]` lines also give the date and time each email was scheduled for (`start_date`), to find it in the Mensagia portal. The summary before sending shows the discarded recipients grouped by reason.
+The `[SEND_OK]` lines also give the date and time each email was scheduled for (`start_date`), to find it in the Mensagia portal, and the subject it goes out with (`subject`). The summary before sending shows the discarded recipients grouped by reason.
 
 The `[SEND_ERROR]` lines are eligible contacts whose attachment could not be prepared (for example, a relative path without a base URL, or a file that cannot be downloaded).
 
@@ -374,7 +414,7 @@ When **no contact in the group or row of the file is eligible** (or all of them 
 
 If a send is interrupted halfway (the app is closed, the connection drops, the computer shuts down…), the app remembers which contacts have already had their email scheduled.
 
-When you prepare **the same campaign** again (same group —or same file, sheet and email column—, template, attachment field or column and start mode —and, if the emails go out on each contact's date, the same date field or column—, and **exactly the same subject**), on reaching the summary the app warns that there is an incomplete previous send and asks what to do:
+When you prepare **the same campaign** again (same group —or same file, sheet and email column—, template, attachment field or column and start mode —and, if the emails go out on each contact's date, the same date field or column—, and **exactly the same subject** as written, with its `#name#` fields), on reaching the summary the app warns that there is an incomplete previous send and asks what to do:
 
 - **Continue**: only the pending contacts are sent to. Their emails are scheduled after those of the previous send, without overlapping them.
 - **Don't continue**: the previous send is discarded and the email is sent again to all contacts, including those who already received it.
