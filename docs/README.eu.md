@@ -136,24 +136,28 @@ python main.py
 ## Bidaltzeko fluxua
 
 1. **API tokena** — `.env`-tik irakurtzen da edo erabiltzaileari eskatzen zaio.
-2. **Gaia eta hasiera-ordua** — Erabiltzaileak mezu elektronikoaren gaia sartzen du eta lehen mezua noiz bidaliko den aukeratzen du (ikus [Hasiera-ordua programatu](#hasiera-ordua-programatu)).
+2. **Gaia, hasiera-ordua eta jatorria** — Erabiltzaileak mezu elektronikoaren gaia sartzen du, lehen mezua noiz bidaliko den aukeratzen du (ikus [Hasiera-ordua programatu](#hasiera-ordua-programatu)) eta hartzaileak nondik datozen: **agendako talde** batetik edo **fitxategi** batetik (ikus [Fitxategi bateko hartzaileei bidali](#fitxategi-bateko-hartzaileei-bidali)).
 3. **Txantiloia** — Eskuragarri dauden email txantiloien zerrenda erakusten da.
 4. **Bidaltzailea** — Egiaztatutako bidaltzaile helbideen zerrenda erakusten da.
-5. **Taldea** — Agenda-taldeen lehen orria erakusten da. Bilatzen ari zaren taldea agertzen ez bada, izenaren arabera iragaz daiteke. Kontakturik gabeko taldeak erakusten dira, baina ezin dira hautatu.
-6. **Eranskin eremua** — Eranskinaren URLa duen eremu pertsonalizatua aukeratzen da.
+5. **Taldea edo fitxategia**:
+   - Agendarekin, taldeen lehen orria erakusten da. Bilatzen ari zaren taldea agertzen ez bada, izenaren arabera iragaz daiteke. Kontakturik gabeko taldeak erakusten dira, baina ezin dira hautatu.
+   - Fitxategi batekin, fitxategia aukeratzen da eta, hainbat orri dituen Excel bat bada, orria.
+6. **Eranskin eremua edo zutabeak**:
+   - Agendarekin, eranskinaren URLa duen eremu pertsonalizatua aukeratzen da.
+   - Fitxategi batekin, helbide elektronikoa zein zutabetan dagoen eta eranskina zeinetan dagoen aukeratzen da.
 7. **Ziurtagiria** — Erabiltzaileak bidalketak ziurtatzea erabakitzen du.
-8. **Bidalketa** — Email eta eranskin URL balioduna duten kontaktuak iragazten dira, eta minutuko 5eko abiaduran mezu bat bidaltzen da bakoitzari.
+8. **Bidalketa** — Helbide baliozkorik edo eranskinik ez duten hartzaileak baztertzen dira, eta minutuko 5eko abiaduran mezu bat bidaltzen zaio bakoitzari.
 
 ---
 
 ## Eranskinaren bidea eremu pertsonalizatuan
 
-6. urratsean aukeratutako eremu pertsonalizatuak kontaktu bakoitzaren eranskina bi modutan adieraz dezake:
+6. urratsean aukeratutako eremu pertsonalizatuak (edo eranskinaren zutabeak, hartzaileak fitxategi batetik badatoz) kontaktu bakoitzaren eranskina bi modutan adieraz dezake:
 
 - **URL osoa**, `http://` edo `https://`-rekin hasten dena (adibidez, `https://cdn.empresa.com/docs/factura_42.pdf`). Dagoen bezala erabiltzen da.
 - **Fitxategi-izena edo bide erlatiboa** (adibidez, `factura_42.pdf` edo `2026/factura_42.pdf`). Aplikazioak **oinarrizko URL** bat jartzen dio aurretik: `https://cdn.empresa.com/docs/` oinarriarekin, `factura_42.pdf` balioa `https://cdn.empresa.com/docs/factura_42.pdf` bihurtzen da.
 
-Bi moduak talde berean konbina daitezke.
+Bi moduak talde edo fitxategi berean konbina daitezke.
 
 Oinarrizko URLa hainbat modutan adieraz daiteke:
 
@@ -165,6 +169,63 @@ Oinarrizko URLa hainbat modutan adieraz daiteke:
 - **Kontsola moduan**, aplikazioak kontaktuen batek bide erlatiboa badu eta aldagaia `.env`-n ez badago bakarrik eskatzen du.
 
 > Oinarrizko URLak beti **web helbide publiko** bat izan behar du, inoiz ez ordenagailuko karpeta bat: Mensagiak deskargatzen du fitxategia mezuari eransteko. `/`-rekin amai daiteke edo ez; aplikazioak kontuan hartzen du.
+
+---
+
+## Fitxategi bateko hartzaileei bidali
+
+Agendako talde batez gain, hartzaileak **Excel (`.xlsx`)** edo **CSV (`.csv`)** fitxategi batetik atera daitezke. Fitxategiko errenkada bakoitza mezu bat da; beraz, helbide berak hainbat mezu jaso ditzake eranskin desberdinekin bidalketa berean (adibidez, bere bezero batzuen dokumentazioa jasotzen duen agentzia batek). Hartzaileek ez dute Mensagiako agendan egon behar.
+
+### Nolakoa izan behar du fitxategiak
+
+- **Lehen errenkada goiburua da**, eta derrigorrezkoa da: zutabe bakoitzaren izena du.
+- Zutabeen izenak, ordena eta kopurua libreak dira. Bidalketa prestatzean, helbide elektronikoa zein zutabetan dagoen eta eranskina zeinetan dagoen aukeratzen da; gainerakoak ez dira kontuan hartzen.
+- Erabat hutsik dauden errenkadak eta zutabeak ez dira kontuan hartzen.
+- Excelak hainbat orri baditu, zein erabili aukeratzen da. Bat bakarrik badu, ez da galdetzen.
+- CSVetan, bereizlea (`;` edo `,`) eta kodeketa (UTF-8 edo Windowsena) automatikoki hautematen dira.
+
+Adibidea:
+
+| Bezeroa | Helbidea | Eranskina |
+|---|---|---|
+| A bezeroa | agentzia@adibidea.com | fakturak/bezeroa_a.pdf |
+| B bezeroa | agentzia@adibidea.com | fakturak/bezeroa_b.pdf |
+| C bezeroa | info@bezeroac.com | https://cdn.empresa.com/docs/c.pdf |
+
+Aplikazioak ez du jarraitzen uzten baldin eta:
+
+- fitxategia hutsik badago edo goiburua baino ez badu;
+- zutaberen batek datuak baditu baina goiburuan izenik ez badu;
+- izen bereko bi zutabe badaude (maiuskulak bereizi gabe);
+- lehen errenkadako gelaxkaren batek `@` badu: ziurrenik fitxategiak ez du goibururik.
+
+### Errenkada bakoitzeko helbidea eta eranskina
+
+- **Helbide elektronikoa**: hasierako eta amaierako zuriuneak kentzen dira. Helbide bakar bat izan behar du: `@` bakar bat; `@`-ren aurretik, azentu gabeko letrak, zenbakiak eta `. _ % + -` bakarrik; ondoren, azentu gabeko letrak, zenbakiak, `-` eta gutxienez puntu bat. Helbide bat baino gehiago dituen gelaxka ez da baliozkoa.
+- **Eranskina**: eremu pertsonalizatuan bezala, URL oso bat edo oinarrizko URLarekiko bide erlatibo bat (ikus [Eranskinaren bidea](#eranskinaren-bidea-eremu-pertsonalizatuan)). Zenbakiak hamartarrik gabe irakurtzen dira (`1234`, ez `1234.0`).
+
+Errenkada hauek baztertu egiten dira, eta [logak](#bidalketa-bat-simulatu) arrazoia adierazten du:
+
+- helbiderik gabekoak (`no_email`) edo helbide baliogabea dutenak (`invalid_email`);
+- eranskinik gabekoak (`no_attachment`);
+- aurreko errenkada baten helbide bera (maiuskulak bereizi gabe) eta eranskin bera dutenak (`duplicate_row`): lehena bakarrik bidaltzen da.
+
+Logean, errenkada bakoitza Excelek erakusten duen zenbakiarekin (goiburua 1. errenkada da), helbidearekin eta eranskinarekin identifikatzen da. Adibidez:
+
+```
+[SEND_SKIP]  row=14 to=agentzia@adibidea.com attachment=fakturak/bezeroa_a.pdf reason=duplicate_row
+```
+
+### Fitxategiko aldaketak
+
+Fitxategia berriro irakurtzen da laburpenera iristean eta bidalketa hastean; beraz, bitartean gordetako aldaketak erabiltzen dira. Fitxategia ezin bada erabili (adibidez, aukeratutako zutabe baten izena aldatu delako), aplikazioak hala adierazten du eta ez du ezer bidaltzen.
+
+[Etendako bidalketa berriro hasteko](#etendako-bidalketa-berriro-hasi), fitxategia duen bidalketa bat **fitxategiaren izenaren** (karpetarik gabe), orriaren, aukeratutako zutabeen, txantiloiaren, gaiaren eta hasiera-orduaren moduaren arabera identifikatzen da. Horregatik:
+
+- Fitxategia beste karpeta batera eraman daiteke, errenkadak zuzendu, errenkada berriak gehitu edo haien ordena aldatu. Berriro hastean, falta ziren errenkadak bakarrik bidaltzen dira, errenkada bakoitza bere helbidearen eta eranskinaren bidez ezagutzen baita.
+- Fitxategiaren izena, orria edo zutaberen bat aldatzen bada, bidalketa berritzat hartzen da.
+
+> Kontsola moduan, fitxategiaren bidea idatzi edo itsatsi egiten da. Windowsen «Kopiatu bide gisa» aukerak gehitzen dituen komatxoak onartzen dira.
 
 ---
 
@@ -225,13 +286,15 @@ Simulazio bakoitzak benetako bidalketa batek bezalako edukia duen loga sortzen d
 
 Baztertzeko arrazoiak (`reason=`, `[SEND_SKIP]` lerroetan):
 
-- `no_email`: kontaktuak ez du helbide elektronikorik.
-- `no_attachment`: eranskinaren eremu pertsonalizatua hutsik dago.
-- `already_sent`: kontaktuak kanpaina bereko aurreko bidalketa eten batean jaso zuen mezua.
+- `no_email`: kontaktuak edo errenkadak ez du helbide elektronikorik.
+- `invalid_email`: errenkadako helbide elektronikoa ez da baliozkoa (fitxategi batekin bakarrik).
+- `no_attachment`: eranskinaren eremu pertsonalizatua edo zutabea hutsik dago.
+- `duplicate_row`: errenkadak aurreko errenkada baten helbidea eta eranskina errepikatzen ditu (fitxategi batekin bakarrik).
+- `already_sent`: hartzaileak kanpaina bereko aurreko bidalketa eten batean jaso zuen mezua.
 
 `[SEND_ERROR]` lerroak eranskina prestatu ezin izan zaien kontaktu egokiak dira (adibidez, oinarrizko URLrik gabeko bide erlatibo bat edo deskargatu ezin den fitxategi bat).
 
-**Taldeko kontakturen bat ere egokia ez denean** (edo denek aurreko bidalketa batean jaso dutenean mezua), ezin da bidali, baina simulatu bai: logari esker jakin daiteke kontaktu bakoitza zergatik baztertu den. Modu grafikoan, **Bidali** botoia desaktibatuta geratzen da; kontsola moduan, aplikazioak simulazioa bakarrik eskaintzen du. Gainera, simulazio baten ondoren, modu grafikoak mezuren bat bidaliko balitz bakarrik eskaintzen du **Bidali** botoia (adibidez, ez du eskaintzen eranskinik deskargatu ezin bada).
+**Taldeko kontakturen bat edo fitxategiko errenkadaren bat ere egokia ez denean** (edo denek aurreko bidalketa batean jaso dutenean mezua), ezin da bidali, baina simulatu bai: logari esker jakin daiteke bakoitza zergatik baztertu den. Modu grafikoan, **Bidali** botoia desaktibatuta geratzen da; kontsola moduan, aplikazioak simulazioa bakarrik eskaintzen du. Gainera, simulazio baten ondoren, modu grafikoak mezuren bat bidaliko balitz bakarrik eskaintzen du **Bidali** botoia (adibidez, ez du eskaintzen eranskinik deskargatu ezin bada).
 
 ---
 
@@ -239,7 +302,7 @@ Baztertzeko arrazoiak (`reason=`, `[SEND_SKIP]` lerroetan):
 
 Bidalketa bat erdibidean eteten bada (aplikazioa ixten da, konexioa eteten da, ordenagailua itzaltzen da…), aplikazioak gogoratzen du zein kontakturi programatu zaien dagoeneko mezua.
 
-**Kanpaina bera** berriro prestatzean (talde, txantiloi, eranskin eremu eta hasiera-ordu modu berak, eta **gai bera, hitzez hitz**), laburpenera iristean aplikazioak aurreko bidalketa osatu gabe dagoela ohartarazten du eta zer egin galdetzen du:
+**Kanpaina bera** berriro prestatzean (talde bera —edo fitxategi, orri eta helbide-zutabe berak—, txantiloi, eranskin eremu edo zutabe eta hasiera-ordu modu berak, eta **gai bera, hitzez hitz**), laburpenera iristean aplikazioak aurreko bidalketa osatu gabe dagoela ohartarazten du eta zer egin galdetzen du:
 
 - **Jarraitu**: falta diren kontaktuei bakarrik bidaltzen zaie. Haien mezuak aurreko bidalketakoen ondoren programatzen dira, haiekin gainjarri gabe.
 - **Ez jarraitu**: aurreko bidalketa baztertu eta kontaktu guztiei bidaltzen zaie berriro, dagoeneko jaso dutenei barne.
@@ -260,11 +323,13 @@ Mensagiaren APIak ez du programatutako bidalketak kontsultatzen uzten; beraz, eg
 ## Hautaketen memoria (GUI modua)
 
 Bidalketa edo simulazio bakoitzaren ondoren, aplikazioak aukeratutako
-parametroak (txantiloia, bidaltzailea, taldea, eranskin eremua,
-ziurtagiria, eta hasiera-orduaren modua eta ordua) `last_selections.json` fitxategi batean gordetzen ditu,
+parametroak (hartzaileen jatorria, txantiloia, bidaltzailea, taldea, eranskin eremua, azken fitxategiaren karpeta,
+helbidearen eta eranskinaren zutabeak, ziurtagiria, eta hasiera-orduaren modua eta ordua) `last_selections.json` fitxategi batean gordetzen ditu,
 [aplikazioaren datu-karpetan](#aplikazioaren-fitxategiak).
 
-Hurrengo exekuzioan, aukera horiek lehenespenez markatuta agertuko dira.
+Hurrengo exekuzioan, aukera horiek lehenespenez markatuta agertuko dira. Zutabeak fitxategi berriak
+izen horiek dituzten zutabeak baditu bakarrik markatzen dira. Fitxategia eta orria ez dira gogoratzen:
+fitxategi-hautatzailea azkena erabilitakoaren karpetan irekitzen da.
 
 > Memoria hau ezabatzeko, ezabatu `last_selections.json` fitxategia.
 > Fitxategia ez badago, aplikazioak normalean funtzionatzen du.
@@ -312,8 +377,10 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Mensagia API bezeroa eta egokitzaileak
 │       ├── config/          # Konfigurazioa kargatzea (.env)
+│       ├── files/           # Excel eta CSV fitxategiak irakurtzea
 │       ├── logging/         # Bidalketen logak idaztea
 │       ├── persistence/     # Bidalketen aurrerapena gordetzea
+│       ├── recipients/      # Hartzaileen jatorriak (agenda edo fitxategia)
 │       └── ui/
 │           ├── console/     # Kontsola interfazea
 │           ├── gui/         # Interfaze grafikoa (customtkinter)

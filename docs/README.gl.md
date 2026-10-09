@@ -136,24 +136,28 @@ python main.py
 ## Fluxo de envío
 
 1. **Token API** — Lese do `.env` ou solicítase ao usuario.
-2. **Asunto e hora de inicio** — O usuario introduce o asunto do correo e escolle cando sae o primeiro correo (ver [Programar a hora de inicio](#programar-a-hora-de-inicio)).
+2. **Asunto, hora de inicio e orixe** — O usuario introduce o asunto do correo, escolle cando sae o primeiro correo (ver [Programar a hora de inicio](#programar-a-hora-de-inicio)) e de onde saen os destinatarios: un **grupo da axenda** ou un **ficheiro** (ver [Enviar aos destinatarios dun ficheiro](#enviar-aos-destinatarios-dun-ficheiro)).
 3. **Modelo** — Móstrase a lista de modelos de email dispoñibles.
 4. **Remitente** — Móstrase a lista de enderezos de envío verificados.
-5. **Grupo** — Móstrase unha primeira páxina de grupos da axenda. Se o grupo buscado non aparece, pódese filtrar polo nome. Os grupos sen contactos móstranse, pero non se poden seleccionar.
-6. **Campo adxunto** — Elíxese que campo personalizado contén a URL do adxunto.
+5. **Grupo ou ficheiro**:
+   - Coa axenda, móstrase unha primeira páxina de grupos. Se o grupo buscado non aparece, pódese filtrar polo nome. Os grupos sen contactos móstranse, pero non se poden seleccionar.
+   - Cun ficheiro, elíxese o ficheiro e, se é un Excel con varias follas, a folla.
+6. **Campo adxunto ou columnas**:
+   - Coa axenda, elíxese que campo personalizado contén a URL do adxunto.
+   - Cun ficheiro, elíxese que columna contén o correo e cal o adxunto.
 7. **Certificado** — O usuario decide se certificar os envíos.
-8. **Envío** — Fíltrase os contactos con email e URL de adxunto válidos, e envíase un correo por cada un a razón de 5/minuto.
+8. **Envío** — Descártanse os destinatarios sen un correo válido ou sen adxunto, e envíase un correo por cada un a razón de 5/minuto.
 
 ---
 
 ## Ruta do adxunto no campo personalizado
 
-O campo personalizado escollido no paso 6 pode indicar o adxunto de cada contacto de dúas formas:
+O campo personalizado escollido no paso 6 (ou a columna do adxunto, se os destinatarios saen dun ficheiro) pode indicar o adxunto de cada contacto de dúas formas:
 
 - **URL completa**, que comeza por `http://` ou `https://` (por exemplo, `https://cdn.empresa.com/docs/factura_42.pdf`). Úsase tal cal.
 - **Nome de arquivo ou ruta relativa** (por exemplo, `factura_42.pdf` ou `2026/factura_42.pdf`). A aplicación antepónlle unha **URL base**: coa base `https://cdn.empresa.com/docs/`, o valor `factura_42.pdf` convértese en `https://cdn.empresa.com/docs/factura_42.pdf`.
 
-As dúas formas pódense combinar dentro do mesmo grupo.
+As dúas formas pódense combinar dentro do mesmo grupo ou ficheiro.
 
 A URL base pódese indicar de varias maneiras:
 
@@ -165,6 +169,63 @@ A URL base pódese indicar de varias maneiras:
 - No **modo consola**, a aplicación pídea só se algún contacto ten unha ruta relativa e a variable non está no `.env`.
 
 > A URL base debe ser sempre un **enderezo web público**, nunca un cartafol do ordenador: é Mensagia quen descarga o arquivo para adxuntalo ao correo. Pode rematar en `/` ou non; a aplicación teno en conta.
+
+---
+
+## Enviar aos destinatarios dun ficheiro
+
+Ademais dun grupo da axenda, os destinatarios poden saír dun ficheiro **Excel (`.xlsx`)** ou **CSV (`.csv`)**. Cada fila do ficheiro é un correo, de modo que un mesmo enderezo pode recibir varios correos con adxuntos distintos no mesmo envío (por exemplo, unha axencia que recibe a documentación de varios dos seus clientes). Os destinatarios non teñen que estar na axenda de Mensagia.
+
+### Como debe ser o ficheiro
+
+- **A primeira fila é a cabeceira** e é obrigatoria: contén o nome de cada columna.
+- Os nomes, a orde e o número de columnas son libres. Ao preparar o envío elíxese que columna contén o correo e cal o adxunto; as demais ignóranse.
+- As filas e as columnas completamente baleiras ignóranse.
+- Se o Excel ten varias follas, elíxese cal usar. Se só ten unha, non se pregunta.
+- Nos CSV, o separador (`;` ou `,`) e a codificación (UTF-8 ou a de Windows) detéctanse automaticamente.
+
+Exemplo:
+
+| Cliente | Correo | Adxunto |
+|---|---|---|
+| Cliente A | axencia@exemplo.com | facturas/cliente_a.pdf |
+| Cliente B | axencia@exemplo.com | facturas/cliente_b.pdf |
+| Cliente C | info@clientec.com | https://cdn.empresa.com/docs/c.pdf |
+
+A aplicación non deixa continuar se:
+
+- o ficheiro está baleiro ou só ten a cabeceira;
+- algunha columna ten datos pero non ten nome na cabeceira;
+- hai dúas columnas co mesmo nome (sen distinguir maiúsculas);
+- algunha cela da primeira fila contén `@`: probablemente o ficheiro non ten cabeceira.
+
+### Correo e adxunto de cada fila
+
+- **Correo**: elimínanse os espazos do principio e do final. Debe conter un só enderezo: unha soa `@`; antes da `@`, só letras sen acentos, números e `. _ % + -`; despois, letras sen acentos, números, `-` e polo menos un punto. Unha cela con varios enderezos non é válida.
+- **Adxunto**: como no campo personalizado, unha URL completa ou unha ruta relativa á URL base (ver [Ruta do adxunto](#ruta-do-adxunto-no-campo-personalizado)). Os números lense sen decimais (`1234`, non `1234.0`).
+
+Descártanse estas filas, e o [log](#simular-un-envío) indica o motivo:
+
+- sen correo (`no_email`) ou cun correo non válido (`invalid_email`);
+- sen adxunto (`no_attachment`);
+- co mesmo correo (sen distinguir maiúsculas) e o mesmo adxunto que unha fila anterior (`duplicate_row`): só se envía a primeira.
+
+No log, cada fila identifícase polo seu número tal como o mostra Excel (a cabeceira é a fila 1), o correo e o adxunto. Por exemplo:
+
+```
+[SEND_SKIP]  row=14 to=axencia@exemplo.com attachment=facturas/cliente_a.pdf reason=duplicate_row
+```
+
+### Cambios no ficheiro
+
+O ficheiro vólvese ler ao chegar ao resumo e ao comezar o envío, así que se usan os cambios gardados mentres tanto. Se o ficheiro xa non se pode usar (por exemplo, porque se cambiou o nome dunha columna escollida), a aplicación indícao e non envía nada.
+
+Para [retomar un envío interrompido](#retomar-un-envío-interrompido), un envío con ficheiro identifícase polo **nome do ficheiro** (sen o cartafol), a folla, as columnas escollidas, o modelo, o asunto e o modo de hora de inicio. Por iso:
+
+- Pódese mover o ficheiro a outro cartafol, corrixir filas, engadir filas novas ou cambiar a súa orde. Ao retomar, só se envían as filas que faltaban, porque cada fila se recoñece polo seu correo e o seu adxunto.
+- Se se cambia o nome do ficheiro, a folla ou algunha das columnas, trátase como un envío novo.
+
+> No modo consola, a ruta do ficheiro escríbese ou pégase. Acéptanse as comiñas que engade a opción «Copiar como ruta de acceso» de Windows.
 
 ---
 
@@ -225,13 +286,15 @@ Cada simulación xera un log co mesmo contido ca o dun envío real: os contactos
 
 Motivos de descarte (`reason=` nas liñas `[SEND_SKIP]`):
 
-- `no_email`: o contacto non ten enderezo de correo.
-- `no_attachment`: o campo personalizado do adxunto está baleiro.
-- `already_sent`: o contacto xa recibiu o correo nun envío anterior interrompido da mesma campaña.
+- `no_email`: o contacto ou a fila non ten enderezo de correo.
+- `invalid_email`: o enderezo de correo da fila non é válido (só cun ficheiro).
+- `no_attachment`: o campo personalizado ou a columna do adxunto está baleiro.
+- `duplicate_row`: a fila repite o correo e o adxunto dunha fila anterior (só cun ficheiro).
+- `already_sent`: o destinatario xa recibiu o correo nun envío anterior interrompido da mesma campaña.
 
 As liñas `[SEND_ERROR]` corresponden a contactos aptos cuxo adxunto non se puido preparar (por exemplo, unha ruta relativa sen URL base ou un ficheiro que non se pode descargar).
 
-Cando **ningún contacto do grupo é apto** (ou todos recibiron xa o correo nun envío anterior), non se pode enviar, pero si simular: o log permite saber por que se descartou cada contacto. No modo gráfico, o botón **Enviar** queda desactivado; no modo consola, a aplicación só ofrece a simulación. Ademais, despois dunha simulación, o modo gráfico só ofrece o botón **Enviar** se se enviaría algún correo (por exemplo, non o ofrece se ningún adxunto se pode descargar).
+Cando **ningún contacto do grupo nin ningunha fila do ficheiro é apto** (ou todos recibiron xa o correo nun envío anterior), non se pode enviar, pero si simular: o log permite saber por que se descartou cada un. No modo gráfico, o botón **Enviar** queda desactivado; no modo consola, a aplicación só ofrece a simulación. Ademais, despois dunha simulación, o modo gráfico só ofrece o botón **Enviar** se se enviaría algún correo (por exemplo, non o ofrece se ningún adxunto se pode descargar).
 
 ---
 
@@ -239,7 +302,7 @@ Cando **ningún contacto do grupo é apto** (ou todos recibiron xa o correo nun 
 
 Se un envío se interrompe a medias (péchase a aplicación, córtase a conexión, apágase o ordenador…), a aplicación lembra a que contactos xa se lles programou o correo.
 
-Ao volver preparar **a mesma campaña** (mesmo grupo, modelo, campo adxunto e modo de hora de inicio, e **exactamente o mesmo asunto**), ao chegar ao resumo a aplicación avisa de que hai un envío anterior incompleto e pregunta que facer:
+Ao volver preparar **a mesma campaña** (mesmo grupo —ou mesmo ficheiro, folla e columna do correo—, modelo, campo ou columna do adxunto e modo de hora de inicio, e **exactamente o mesmo asunto**), ao chegar ao resumo a aplicación avisa de que hai un envío anterior incompleto e pregunta que facer:
 
 - **Continuar**: só se envía aos contactos pendentes. Os seus correos prográmanse a continuación dos do envío anterior, sen solaparse con eles.
 - **Non continuar**: descártase o envío anterior e vólvese enviar a todos os contactos, incluídos os que xa o recibiron.
@@ -260,10 +323,13 @@ A API de Mensagia non permite consultar os envíos programados, así que esta co
 ## Memoria de seleccións (modo gráfico)
 
 Tras cada envío ou simulación, a aplicación garda os parámetros escollidos
-(modelo, remitente, grupo, campo adxunto, certificado, e o modo e a hora de inicio) nun ficheiro
+(orixe dos destinatarios, modelo, remitente, grupo, campo adxunto, cartafol do último ficheiro,
+columnas do correo e do adxunto, certificado, e o modo e a hora de inicio) nun ficheiro
 `last_selections.json`, no [cartafol de datos da aplicación](#ficheiros-da-aplicación).
 
-Na seguinte execución, esas opcións quedarán marcadas por defecto.
+Na seguinte execución, esas opcións quedarán marcadas por defecto. As columnas só se marcan se
+o ficheiro novo ten columnas con eses nomes. O ficheiro e a folla non se lembran: o selector de
+ficheiro ábrese no cartafol do último usado.
 
 > Para borrar esta memoria, elimina o ficheiro `last_selections.json`.
 > A aplicación funciona con normalidade se o ficheiro non existe.
@@ -311,8 +377,10 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Cliente e adaptadores da API Mensagia
 │       ├── config/          # Carga de configuración (.env)
+│       ├── files/           # Lectura de ficheiros Excel e CSV
 │       ├── logging/         # Escritura dos logs de envío
 │       ├── persistence/     # Gardado do progreso dos envíos
+│       ├── recipients/      # Orixes dos destinatarios (axenda ou ficheiro)
 │       └── ui/
 │           ├── console/     # Interface de consola
 │           ├── gui/         # Interface gráfica (customtkinter)
