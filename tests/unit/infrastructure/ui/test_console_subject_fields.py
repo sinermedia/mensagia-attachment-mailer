@@ -67,3 +67,17 @@ class TestConsoleFileSubject:
             source = console_app._select_file(subject="Factura #num_factura#")
         assert source.subject.fields == {"num_factura": "Num factura"}
         assert source.get_recipients()[0].subject == "Factura 1"
+
+
+class TestConsoleAgendaBasicFields:
+    """Covers the basic contact fields in the console with an agenda group."""
+
+    def test_basic_fields_are_accepted(self):
+        """Binds #email#, #name# and #number# without asking again."""
+        from src.domain.entities.extra_field import ExtraField
+        from src.infrastructure.ui.subject_text import agenda_subject_names
+        with patch("builtins.input") as fake_input:
+            template = console_app._bind_subject("#name# #email# #number#", agenda_subject_names([ExtraField(1, "x")]),
+                                                 rows=False)
+        fake_input.assert_not_called()
+        assert template.has_fields

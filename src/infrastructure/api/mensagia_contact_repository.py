@@ -27,8 +27,10 @@ class MensagiaContactRepository(ContactRepository):
         Fetches raw contact data via the client (handling pagination
         automatically) and converts each API dictionary into a Contact
         domain entity. Missing or null values from the API are normalised
-        to safe defaults (empty string for email and name, empty dict for
-        extra_fields) so the rest of the application never receives None.
+        to safe defaults (empty string for email, name and number, empty
+        dict for extra_fields) so the rest of the application never
+        receives None. The phone number is read as text even if the API
+        gives a number.
 
         Args:
             group_id: Numeric ID of the agenda group to query.
@@ -51,9 +53,10 @@ class MensagiaContactRepository(ContactRepository):
         return [
             Contact(
                 id=item["id"],
-                name=item.get("name", ""),
+                name=item.get("name") or "",
                 email=item.get("email", "") or "",
                 extra_fields=item.get("extra_fields", {}) or {},
+                number=str(item.get("number") or ""),
             )
             for item in raw
         ]

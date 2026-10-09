@@ -137,3 +137,25 @@ class TestGuiSubjectSummary:
         text = app._summary_text.cget("text")
         assert "Subject: Factura #num_factura#" in text
         assert "Subject example: Factura 1" in text
+
+
+class TestGuiSubjectBasicFields:
+    """Covers the basic contact fields on the extra field step of an agenda send."""
+
+    def test_a_basic_field_lets_the_user_go_on(self, app):
+        """Accepts #email#, #name# and #number# in the subject of an agenda send."""
+        _agenda_ready(app, "#name# <#email#> #number#")
+        with patch.object(app, "_show_frame") as show:
+            app._field_next()
+        show.assert_called_once_with("certified")
+        assert app._subject_template.fields == {"name": "name", "email": "email", "number": "number"}
+
+    def test_the_list_starts_with_the_basic_fields(self, app):
+        """Lists the basic contact fields before the custom ones."""
+        app.client = MagicMock()
+        fields = [ExtraField(1, "Adjunto")]
+        with patch("src.infrastructure.ui.gui.gui_app.MensagiaExtraFieldRepository") as repository:
+            repository.return_value.get_all.return_value = fields
+            app._load_fields()
+            _wait_until(app, lambda: _box_text(app._field_subject_box) != "")
+        assert _box_text(app._field_subject_box) == "email → #email#\nname → #name#\nnumber → #number#\nAdjunto → #Adjunto#"

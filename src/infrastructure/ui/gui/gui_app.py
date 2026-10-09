@@ -36,7 +36,9 @@ from src.domain.scheduling import StartMode, preview_days, split_by_send_date
 from src.domain.date_input import DateFormat
 from src.domain.file_rows import rows_on_several_dates
 from src.domain.subject_fields import SubjectFieldError, SubjectTemplate
-from src.infrastructure.ui.subject_text import subject_error_message, subject_example_line, subject_field_lines
+from src.infrastructure.ui.subject_text import (
+    agenda_subject_names, subject_error_message, subject_example_line, subject_field_lines,
+)
 from src.infrastructure.http.github_release_checker import RELEASES_PAGE_URL
 from src.infrastructure.ui.update_notice import start_update_check
 
@@ -917,8 +919,9 @@ class App(ctk.CTk):
         on its own step.
 
         Args:
-            names: Custom field names of the account, or column names of the file.
-            rows: True for the columns of a file, False for custom fields.
+            names: Basic contact fields and custom field names of the
+                account, or column names of the file.
+            rows: True for the columns of a file, False for an agenda group.
             error_label: Label of the step where the problem is explained.
 
         Returns:
@@ -942,27 +945,42 @@ class App(ctk.CTk):
         self._fill_subject_fields_box(self._field_subject_box, [])
 
         def _fetch():
-            """Background thread: fetch extra fields and populate the list."""
+            """Background thread: fetch the extra fields and hand them to the main thread."""
             try:
-                self.extra_fields = MensagiaExtraFieldRepository(self.client).get_all()
-                if not self.extra_fields:
-                    self._field_error.configure(text=t("error_no_fields"))
-                    return
-                self._field_error.configure(text="")
-                for ef in self.extra_fields:
-                    ctk.CTkRadioButton(
-                        self._field_list, text=f"[{ef.id}]  {ef.name}" if self._show_ids else ef.name,
-                        variable=self._field_var, value=str(ef.id), font=ctk.CTkFont(size=13)
-                    ).pack(anchor="w", pady=2)
-                saved = self._last_sel.get("field_id")
-                if saved and any(str(ef.id) == saved for ef in self.extra_fields):
-                    self._field_var.set(saved)
-                names = [ef.name for ef in self.extra_fields]
-                self._ui_queue.put(lambda: self._fill_subject_fields_box(self._field_subject_box, names))
+                fields = MensagiaExtraFieldRepository(self.client).get_all()
             except MensagiaAPIError as e:
-                self._field_error.configure(text=t("error_api", error=str(e)))
+                message = t("error_api", error=str(e))
+                self._ui_queue.put(lambda: self._field_error.configure(text=message))
+                return
+            self._ui_queue.put(lambda: self._show_fields(fields))
 
         threading.Thread(target=_fetch, daemon=True).start()
+
+    def _show_fields(self, fields: list):
+        """Fill the extra field step with the fields read from the API.
+
+        Runs on the main thread, as tkinter requires: the list used to be
+        built from the background thread, which only worked by chance.
+
+        Args:
+            fields: Custom fields of the account.
+        """
+        self.extra_fields = fields
+        if not fields:
+            self._field_error.configure(text=t("error_no_fields"))
+            return
+        self._field_error.configure(text="")
+        for ef in fields:
+            ctk.CTkRadioButton(
+                self._field_list, text=f"[{ef.id}]  {ef.name}" if self._show_ids else ef.name,
+                variable=self._field_var, value=str(ef.id), font=ctk.CTkFont(size=13)
+            ).pack(anchor="w", pady=2)
+        saved = self._last_sel.get("field_id")
+        if saved and any(str(ef.id) == saved for ef in fields):
+            self._field_var.set(saved)
+
+        # The subject may also use the basic contact fields
+        self._fill_subject_fields_box(self._field_subject_box, agenda_subject_names(fields))
 
     def _field_next(self):
         """Validate the extra field and the subject fields, and advance to the date or certified step."""
@@ -972,7 +990,7 @@ class App(ctk.CTk):
             return
         self.selected_field = next(ef for ef in self.extra_fields if str(ef.id) == val)
         self._field_error.configure(text="")
-        if not self._bind_subject([ef.name for ef in self.extra_fields], rows=False, error_label=self._field_error):
+        if not self._bind_subject(agenda_subject_names(self.extra_fields), rows=False, error_label=self._field_error):
             return
         if self._start_mode == StartMode.CONTACT_DATE:
             self._show_date_step()

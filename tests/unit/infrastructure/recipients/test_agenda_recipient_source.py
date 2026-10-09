@@ -168,3 +168,26 @@ class TestAgendaRecipientSourceSubject:
         """Leaves the subject to the send when the source was given no template."""
         [recipient] = make_source([subject_contact()]).get_recipients()
         assert recipient.subject is None
+
+
+class TestAgendaRecipientSourceBasicFields:
+    """Covers the basic contact fields in the subject of an agenda send."""
+
+    def test_fills_the_email_name_and_number(self):
+        """Fills #email#, #name# and #number# with the contact's own data."""
+        repository = MagicMock()
+        repository.get_by_group.return_value = [Contact(id=1, name="Ana", email="ana@test.com", number="34600000000",
+                                                        extra_fields={"attachment_url": "a.pdf"})]
+        template = SubjectTemplate.bind("#name# <#email#> #number#", ["email", "name", "number", "attachment_url"])
+        source = AgendaRecipientSource(repository, 10, "attachment_url", subject=template)
+        assert source.get_recipients()[0].subject == "Ana <ana@test.com> 34600000000"
+
+    def test_a_contact_without_a_name_is_skipped(self):
+        """Skips a contact without a name when the subject uses it."""
+        repository = MagicMock()
+        repository.get_by_group.return_value = [Contact(id=1, name="", email="ana@test.com",
+                                                        extra_fields={"attachment_url": "a.pdf"})]
+        template = SubjectTemplate.bind("Hola #name#", ["email", "name", "number", "attachment_url"])
+        source = AgendaRecipientSource(repository, 10, "attachment_url", subject=template)
+        recipient = source.get_recipients()[0]
+        assert (recipient.skip_reason, recipient.skip_detail) == ("empty_subject_field", "name")

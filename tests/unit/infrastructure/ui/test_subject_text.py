@@ -74,3 +74,16 @@ class TestSubjectExampleLine:
     def test_no_example_without_a_template(self):
         """Shows no example when the subject was never bound."""
         assert subject_example_line(None, [self._recipient("Hola")]) is None
+
+
+from src.domain.entities.extra_field import ExtraField
+from src.infrastructure.ui.subject_text import agenda_subject_names
+
+
+class TestAgendaSubjectNames:
+    """Covers the names a subject can use with an agenda group."""
+
+    def test_basic_fields_come_first(self):
+        """Offers the email, name and phone number before the custom fields."""
+        names = agenda_subject_names([ExtraField(1, "num factura"), ExtraField(2, "cliente")])
+        assert names == ["email", "name", "number", "num factura", "cliente"]

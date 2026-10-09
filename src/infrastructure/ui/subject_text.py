@@ -1,5 +1,19 @@
+from src.domain.entities.contact import SUBJECT_BASIC_FIELDS
 from src.domain.subject_fields import SubjectFieldError, SubjectTemplate, subject_placeholder
 from src.infrastructure.ui.i18n import t
+
+
+def agenda_subject_names(extra_fields: list) -> list[str]:
+    """List the names a subject can use when the recipients come from an agenda group.
+
+    Args:
+        extra_fields: Custom fields of the account (ExtraField objects).
+
+    Returns:
+        The basic contact fields (email, name, number) followed by the
+        names of the custom fields.
+    """
+    return [*SUBJECT_BASIC_FIELDS, *(f.name for f in extra_fields)]
 
 
 def subject_field_lines(names: list[str]) -> list[str]:

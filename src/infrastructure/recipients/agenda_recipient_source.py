@@ -11,8 +11,8 @@ class AgendaRecipientSource(RecipientSource):
     Every contact is returned, including those that cannot be sent: a
     contact needs an email address and a value in the chosen extra field,
     in the contact date start mode, a usable send day in the chosen date
-    field and, when the subject takes text from the custom fields, a value
-    in each of them. Contacts on the global email blacklist are left out by the
+    field and, when the subject takes text from the contact's fields, a
+    value in each of them. Contacts on the global email blacklist are left out by the
     query, as they cannot receive email at all.
 
     Attributes:
@@ -22,8 +22,8 @@ class AgendaRecipientSource(RecipientSource):
         date_field_name: Name of the extra field holding the send day, or
             None outside the contact date start mode.
         date_format: Format of the send days, or None.
-        subject: Subject bound to the account's custom fields, or None to
-            leave the subject to the send.
+        subject: Subject bound to the basic contact fields and the
+            account's custom fields, or None to leave the subject to the send.
     """
 
     def __init__(self, contact_repository: ContactRepository, group_id: int, field_name: str,
@@ -38,8 +38,9 @@ class AgendaRecipientSource(RecipientSource):
             date_field_name: Name of the extra field holding the send day,
                 in the contact date start mode.
             date_format: Format of the send days, required with a date field.
-            subject: Subject bound to the account's custom fields; each
-                contact gets it with its own values.
+            subject: Subject bound to the basic contact fields and the
+                account's custom fields; each contact gets it with its own
+                values.
         """
         self.contact_repository = contact_repository
         self.group_id = group_id
@@ -114,11 +115,11 @@ class AgendaRecipientSource(RecipientSource):
                 value = str(contact.extra_fields.get(self.date_field_name) or "")
                 send_date, date_reason = read_send_date(value, self.date_format)
 
-            # The values are written as text, so a numeric field still fits
+            # The subject may use the basic fields (email, name, number) as
+            # well as the custom ones
             subject, empty_field = None, None
             if self.subject is not None:
-                values = {name: "" if value is None else str(value) for name, value in contact.extra_fields.items()}
-                subject, empty_field = self.subject.render(values)
+                subject, empty_field = self.subject.render(contact.subject_values())
 
             if not contact.email:
                 reason = "no_email"

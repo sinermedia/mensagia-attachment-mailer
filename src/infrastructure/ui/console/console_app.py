@@ -30,7 +30,9 @@ from src.domain.date_input import DateFormat, parse_date, parse_time
 from src.domain.scheduling import StartMode, preview_days, split_by_send_date
 from src.domain.file_rows import rows_on_several_dates
 from src.domain.subject_fields import SubjectFieldError, SubjectTemplate
-from src.infrastructure.ui.subject_text import subject_error_message, subject_example_line, subject_field_lines
+from src.infrastructure.ui.subject_text import (
+    agenda_subject_names, subject_error_message, subject_example_line, subject_field_lines,
+)
 from src.infrastructure.http.github_release_checker import TIMEOUT_SECONDS
 from src.infrastructure.ui.update_notice import start_update_check, update_notice_text
 
@@ -235,8 +237,9 @@ def _bind_subject(subject: str, names: list[str], rows: bool) -> SubjectTemplate
 
     Args:
         subject: Subject as typed.
-        names: Custom field names of the account, or column names of the file.
-        rows: True for the columns of a file, False for custom fields.
+        names: Basic contact fields and custom field names of the account,
+            or column names of the file.
+        rows: True for the columns of a file, False for an agenda group.
 
     Returns:
         The subject bound to the names; its text is the subject finally typed.
@@ -595,7 +598,7 @@ def run():
 
         # The subject fields are checked once the custom fields are known;
         # the subject may have been typed again
-        subject_template = _bind_subject(subject, [f.name for f in extra_fields], rows=False)
+        subject_template = _bind_subject(subject, agenda_subject_names(extra_fields), rows=False)
         subject = subject_template.text
         source_lines = [t("summary_group", value=agenda.name), t("summary_field", value=extra_field.name)]
         if by_day:
