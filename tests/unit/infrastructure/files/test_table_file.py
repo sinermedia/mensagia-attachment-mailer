@@ -152,6 +152,10 @@ class TestTableErrors:
         error = self.error_of(write_csv(tmp_path / "f.csv", "a@x.com;a.pdf\nb@x.com;b.pdf\n"))
         assert error.code == "no_header"
 
+    def test_single_row_with_an_address_means_no_header(self, tmp_path):
+        """A file with one row of data and no header is reported as missing its header, not as empty."""
+        assert self.error_of(write_csv(tmp_path / "f.csv", "a@x.com;a.pdf\n")).code == "no_header"
+
     def test_column_with_data_but_no_name(self, tmp_path):
         """A column with data and an empty header cell is reported with its letter, as Excel shows it."""
         error = self.error_of(write_csv(tmp_path / "f.csv", "Correo;;Adjunto\na@x.com;x;a.pdf\n"))

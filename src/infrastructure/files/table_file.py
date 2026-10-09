@@ -240,9 +240,10 @@ def read_table(path: str, sheet: str | None = None) -> Table:
 
     Rows and columns that are completely empty are ignored, including the
     rows before the header. The problems that make the file unusable raise
-    an error, checked in an order that gives the most helpful message: an
-    empty file, then a missing header (a first row holding an address),
-    then a column with data but no name, then repeated names.
+    an error, checked in an order that gives the most helpful message: a
+    missing header (a first row holding an address), then an empty file
+    (or one with only the header), then a column with data but no name,
+    then repeated names.
 
     Args:
         path: .xlsx or .csv file to read.
@@ -271,14 +272,17 @@ def read_table(path: str, sheet: str | None = None) -> Table:
 
     # Drop empty rows; the first remaining one is the header
     raw = [(number, cells) for number, cells in raw if not all(_is_blank(c) for c in cells)]
-    if len(raw) < 2:
+    if not raw:
         raise TableFileError("empty")
     (_, header), data = raw[0], raw[1:]
 
     # A header holding an address means the file starts with data: say so
-    # before the column checks, which would otherwise report confusing errors
+    # before the other checks, which would otherwise report confusing errors
+    # (a single row of data would look like a header without data)
     if any("@" in cell_text(cell) for cell in header):
         raise TableFileError("no_header")
+    if not data:
+        raise TableFileError("empty")
 
     # Keep the columns that have a name or data, refusing data without a
     # name since there would be no way to choose that column
