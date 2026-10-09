@@ -27,7 +27,9 @@ def skipped_lines(skipped: list, rows: bool) -> list[str]:
     """Count the discarded recipients of the summary, by reason.
 
     With a single reason the count fits in one line; with several, the
-    total comes first and then each reason, the most frequent first.
+    total comes first and then each reason, the most frequent first. A
+    reason about one field (an empty subject field) counts apart for each
+    field, so the user knows which one to fill in.
 
     Args:
         skipped: Recipients left out, each with its skip_reason.
@@ -36,13 +38,19 @@ def skipped_lines(skipped: list, rows: bool) -> list[str]:
     Returns:
         The translated lines to show.
     """
-    counts = Counter(r.skip_reason for r in skipped).most_common()
+    counts = Counter((r.skip_reason, r.skip_detail) for r in skipped).most_common()
+
+    def reason_text(reason: str, detail: str | None) -> str:
+        """Translate a skip reason, naming its field when it has one."""
+        return t(f"skip_reason_{reason}", field=detail or "")
+
     if len(counts) == 1:
-        reason, count = counts[0]
+        (reason, detail), count = counts[0]
         key = "summary_skipped_rows_one" if rows else "summary_skipped_one"
-        return [t(key, reason=t(f"skip_reason_{reason}"), count=count)]
+        return [t(key, reason=reason_text(reason, detail), count=count)]
     lines = [t("summary_skipped_rows" if rows else "summary_skipped", count=len(skipped))]
-    lines += [t("summary_skipped_item", reason=t(f"skip_reason_{reason}"), count=count) for reason, count in counts]
+    lines += [t("summary_skipped_item", reason=reason_text(reason, detail), count=count)
+              for (reason, detail), count in counts]
     return lines
 
 

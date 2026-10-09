@@ -35,6 +35,8 @@ from src.infrastructure.ui.send_summary import date_format_label, day_lines, rep
 from src.domain.scheduling import StartMode, preview_days, split_by_send_date
 from src.domain.date_input import DateFormat
 from src.domain.file_rows import rows_on_several_dates
+from src.domain.subject_fields import SubjectFieldError, SubjectTemplate
+from src.infrastructure.ui.subject_text import subject_error_message, subject_example_line, subject_field_lines
 from src.infrastructure.http.github_release_checker import RELEASES_PAGE_URL
 from src.infrastructure.ui.update_notice import start_update_check
 
@@ -136,6 +138,8 @@ class App(ctk.CTk):
             while the file cannot be used.
         _email_column: Column chosen for the email address.
         _attachment_column: Column chosen for the attachment.
+        _subject_template: Subject bound to the names of the chosen source
+            on the attachment field or columns step, or None until then.
         _new_version: Newer release found by the start-up check, or None.
             Kept across language changes so the notice is shown again.
     """
@@ -176,6 +180,7 @@ class App(ctk.CTk):
         self._start_at = None
         self._start_time = None
         self._source_kind = "agenda"
+        self._subject_template = None
         self._reset_file_state()
         self._reset_date_field()
 
@@ -257,6 +262,7 @@ class App(ctk.CTk):
         self._start_at = None
         self._start_time = None
         self._source_kind = "agenda"
+        self._subject_template = None
         self._reset_file_state()
         self._reset_date_field()
 
@@ -450,6 +456,8 @@ class App(ctk.CTk):
         self._subject_entry.pack(anchor="w", pady=(4, 0))
         self._subject_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12))
         self._subject_error.pack(anchor="w")
+        ctk.CTkLabel(f, text=t("subject_hint"), font=ctk.CTkFont(size=12), text_color="gray",
+                     wraplength=560, justify="left").pack(anchor="w")
 
         # Start mode selector. The radio buttons hold StartMode values, so a
         # later mode only needs one more button here
@@ -613,6 +621,10 @@ class App(ctk.CTk):
         self._start_error.configure(text="")
         self._start_mode, self._start_at, self._start_time = mode, start_at, start_time
         self._source_kind = self._source_var.get()
+
+        # The subject may have changed: its fields are matched again once
+        # the names of the source are known
+        self._subject_template = None
         self._load_templates()
 
     # ── Step 2: Template ───────────────────────────────────────────────────────
@@ -861,11 +873,65 @@ class App(ctk.CTk):
         ctk.CTkLabel(f, text=t("step_field"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
         ctk.CTkLabel(f, text=t("field_label"), font=ctk.CTkFont(size=13)).pack(anchor="w")
         self._field_var = tk.StringVar()
-        self._field_list = ctk.CTkScrollableFrame(f, height=260)
+        self._field_list = ctk.CTkScrollableFrame(f, height=180)
         self._field_list.pack(fill="x", pady=(4, 0))
-        self._field_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12))
+        self._field_subject_box = self._build_subject_fields_box(f, "subject_fields_title_agenda")
+        self._field_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12),
+                                         wraplength=560, justify="left")
         self._field_error.pack(anchor="w")
         self._nav_buttons(f, back="group", next_cmd=self._field_next)
+
+    def _build_subject_fields_box(self, parent, title_key: str):
+        """Add the list of names that can be used in the subject to a step.
+
+        Args:
+            parent: Frame of the step.
+            title_key: Text key of the title above the list.
+
+        Returns:
+            The read-only CTkTextbox that holds the list.
+        """
+        ctk.CTkLabel(parent, text=t(title_key), font=ctk.CTkFont(size=12)).pack(anchor="w", pady=(8, 0))
+        box = ctk.CTkTextbox(parent, height=70, wrap="word", font=ctk.CTkFont(size=12))
+        box.pack(anchor="w", fill="x")
+        box.configure(state="disabled")
+        return box
+
+    def _fill_subject_fields_box(self, box, names: list[str]):
+        """Show how each available name is written in the subject.
+
+        Args:
+            box: Textbox built by _build_subject_fields_box.
+            names: Custom field names of the account, or column names of the file.
+        """
+        box.configure(state="normal")
+        box.delete("1.0", "end")
+        box.insert("1.0", "\n".join(subject_field_lines(names)))
+        box.configure(state="disabled")
+
+    def _bind_subject(self, names: list[str], rows: bool, error_label) -> bool:
+        """Match the fields of the subject with the names of the chosen source.
+
+        Checked on the step where those names are first known. An unknown
+        or ambiguous field stops the user there, since the subject is fixed
+        on its own step.
+
+        Args:
+            names: Custom field names of the account, or column names of the file.
+            rows: True for the columns of a file, False for custom fields.
+            error_label: Label of the step where the problem is explained.
+
+        Returns:
+            True when the subject can be used, with _subject_template set;
+            False when an error was shown.
+        """
+        try:
+            self._subject_template = SubjectTemplate.bind(self._subject_entry.get().strip(), names)
+        except SubjectFieldError as e:
+            self._subject_template = None
+            error_label.configure(text=subject_error_message(e, rows) + "\n" + t("subject_error_fix_gui"))
+            return False
+        return True
 
     def _load_fields(self):
         """Navigate to the field step and fetch extra field definitions from the API."""
@@ -873,6 +939,7 @@ class App(ctk.CTk):
         self._field_error.configure(text=t("loading"))
         for w in self._field_list.winfo_children():
             w.destroy()
+        self._fill_subject_fields_box(self._field_subject_box, [])
 
         def _fetch():
             """Background thread: fetch extra fields and populate the list."""
@@ -890,19 +957,23 @@ class App(ctk.CTk):
                 saved = self._last_sel.get("field_id")
                 if saved and any(str(ef.id) == saved for ef in self.extra_fields):
                     self._field_var.set(saved)
+                names = [ef.name for ef in self.extra_fields]
+                self._ui_queue.put(lambda: self._fill_subject_fields_box(self._field_subject_box, names))
             except MensagiaAPIError as e:
                 self._field_error.configure(text=t("error_api", error=str(e)))
 
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _field_next(self):
-        """Validate that an extra field is selected and advance to the date or certified step."""
+        """Validate the extra field and the subject fields, and advance to the date or certified step."""
         val = self._field_var.get()
         if not val:
             self._field_error.configure(text="  ⚠")
             return
         self.selected_field = next(ef for ef in self.extra_fields if str(ef.id) == val)
         self._field_error.configure(text="")
+        if not self._bind_subject([ef.name for ef in self.extra_fields], rows=False, error_label=self._field_error):
+            return
         if self._start_mode == StartMode.CONTACT_DATE:
             self._show_date_step()
         else:
@@ -1148,6 +1219,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(self._date_column_box, text=t("date_format_hint"), font=ctk.CTkFont(size=12), text_color="gray",
                      wraplength=560, justify="left").pack(anchor="w", pady=(4, 0))
 
+        self._columns_subject_box = self._build_subject_fields_box(f, "subject_fields_title_file")
         self._columns_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12),
                                            wraplength=560, justify="left")
         self._columns_error.pack(anchor="w", pady=(8, 0))
@@ -1176,11 +1248,12 @@ class App(ctk.CTk):
             self._date_column_var.set(remembered if remembered in self._file_columns else "")
             self._column_date_format_var.set(self._remembered_date_format())
             self._date_column_box.pack(anchor="w", fill="x")
+        self._fill_subject_fields_box(self._columns_subject_box, self._file_columns)
         self._columns_error.configure(text="")
         self._show_frame("columns")
 
     def _columns_next(self):
-        """Validate the chosen columns and advance to the certified step."""
+        """Validate the chosen columns and the subject fields, and advance to the certified step."""
         chosen = [self._email_column_var.get(), self._attachment_column_var.get()]
         by_day = self._start_mode == StartMode.CONTACT_DATE
         if by_day:
@@ -1192,6 +1265,8 @@ class App(ctk.CTk):
             self._columns_error.configure(text=t("columns_error_same"))
             return
         self._columns_error.configure(text="")
+        if not self._bind_subject(self._file_columns, rows=True, error_label=self._columns_error):
+            return
         self._email_column, self._attachment_column = chosen[:2]
         if by_day:
             self._date_column = chosen[2]
@@ -1316,11 +1391,13 @@ class App(ctk.CTk):
                                        self._email_column, self._attachment_column,
                                        self._base_url_entry.get().strip() or None,
                                        date_column=self._date_column if by_day else None,
-                                       date_format=self._date_format if by_day else None)
+                                       date_format=self._date_format if by_day else None,
+                                       subject=self._subject_template)
         return AgendaRecipientSource(MensagiaContactRepository(self.client),
                                      self.selected_agenda.id, self.selected_field.name,
                                      self.selected_date_field.name if by_day else None,
-                                     self._date_format if by_day else None)
+                                     self._date_format if by_day else None,
+                                     subject=self._subject_template)
 
     def _source_summary_lines(self) -> list[str]:
         """Describe the chosen recipient source in the summary.
@@ -1438,10 +1515,14 @@ class App(ctk.CTk):
         details = [line.strip() for line in reasons] + ([""] if reasons and details else []) + details
         details += ([""] if details and repeated else []) + repeated
 
-        # Build the multi-line summary text with all selected options
+        # Build the multi-line summary text with all selected options. A
+        # subject with fields is shown as written and, as an example, as
+        # the first recipient will get it
+        example = subject_example_line(self._subject_template, pending)
         lines = "\n".join([
             t("summary_from", value=f"{self.selected_sender.name} <{self.selected_sender.email}>" if self.selected_sender.name else self.selected_sender.email),
             t("summary_subject", value=subject),
+            *([example] if example else []),
             t("summary_template", value=self.selected_template.name),
             *self._source_summary_lines(),
             t("summary_certified", value=t("yes") if self._certified_var.get() else t("no")),
@@ -1567,6 +1648,7 @@ class App(ctk.CTk):
         self.selected_sender = None
         self.selected_agenda = None
         self.selected_field = None
+        self._subject_template = None
 
         # Deselect all radio buttons in the list steps
         self._template_var.set("")
