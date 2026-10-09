@@ -7,6 +7,7 @@ from src.domain.date_input import DateFormat, read_send_date
 from src.domain.entities.recipient import Recipient
 from src.domain.file_rows import email_skip_reason, row_key, skip_duplicate_rows
 from src.domain.ports.recipient_source import RecipientSource
+from src.domain.subject_fields import SubjectTemplate
 from src.infrastructure.files.table_file import TableFileError, cell_text, read_table
 
 
@@ -30,11 +31,13 @@ class FileRecipientSource(RecipientSource):
         date_column: Name of the column holding the send day, or None
             outside the contact date start mode.
         date_format: Format of the send days written as text, or None.
+        subject: Subject bound to the file's columns, or None to leave the
+            subject to the send.
     """
 
     def __init__(self, path: str, sheet: str | None, email_column: str, attachment_column: str,
                  attachment_base_url: str | None = None, date_column: str | None = None,
-                 date_format: DateFormat | None = None):
+                 date_format: DateFormat | None = None, subject: SubjectTemplate | None = None):
         """Initialise the source for one file, sheet and pair of columns.
 
         Args:
@@ -48,6 +51,8 @@ class FileRecipientSource(RecipientSource):
                 contact date start mode.
             date_format: Format of the send days written as text, required
                 with a date column.
+            subject: Subject bound to the file's columns; each row gets it
+                with its own values.
         """
         self.path = path
         self.sheet = sheet
@@ -56,6 +61,7 @@ class FileRecipientSource(RecipientSource):
         self.attachment_base_url = attachment_base_url
         self.date_column = date_column
         self.date_format = date_format
+        self.subject = subject
 
     def _send_date(self, value) -> tuple[date | None, str | None]:
         """Read the send day of a row from its date cell.
@@ -155,10 +161,11 @@ class FileRecipientSource(RecipientSource):
         """Read the file and turn each data row into a recipient.
 
         Returns:
-            One recipient per non-empty row, in file order. Rows with an
-            empty or invalid address, without an attachment, without a
-            usable send day (contact date mode), or repeating the date,
-            address and attachment file of an earlier row carry the reason.
+            One recipient per non-empty row, in file order, with its final
+            subject. Rows with an empty or invalid address, without an
+            attachment, without a usable send day (contact date mode),
+            with an empty subject column, or repeating the date, address
+            and attachment file of an earlier row carry the reason.
 
         Raises:
             TableFileError: When the file cannot be read or used, or when a
@@ -166,7 +173,8 @@ class FileRecipientSource(RecipientSource):
         """
         # The file may have changed since the columns were chosen
         table = read_table(self.path, self.sheet)
-        for column in (self.email_column, self.attachment_column, self.date_column):
+        subject_columns = self.subject.names if self.subject is not None else []
+        for column in (self.email_column, self.attachment_column, self.date_column, *subject_columns):
             if column is not None and column not in table.columns:
                 raise TableFileError("missing_column", name=column)
 
@@ -185,9 +193,23 @@ class FileRecipientSource(RecipientSource):
             if self.date_column is not None:
                 send_date, date_reason = self._send_date(row.values[self.date_column])
                 reason = reason or date_reason
+
+            # Cells are written as a spreadsheet shows them, so a number
+            # loses its decimals and a date reads dd/mm/yyyy
+            subject, empty_field = None, None
+            if self.subject is not None:
+                subject, empty_field = self.subject.render(
+                    {column: cell_text(row.values[column]) for column in subject_columns})
+                if reason is None and empty_field:
+                    reason = "empty_subject_field"
+
+            # The subject is left out of the key: fixing a value must not
+            # turn a row into a new one when resuming
             day = send_date.isoformat() if send_date else ""
             recipients.append(Recipient(
                 key=row_key(email, self._attachment_identity(attachment), day), email=email,
                 attachment=attachment, row=row.number, skip_reason=reason, send_date=send_date,
+                subject=subject if reason is None else None,
+                skip_detail=empty_field if reason == "empty_subject_field" else None,
             ))
         return skip_duplicate_rows(recipients)

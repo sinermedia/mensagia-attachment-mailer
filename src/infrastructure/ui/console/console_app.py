@@ -29,6 +29,10 @@ from src.infrastructure.ui.send_summary import date_format_label, day_lines, rep
 from src.domain.date_input import DateFormat, parse_date, parse_time
 from src.domain.scheduling import StartMode, preview_days, split_by_send_date
 from src.domain.file_rows import rows_on_several_dates
+from src.domain.subject_fields import SubjectFieldError, SubjectTemplate
+from src.infrastructure.ui.subject_text import (
+    agenda_subject_names, subject_error_message, subject_example_line, subject_field_lines,
+)
 from src.infrastructure.http.github_release_checker import TIMEOUT_SECONDS
 from src.infrastructure.ui.update_notice import start_update_check, update_notice_text
 
@@ -211,6 +215,51 @@ def _choose_start(now: datetime) -> tuple[StartMode, datetime | None, time | Non
             print(f"  {e}")
 
 
+def _ask_subject() -> str:
+    """Explain the #name# notation and read a non-empty subject.
+
+    Returns:
+        The subject as typed, stripped.
+    """
+    print(f"  {t('subject_hint')}")
+    subject = ""
+    while not subject:
+        subject = input(f"  {t('subject_label')} ").strip()
+    return subject
+
+
+def _bind_subject(subject: str, names: list[str], rows: bool) -> SubjectTemplate:
+    """Match the fields of the subject with the names of the chosen source.
+
+    The console cannot go back to the subject question, so when a field is
+    unknown or ambiguous the problem and the usable names are shown and the
+    subject is asked for again, until it can be used.
+
+    Args:
+        subject: Subject as typed.
+        names: Basic contact fields and custom field names of the account,
+            or column names of the file.
+        rows: True for the columns of a file, False for an agenda group.
+
+    Returns:
+        The subject bound to the names; its text is the subject finally typed.
+    """
+    while True:
+        try:
+            return SubjectTemplate.bind(subject, names)
+        except SubjectFieldError as e:
+            print()
+            for line in subject_error_message(e, rows).splitlines():
+                print(f"  {line}")
+            print(f"  {t('subject_fields_title_file' if rows else 'subject_fields_title_agenda')}")
+            for line in subject_field_lines(names):
+                print(f"    {line}")
+            print(f"  {t('subject_reenter')}")
+            subject = ""
+            while not subject:
+                subject = input(f"  {t('subject_label')} ").strip()
+
+
 def _select_agenda(client, show_ids: bool):
     """Let the user pick an agenda from a paged, searchable listing.
 
@@ -309,7 +358,7 @@ def _select_date_field(extra_fields: list, attachment_field, show_ids: bool) -> 
     return field, _select_date_format()
 
 
-def _select_file(with_date: bool = False) -> FileRecipientSource:
+def _select_file(with_date: bool = False, subject: str | None = None) -> FileRecipientSource:
     """Let the user pick the recipients file, its sheet and its columns.
 
     The path is typed or pasted; the quotes added by Windows' "Copy as
@@ -320,9 +369,12 @@ def _select_file(with_date: bool = False) -> FileRecipientSource:
     Args:
         with_date: True in the contact date start mode, to also ask for the
             column holding the send day and the format of its dates.
+        subject: Subject as typed, to match its fields with the columns of
+            the file; None to leave the subject to the send.
 
     Returns:
-        The source reading the chosen file, sheet and columns.
+        The source reading the chosen file, sheet and columns, with the
+        subject bound to its columns when one was given.
     """
     # A send by contact date needs a third column, for the send day
     needed = 3 if with_date else 2
@@ -347,14 +399,17 @@ def _select_file(with_date: bool = False) -> FileRecipientSource:
     email_column = _select_from_list(t("email_column_label"), table.columns, str)
     others = [c for c in table.columns if c != email_column]
     attachment_column = _select_from_list(t("attachment_column_label"), others, str)
-    if not with_date:
-        return FileRecipientSource(path, sheet, email_column, attachment_column)
+    date_column = date_format = None
+    if with_date:
+        others = [c for c in others if c != attachment_column]
+        date_column = _select_from_list(t("date_column_label"), others, str)
+        print(f"  {t('date_format_hint')}")
+        date_format = _select_date_format()
 
-    others = [c for c in others if c != attachment_column]
-    date_column = _select_from_list(t("date_column_label"), others, str)
-    print(f"  {t('date_format_hint')}")
+    # The subject fields are checked once the columns of the file are known
+    template = _bind_subject(subject, table.columns, rows=True) if subject is not None else None
     return FileRecipientSource(path, sheet, email_column, attachment_column,
-                               date_column=date_column, date_format=_select_date_format())
+                               date_column=date_column, date_format=date_format, subject=template)
 
 
 def _confirm_action() -> str | None:
@@ -480,9 +535,7 @@ def run():
     # ── Step 1: Email subject ──────────────────────────────────────────────────
     _show_update_notice(update_check, found_versions)
     print(f"\n--- {t('step_subject')} ---")
-    subject = ""
-    while not subject.strip():
-        subject = input(f"  {t('subject_label')} ").strip()
+    subject = _ask_subject()
 
     # ── Step 1b: Start time ───────────────────────────────────────────────────
     # A fixed start is checked against the current time right away; if it
@@ -542,20 +595,27 @@ def run():
             print(f"  {t('error_no_fields')}")
             sys.exit(1)
         extra_field = _select_from_list(t("field_label"), extra_fields, lambda x: f"[{x.id}] {x.name}" if show_ids else x.name)
+
+        # The subject fields are checked once the custom fields are known;
+        # the subject may have been typed again
+        subject_template = _bind_subject(subject, agenda_subject_names(extra_fields), rows=False)
+        subject = subject_template.text
         source_lines = [t("summary_group", value=agenda.name), t("summary_field", value=extra_field.name)]
         if by_day:
             # ── Step 5b: Send date field and format ───────────────────────────
             print(f"\n--- {t('step_date_field')} ---")
             date_field, date_format = _select_date_field(extra_fields, extra_field, show_ids)
             source = AgendaRecipientSource(MensagiaContactRepository(client), agenda.id, extra_field.name,
-                                           date_field.name, date_format)
+                                           date_field.name, date_format, subject=subject_template)
             source_lines.append(t("summary_date_field", value=date_field.name, format=date_format_label(date_format)))
         else:
-            source = AgendaRecipientSource(MensagiaContactRepository(client), agenda.id, extra_field.name)
+            source = AgendaRecipientSource(MensagiaContactRepository(client), agenda.id, extra_field.name,
+                                           subject=subject_template)
     else:
         # ── Step 4: File, sheet and columns selection ─────────────────────────
         print(f"\n--- {t('step_file')} ---")
-        source = _select_file(with_date=by_day)
+        source = _select_file(with_date=by_day, subject=subject)
+        subject = source.subject.text
         source_lines = file_summary_lines(source.path, source.sheet, source.email_column, source.attachment_column)
         if by_day:
             source_lines.append(t("summary_date_column", value=source.date_column,
@@ -637,6 +697,8 @@ def run():
     sender_display = f"{sender.name} <{sender.email}>" if sender.name else sender.email
     print(f"\n  {t('summary_from', value=sender_display)}")
     print(f"  {t('summary_subject', value=subject)}")
+    if example := subject_example_line(source.subject, pending):
+        print(f"  {example}")
     print(f"  {t('summary_template', value=template.name)}")
     for line in source_lines:
         print(f"  {line}")

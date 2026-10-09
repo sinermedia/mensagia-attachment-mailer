@@ -70,7 +70,7 @@ def skip_duplicate_rows(recipients: list[Recipient]) -> list[Recipient]:
     for recipient in recipients:
         if recipient.skip_reason is None:
             if recipient.key in seen:
-                recipient = dataclasses.replace(recipient, skip_reason="duplicate_row")
+                recipient = dataclasses.replace(recipient, skip_reason="duplicate_row", subject=None)
             else:
                 seen.add(recipient.key)
         result.append(recipient)

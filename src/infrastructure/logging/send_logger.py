@@ -177,7 +177,8 @@ class SendLogger:
             f"certified={certified} eligible={eligible_count} skipped={skipped_count} {schedule}"
         )
 
-    def log_ok(self, recipient, attachment_url: str, start_date: datetime | None = None) -> None:
+    def log_ok(self, recipient, attachment_url: str, start_date: datetime | None = None,
+               subject: str | None = None) -> None:
         """Log a successful individual email dispatch.
 
         Args:
@@ -186,6 +187,8 @@ class SendLogger:
                 in place of a file row's attachment value.
             start_date: Slot the email was scheduled for, so it can be found
                 in the Mensagia portal. Left out when None.
+            subject: Subject the email was sent with, which may differ for
+                each recipient. Left out when None.
         """
         # A file row already shows its attachment: replace it with the URL
         if recipient.row is not None:
@@ -193,6 +196,8 @@ class SendLogger:
         else:
             who = _who(recipient)
         slot = f" start_date={start_date.isoformat()}" if start_date is not None else ""
+        if subject is not None:
+            slot += f" subject={_q(subject)}"
         self._logger.info(f"[SEND_OK]    {who} attachment={_q(attachment_url)}{slot}")
 
     def log_skip(self, recipient, reason: str) -> None:
@@ -203,7 +208,9 @@ class SendLogger:
             reason: Machine-readable skip reason, such as 'no_email',
                 'no_attachment' or 'already_sent'.
         """
-        self._logger.info(f"[SEND_SKIP]  {_who(recipient)} reason={reason}")
+        # A reason about one field (such as an empty subject field) names it
+        detail = f" field={_q(recipient.skip_detail)}" if recipient.skip_detail else ""
+        self._logger.info(f"[SEND_SKIP]  {_who(recipient)} reason={reason}{detail}")
 
     def log_error(self, recipient, reason: str) -> None:
         """Log a recipient whose send attempt raised an exception.

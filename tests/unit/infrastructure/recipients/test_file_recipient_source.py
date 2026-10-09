@@ -219,3 +219,70 @@ class TestFileRecipientSourceSendDate:
         assert source.date_field == "Fecha"
         assert source.log_fields["date_column"] == "Fecha"
         assert source.log_fields["date_format"] == "dd/mm/yyyy"
+
+
+from src.domain.subject_fields import SubjectTemplate
+
+
+def subject_source(path: str, subject: str, columns: list[str]) -> FileRecipientSource:
+    """Build a source over the 'Correo' and 'Adjunto' columns whose subject is bound to *columns*."""
+    return FileRecipientSource(path, None, "Correo", "Adjunto", subject=SubjectTemplate.bind(subject, columns))
+
+
+class TestFileRecipientSourceSubject:
+    """Covers the subject of each row built from its columns."""
+
+    def test_builds_the_subject_of_each_row(self, tmp_path):
+        """Fills the subject of each row with its own values, also for the same address."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto;Num factura\na@x.com;a.pdf;1\na@x.com;b.pdf;2\n")
+        recipients = subject_source(path, "Factura #num_factura#", ["Correo", "Adjunto", "Num factura"]).get_recipients()
+        assert [r.subject for r in recipients] == ["Factura 1", "Factura 2"]
+
+    def test_an_empty_cell_skips_the_row(self, tmp_path):
+        """Skips a row whose subject column is empty, naming the column."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto;Cliente\na@x.com;a.pdf;\n")
+        [recipient] = subject_source(path, "#cliente#", ["Correo", "Adjunto", "Cliente"]).get_recipients()
+        assert (recipient.skip_reason, recipient.skip_detail) == ("empty_subject_field", "Cliente")
+
+    def test_the_subject_is_not_part_of_the_key(self, tmp_path):
+        """Keys a row by its address and attachment only, so two subjects do not make two rows."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto;Cliente\na@x.com;a.pdf;X\na@x.com;a.pdf;Y\n")
+        recipients = subject_source(path, "#cliente#", ["Correo", "Adjunto", "Cliente"]).get_recipients()
+        assert recipients[0].key == row_key("a@x.com", "a.pdf")
+        assert [r.skip_reason for r in recipients] == [None, "duplicate_row"]
+
+    def test_excel_numbers_and_dates_read_as_shown(self, tmp_path):
+        """Writes whole numbers without decimals and dates as dd/mm/yyyy."""
+        workbook = openpyxl.Workbook()
+        workbook.active.append(["Correo", "Adjunto", "Num", "Fecha"])
+        workbook.active.append(["a@x.com", "a.pdf", 123.0, datetime(2026, 11, 5)])
+        path = tmp_path / "f.xlsx"
+        workbook.save(path)
+        source = subject_source(str(path), "#num# del #fecha#", ["Correo", "Adjunto", "Num", "Fecha"])
+        assert source.get_recipients()[0].subject == "123 del 05/11/2026"
+
+    def test_line_breaks_in_a_cell_become_spaces(self, tmp_path):
+        """Turns the line breaks of a cell into spaces."""
+        workbook = openpyxl.Workbook()
+        workbook.active.append(["Correo", "Adjunto", "Asunto"])
+        workbook.active.append(["a@x.com", "a.pdf", "Primera línea\nsegunda línea"])
+        path = tmp_path / "f.xlsx"
+        workbook.save(path)
+        source = subject_source(str(path), "#asunto#", ["Correo", "Adjunto", "Asunto"])
+        assert source.get_recipients()[0].subject == "Primera línea segunda línea"
+
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "cp1252"])
+    def test_accents_survive_every_csv_encoding(self, tmp_path, encoding):
+        """Keeps the accents of the subject values in a CSV saved as UTF-8 or as Windows Latin-1."""
+        path = tmp_path / "f.csv"
+        path.write_bytes("Correo;Adjunto;Cliente\na@x.com;a.pdf;Peñíscola Açaí\n".encode(encoding))
+        source = subject_source(str(path), "#cliente#", ["Correo", "Adjunto", "Cliente"])
+        assert source.get_recipients()[0].subject == "Peñíscola Açaí"
+
+    def test_missing_subject_column_is_reported(self, tmp_path):
+        """Reports a subject column that is no longer in the file, with its name."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto\na@x.com;a.pdf\n")
+        source = subject_source(path, "#cliente#", ["Correo", "Adjunto", "Cliente"])
+        with pytest.raises(TableFileError) as info:
+            source.get_recipients()
+        assert info.value.details == {"name": "Cliente"}

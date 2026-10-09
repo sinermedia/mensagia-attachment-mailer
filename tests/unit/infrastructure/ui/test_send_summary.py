@@ -82,3 +82,23 @@ class TestDateFormatLabel:
         """The format is shown with the letters of the language."""
         set_language("es")
         assert date_format_label(DateFormat.YMD_DASH) == "aaaa-mm-dd"
+
+
+class TestSkippedLinesEmptySubjectField:
+    """Covers counting the recipients discarded for an empty subject field."""
+
+    @staticmethod
+    def _empty(field: str, key: str) -> Recipient:
+        """Build a recipient discarded because its *field* subject field is empty."""
+        return Recipient(key=key, email="a@x.com", attachment="a.pdf",
+                         skip_reason="empty_subject_field", skip_detail=field)
+
+    def test_names_the_empty_field(self):
+        """Names the field that is empty in the reason."""
+        assert skipped_lines([self._empty("cliente", "1")], rows=True) == [
+            "Discarded rows (the field cliente is empty): 1"]
+
+    def test_each_field_is_counted_apart(self):
+        """Counts each empty field as a reason of its own."""
+        lines = skipped_lines([self._empty("a", "1"), self._empty("b", "2"), self._empty("a", "3")], rows=True)
+        assert lines == ["Discarded rows: 3", "  · the field a is empty: 2", "  · the field b is empty: 1"]

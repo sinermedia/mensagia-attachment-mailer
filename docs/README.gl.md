@@ -157,7 +157,7 @@ python main.py
 ## Fluxo de envío
 
 1. **Token API** — Lese do `.env` ou solicítase ao usuario.
-2. **Asunto, hora de inicio e orixe** — O usuario introduce o asunto do correo, escolle cando saen os correos: agora, nunha data e hora concretas ou o día de cada contacto (ver [Programar a hora de inicio](#programar-a-hora-de-inicio)) e de onde saen os destinatarios: un **grupo da axenda** ou un **ficheiro** (ver [Enviar aos destinatarios dun ficheiro](#enviar-aos-destinatarios-dun-ficheiro)).
+2. **Asunto, hora de inicio e orixe** — O usuario introduce o asunto do correo, escolle cando saen os correos: agora, nunha data e hora concretas ou o día de cada contacto (ver [Programar a hora de inicio](#programar-a-hora-de-inicio)) e de onde saen os destinatarios: un **grupo da axenda** ou un **ficheiro** (ver [Enviar aos destinatarios dun ficheiro](#enviar-aos-destinatarios-dun-ficheiro)). O asunto pode incluír campos personalizados ou columnas (ver [Asunto con campos personalizados ou columnas](#asunto-con-campos-personalizados-ou-columnas)).
 3. **Modelo** — Móstrase a lista de modelos de email dispoñibles.
 4. **Remitente** — Móstrase a lista de enderezos de envío verificados.
 5. **Grupo ou ficheiro**:
@@ -167,7 +167,7 @@ python main.py
    - Coa axenda, elíxese que campo personalizado contén a URL do adxunto. Se os correos saen o día de cada contacto, a continuación elíxese o campo coa data e o seu formato.
    - Cun ficheiro, elíxese que columna contén o correo e cal o adxunto. Se os correos saen o día de cada contacto, tamén a columna coa data e o seu formato.
 7. **Certificado** — O usuario decide se certificar os envíos.
-8. **Envío** — Descártanse os destinatarios sen un correo válido ou sen adxunto, e envíase un correo por cada un a razón de 5/minuto.
+8. **Envío** — Descártanse os destinatarios sen un correo válido, sen adxunto ou cun campo do asunto baleiro, e envíase un correo por cada un a razón de 5/minuto.
 
 ---
 
@@ -200,7 +200,7 @@ Ademais dun grupo da axenda, os destinatarios poden saír dun ficheiro **Excel (
 ### Como debe ser o ficheiro
 
 - **A primeira fila é a cabeceira** e é obrigatoria: contén o nome de cada columna.
-- Os nomes, a orde e o número de columnas son libres. Ao preparar o envío elíxese que columna contén o correo e cal o adxunto; as demais ignóranse.
+- Os nomes, a orde e o número de columnas son libres. Ao preparar o envío elíxese que columna contén o correo e cal o adxunto; as demais só se usan se o [asunto](#asunto-con-campos-personalizados-ou-columnas) as inclúe.
 - As filas e as columnas completamente baleiras ignóranse.
 - Se o Excel ten varias follas, elíxese cal usar. Se só ten unha, non se pregunta.
 - Nos CSV, o separador (`;` ou `,`) e a codificación (UTF-8 ou a de Windows) detéctanse automaticamente.
@@ -247,6 +247,46 @@ Para [retomar un envío interrompido](#retomar-un-envío-interrompido), un enví
 - Se se cambia o nome do ficheiro, a folla ou algunha das columnas, trátase como un envío novo.
 
 > No modo consola, a ruta do ficheiro escríbese ou pégase. Acéptanse as comiñas que engade a opción «Copiar como ruta de acceso» de Windows.
+
+---
+
+## Asunto con campos personalizados ou columnas
+
+O asunto pode ser distinto para cada destinatario: abonda con escribir nel o nome dun campo personalizado (coa axenda) ou dunha columna (cun ficheiro) entre cancelos, `#nome#`, a mesma notación que usa Mensagia. Por exemplo:
+
+| Asunto escrito | Datos do destinatario | Asunto que recibe |
+|---|---|---|
+| `Factura #num_factura# - #cliente#` | `num factura` = 123, `cliente` = ACME | `Factura 123 - ACME` |
+| `#asunto#` | `asunto` = Documentación de outubro | `Documentación de outubro` |
+
+Un asunto sen campos funciona coma sempre: é o mesmo para todos.
+
+### Como se escribe un campo
+
+- Un campo é todo o que hai entre dous `#`, **sen espazos**. En `Pedido #12 e #34` non hai ningún campo, porque entre os dous cancelos hai espazos.
+- O nome relaciónase co campo ou coa columna **sen distinguir maiúsculas**, e un espazo no nome do campo ou da columna escríbese `_`. Por exemplo, `#num_factura#` corresponde a unha columna chamada `num factura`, `Num Factura` ou `NUM_FACTURA`.
+- Coa axenda, ademais dos campos personalizados pódense usar tres campos básicos do contacto: `#email#` (o enderezo de correo), `#name#` (o nome) e `#number#` (o número de teléfono).
+- No modo consola, se o asunto ten algún erro, móstrase como se escribe cada nome que se pode usar, por exemplo `num factura → #num_factura#`.
+
+### Erros e destinatarios descartados
+
+- **Nome que non existe** (por exemplo, `#num_factur#`): a aplicación non deixa continuar e indica o nome. Compróbase na páxina do campo do adxunto ou das columnas, que é cando se coñecen os campos dispoñibles. No modo gráfico hai que volver atrás ata a páxina do asunto para corrixilo; no modo consola, a aplicación volve pedir o asunto.
+- **Nome ambiguo**: se dous campos ou columnas se escriben igual no asunto (por exemplo, `num factura` e `num_factura`) e o asunto usa ese nome, a aplicación non deixa continuar.
+- **Valor baleiro**: o destinatario descártase co motivo «o campo X está baleiro» (`empty_subject_field` no log), porque o correo sairía co asunto incompleto e un envío non se pode desfacer.
+
+### Valores
+
+- Elimínanse os espazos do principio e do final, e os saltos de liña substitúense por espazos.
+- En Excel, os números enteiros escríbense sen decimais (`123`, non `123.0`) e as datas como `dd/mm/aaaa`.
+
+### Resumo, log e retomada
+
+- O resumo mostra o asunto tal como se escribiu e, como exemplo, o asunto que recibirá o primeiro destinatario.
+- No log, cada correo enviado (ou que se enviaría, nunha simulación) inclúe o seu asunto final:
+  ```
+  [SEND_OK]    row=2 to=agencia@ejemplo.com attachment=https://cdn.empresa.com/docs/a.pdf start_date=2026-10-15T09:00:00 subject="Factura 123 - ACME"
+  ```
+- Para [retomar un envío interrompido](#retomar-un-envío-interrompido), o envío identifícase polo asunto **tal como se escribiu** (`Factura #num_factura#`). Corrixir o valor dun destinatario non o converte nun envío novo.
 
 ---
 
@@ -363,8 +403,9 @@ Motivos de descarte (`reason=` nas liñas `[SEND_SKIP]`):
 - `already_sent`: o destinatario xa recibiu o correo nun envío anterior interrompido da mesma campaña.
 - `no_send_date`, `invalid_send_date` e `send_date_has_time`: a data do contacto está baleira, non ten o formato escollido ou contén unha hora (ver [Enviar cada correo o día do contacto](#enviar-cada-correo-o-día-do-contacto)).
 - `past_send_date` e `send_date_too_far`: a data do contacto xa pasou ou está a máis de 6 semanas.
+- `empty_subject_field`: un campo personalizado ou unha columna que usa o asunto está baleiro; `field=` indica cal (ver [Asunto con campos personalizados ou columnas](#asunto-con-campos-personalizados-ou-columnas)).
 
-As liñas `[SEND_OK]` indican tamén a data e a hora para as que se programou cada correo (`start_date`), para atopalo no portal de Mensagia. O resumo previo mostra os descartados agrupados por motivo.
+As liñas `[SEND_OK]` indican tamén a data e a hora para as que se programou cada correo (`start_date`), para atopalo no portal de Mensagia, e o asunto co que sae (`subject`). O resumo previo mostra os descartados agrupados por motivo.
 
 As liñas `[SEND_ERROR]` corresponden a contactos aptos cuxo adxunto non se puido preparar (por exemplo, unha ruta relativa sen URL base ou un ficheiro que non se pode descargar).
 
@@ -376,7 +417,7 @@ Cando **ningún contacto do grupo nin ningunha fila do ficheiro é apto** (ou to
 
 Se un envío se interrompe a medias (péchase a aplicación, córtase a conexión, apágase o ordenador…), a aplicación lembra a que contactos xa se lles programou o correo.
 
-Ao volver preparar **a mesma campaña** (mesmo grupo —ou mesmo ficheiro, folla e columna do correo—, modelo, campo ou columna do adxunto e modo de hora de inicio —e, se os correos saen o día de cada contacto, o mesmo campo ou columna da data—, e **exactamente o mesmo asunto**), ao chegar ao resumo a aplicación avisa de que hai un envío anterior incompleto e pregunta que facer:
+Ao volver preparar **a mesma campaña** (mesmo grupo —ou mesmo ficheiro, folla e columna do correo—, modelo, campo ou columna do adxunto e modo de hora de inicio —e, se os correos saen o día de cada contacto, o mesmo campo ou columna da data—, e **exactamente o mesmo asunto** tal como se escribiu, cos seus campos `#nome#`), ao chegar ao resumo a aplicación avisa de que hai un envío anterior incompleto e pregunta que facer:
 
 - **Continuar**: só se envía aos contactos pendentes. Os seus correos prográmanse a continuación dos do envío anterior, sen solaparse con eles.
 - **Non continuar**: descártase o envío anterior e vólvese enviar a todos os contactos, incluídos os que xa o recibiron.

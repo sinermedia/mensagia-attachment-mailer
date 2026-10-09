@@ -24,6 +24,11 @@ class Recipient:
             sent (e.g. 'no_email'), or None when it can.
         send_date: Day the recipient must be sent on, in the contact date
             start mode; None otherwise or when it could not be read.
+        subject: Final subject of the recipient's email, with its own
+            values in place of the subject fields; None when the source
+            was given no subject or the recipient cannot be sent.
+        skip_detail: Field or column the skip reason is about (e.g. the
+            empty subject field), or None.
     """
 
     key: str
@@ -33,3 +38,5 @@ class Recipient:
     row: int | None = None
     skip_reason: str | None = None
     send_date: date | None = None
+    subject: str | None = None
+    skip_detail: str | None = None

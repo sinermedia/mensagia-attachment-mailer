@@ -157,7 +157,7 @@ python main.py
 ## Bidaltzeko fluxua
 
 1. **API tokena** — `.env`-tik irakurtzen da edo erabiltzaileari eskatzen zaio.
-2. **Gaia, hasiera-ordua eta jatorria** — Erabiltzaileak mezu elektronikoaren gaia sartzen du, mezuak noiz bidaliko diren aukeratzen du: orain, data eta ordu jakin batean edo kontaktu bakoitzaren egunean (ikus [Hasiera-ordua programatu](#hasiera-ordua-programatu)) eta hartzaileak nondik datozen: **agendako talde** batetik edo **fitxategi** batetik (ikus [Fitxategi bateko hartzaileei bidali](#fitxategi-bateko-hartzaileei-bidali)).
+2. **Gaia, hasiera-ordua eta jatorria** — Erabiltzaileak mezu elektronikoaren gaia sartzen du, mezuak noiz bidaliko diren aukeratzen du: orain, data eta ordu jakin batean edo kontaktu bakoitzaren egunean (ikus [Hasiera-ordua programatu](#hasiera-ordua-programatu)) eta hartzaileak nondik datozen: **agendako talde** batetik edo **fitxategi** batetik (ikus [Fitxategi bateko hartzaileei bidali](#fitxategi-bateko-hartzaileei-bidali)). Gaiak eremu pertsonalizatuak edo zutabeak izan ditzake (ikus [Gaia eremu pertsonalizatuekin edo zutabeekin](#gaia-eremu-pertsonalizatuekin-edo-zutabeekin)).
 3. **Txantiloia** — Eskuragarri dauden email txantiloien zerrenda erakusten da.
 4. **Bidaltzailea** — Egiaztatutako bidaltzaile helbideen zerrenda erakusten da.
 5. **Taldea edo fitxategia**:
@@ -167,7 +167,7 @@ python main.py
    - Agendarekin, eranskinaren URLa duen eremu pertsonalizatua aukeratzen da. Mezuak kontaktu bakoitzaren egunean bidaltzen badira, ondoren data duen eremua eta haren formatua aukeratzen dira.
    - Fitxategi batekin, helbide elektronikoa zein zutabetan dagoen eta eranskina zeinetan dagoen aukeratzen da. Mezuak kontaktu bakoitzaren egunean bidaltzen badira, data duen zutabea eta haren formatua ere bai.
 7. **Ziurtagiria** — Erabiltzaileak bidalketak ziurtatzea erabakitzen du.
-8. **Bidalketa** — Helbide baliozkorik edo eranskinik ez duten hartzaileak baztertzen dira, eta minutuko 5eko abiaduran mezu bat bidaltzen zaio bakoitzari.
+8. **Bidalketa** — Helbide baliozkorik edo eranskinik ez duten hartzaileak, edo gaiko eremu bat hutsik dutenak, baztertzen dira, eta minutuko 5eko abiaduran mezu bat bidaltzen zaio bakoitzari.
 
 ---
 
@@ -200,7 +200,7 @@ Agendako talde batez gain, hartzaileak **Excel (`.xlsx`)** edo **CSV (`.csv`)** 
 ### Nolakoa izan behar du fitxategiak
 
 - **Lehen errenkada goiburua da**, eta derrigorrezkoa da: zutabe bakoitzaren izena du.
-- Zutabeen izenak, ordena eta kopurua libreak dira. Bidalketa prestatzean, helbide elektronikoa zein zutabetan dagoen eta eranskina zeinetan dagoen aukeratzen da; gainerakoak ez dira kontuan hartzen.
+- Zutabeen izenak, ordena eta kopurua libreak dira. Bidalketa prestatzean, helbide elektronikoa zein zutabetan dagoen eta eranskina zeinetan dagoen aukeratzen da; gainerakoak [gaiak](#gaia-eremu-pertsonalizatuekin-edo-zutabeekin) barne hartzen baditu bakarrik erabiltzen dira.
 - Erabat hutsik dauden errenkadak eta zutabeak ez dira kontuan hartzen.
 - Excelak hainbat orri baditu, zein erabili aukeratzen da. Bat bakarrik badu, ez da galdetzen.
 - CSVetan, bereizlea (`;` edo `,`) eta kodeketa (UTF-8 edo Windowsena) automatikoki hautematen dira.
@@ -247,6 +247,46 @@ Fitxategia berriro irakurtzen da laburpenera iristean eta bidalketa hastean; ber
 - Fitxategiaren izena, orria edo zutaberen bat aldatzen bada, bidalketa berritzat hartzen da.
 
 > Kontsola moduan, fitxategiaren bidea idatzi edo itsatsi egiten da. Windowsen «Kopiatu bide gisa» aukerak gehitzen dituen komatxoak onartzen dira.
+
+---
+
+## Gaia eremu pertsonalizatuekin edo zutabeekin
+
+Gaia desberdina izan daiteke hartzaile bakoitzarentzat: nahikoa da eremu pertsonalizatu baten (agendarekin) edo zutabe baten (fitxategi batekin) izena traolen artean idaztea, `#izena#`, Mensagiak erabiltzen duen idazkera bera. Adibidez:
+
+| Idatzitako gaia | Hartzailearen datuak | Jasotzen duen gaia |
+|---|---|---|
+| `Faktura #num_factura# - #bezeroa#` | `num factura` = 123, `bezeroa` = ACME | `Faktura 123 - ACME` |
+| `#gaia#` | `gaia` = Urriko dokumentazioa | `Urriko dokumentazioa` |
+
+Eremurik gabeko gaiak beti bezala funtzionatzen du: berdina da guztientzat.
+
+### Nola idazten da eremu bat
+
+- Eremu bat bi `#` ikurren artean dagoen guztia da, **hutsunerik gabe**. `Eskaera #12 eta #34` testuan ez dago eremurik, bi traolen artean hutsuneak daudelako.
+- Izena eremuarekin edo zutabearekin lotzen da **maiuskulak eta minuskulak bereizi gabe**, eta eremuaren edo zutabearen izeneko hutsune bat `_` gisa idazten da. Adibidez, `#num_factura#` izenak `num factura`, `Num Factura` edo `NUM_FACTURA` izeneko zutabe bati dagokio.
+- Agendarekin, eremu pertsonalizatuez gain, kontaktuaren oinarrizko hiru eremu erabil daitezke: `#email#` (helbide elektronikoa), `#name#` (izena) eta `#number#` (telefono-zenbakia).
+- Kontsola moduan, gaiak erroreren bat badu, erabil daitekeen izen bakoitza nola idazten den erakusten da, adibidez `num factura → #num_factura#`.
+
+### Erroreak eta baztertutako hartzaileak
+
+- **Existitzen ez den izena** (adibidez, `#num_factur#`): aplikazioak ez du jarraitzen uzten, eta izena adierazten du. Eranskinaren eremuaren edo zutabeen orrian egiaztatzen da, orduan ezagutzen baitira eskuragarri dauden eremuak. GUI moduan, gaiaren orrira itzuli behar da zuzentzeko; kontsola moduan, aplikazioak gaia berriro eskatzen du.
+- **Izen anbiguoa**: bi eremu edo zutabe gaian berdin idazten badira (adibidez, `num factura` eta `num_factura`) eta gaiak izen hori erabiltzen badu, aplikazioak ez du jarraitzen uzten.
+- **Balio hutsa**: hartzailea «X eremua hutsik dago» arrazoiarekin baztertzen da (`empty_subject_field` logean), mezua gai osatugabearekin aterako litzatekeelako eta bidalketa bat ezin delako desegin.
+
+### Balioak
+
+- Hasierako eta amaierako hutsuneak kentzen dira, eta lerro-jauziak hutsuneekin ordezten dira.
+- Excelen, zenbaki osoak hamartarrik gabe idazten dira (`123`, ez `123.0`) eta datak `dd/mm/aaaa` gisa.
+
+### Laburpena, loga eta berriro hastea
+
+- Laburpenak gaia idatzi den bezala erakusten du, eta, adibide gisa, lehen hartzaileak jasoko duen gaia.
+- Logean, bidalitako mezu bakoitzak (edo simulazio batean bidaliko litzatekeenak) bere azken gaia dakar:
+  ```
+  [SEND_OK]    row=2 to=agencia@ejemplo.com attachment=https://cdn.empresa.com/docs/a.pdf start_date=2026-10-15T09:00:00 subject="Factura 123 - ACME"
+  ```
+- [Etendako bidalketa berriro hasteko](#etendako-bidalketa-berriro-hasi), bidalketa **idatzi den bezalako** gaiaren bidez identifikatzen da (`Faktura #num_factura#`). Hartzaile baten balioa zuzentzeak ez du bidalketa berri bihurtzen.
 
 ---
 
@@ -363,8 +403,9 @@ Baztertzeko arrazoiak (`reason=`, `[SEND_SKIP]` lerroetan):
 - `already_sent`: hartzaileak kanpaina bereko aurreko bidalketa eten batean jaso zuen mezua.
 - `no_send_date`, `invalid_send_date` eta `send_date_has_time`: kontaktuaren data hutsik dago, ez du aukeratutako formatua edo ordua du (ikus [Mezu bakoitza kontaktuaren egunean bidali](#mezu-bakoitza-kontaktuaren-egunean-bidali)).
 - `past_send_date` eta `send_date_too_far`: kontaktuaren data igaro da edo 6 aste baino urrunago dago.
+- `empty_subject_field`: gaiak erabiltzen duen eremu pertsonalizatu edo zutabe bat hutsik dago; `field=` balioak zein den adierazten du (ikus [Gaia eremu pertsonalizatuekin edo zutabeekin](#gaia-eremu-pertsonalizatuekin-edo-zutabeekin)).
 
-`[SEND_OK]` lerroek mezu bakoitza zein data eta ordutarako programatu den ere adierazten dute (`start_date`), Mensagiako atarian aurkitzeko. Aurretiko laburpenak baztertutakoak arrazoiaren arabera taldekatuta erakusten ditu.
+`[SEND_OK]` lerroek mezu bakoitza zein data eta ordutarako programatu den ere adierazten dute (`start_date`), Mensagiako atarian aurkitzeko, baita zein gairekin ateratzen den ere (`subject`). Aurretiko laburpenak baztertutakoak arrazoiaren arabera taldekatuta erakusten ditu.
 
 `[SEND_ERROR]` lerroak eranskina prestatu ezin izan zaien kontaktu egokiak dira (adibidez, oinarrizko URLrik gabeko bide erlatibo bat edo deskargatu ezin den fitxategi bat).
 
@@ -376,7 +417,7 @@ Baztertzeko arrazoiak (`reason=`, `[SEND_SKIP]` lerroetan):
 
 Bidalketa bat erdibidean eteten bada (aplikazioa ixten da, konexioa eteten da, ordenagailua itzaltzen da…), aplikazioak gogoratzen du zein kontakturi programatu zaien dagoeneko mezua.
 
-**Kanpaina bera** berriro prestatzean (talde bera —edo fitxategi, orri eta helbide-zutabe berak—, txantiloi, eranskin eremu edo zutabe eta hasiera-ordu modu berak —eta, mezuak kontaktu bakoitzaren egunean bidaltzen badira, dataren eremu edo zutabe bera—, eta **gai bera, hitzez hitz**), laburpenera iristean aplikazioak aurreko bidalketa osatu gabe dagoela ohartarazten du eta zer egin galdetzen du:
+**Kanpaina bera** berriro prestatzean (talde bera —edo fitxategi, orri eta helbide-zutabe berak—, txantiloi, eranskin eremu edo zutabe eta hasiera-ordu modu berak —eta, mezuak kontaktu bakoitzaren egunean bidaltzen badira, dataren eremu edo zutabe bera—, eta **gai bera, hitzez hitz**, idatzi den bezala, `#izena#` eremuekin), laburpenera iristean aplikazioak aurreko bidalketa osatu gabe dagoela ohartarazten du eta zer egin galdetzen du:
 
 - **Jarraitu**: falta diren kontaktuei bakarrik bidaltzen zaie. Haien mezuak aurreko bidalketakoen ondoren programatzen dira, haiekin gainjarri gabe.
 - **Ez jarraitu**: aurreko bidalketa baztertu eta kontaktu guztiei bidaltzen zaie berriro, dagoeneko jaso dutenei barne.
