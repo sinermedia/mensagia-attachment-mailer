@@ -92,3 +92,5 @@ desktop.ini
 CLAUDE.md
 last_selections.json
 send_progress.json
+# Written by the build workflow from the release tag
+src/build_version.py

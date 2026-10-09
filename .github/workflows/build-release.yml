@@ -35,6 +35,12 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
+      # Only a tag build knows its version: the app reads it to tell whether
+      # a newer release exists. Any other build stays "dev" and checks nothing
+      - name: Write version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo 'VERSION = "${{ github.ref_name }}"' > src/build_version.py
+
       # The window icon is read from the bundle at runtime, hence --add-data;
       # on Windows the source;destination separator is a semicolon
       - name: Build GUI executable
@@ -95,6 +101,12 @@ jobs:
 
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
+
+      # Only a tag build knows its version: the app reads it to tell whether
+      # a newer release exists. Any other build stays "dev" and checks nothing
+      - name: Write version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo 'VERSION = "${{ github.ref_name }}"' > src/build_version.py
 
       # Generate the .icns icon from the PNG with the native macOS tools, so
       # no binary icon file has to be kept in the repository
