@@ -6,6 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 import openpyxl
+from openpyxl.utils import get_column_letter
 
 
 # Encodings tried in order for a CSV file: UTF-8 (with or without the byte
@@ -26,7 +27,7 @@ class TableFileError(Exception):
             'duplicate_column' or, once the columns are chosen,
             'missing_column'.
         details: Values to show in the message, such as the column
-            position ('column', 1-based), the repeated or missing name
+            letter as a spreadsheet shows it ('column'), the repeated or missing name
             ('name') or the missing sheet ('sheet').
     """
 
@@ -287,7 +288,7 @@ def read_table(path: str, sheet: str | None = None) -> Table:
     for i, name in enumerate(names):
         has_data = any(i < len(cells) and not _is_blank(cells[i]) for _, cells in data)
         if not name and has_data:
-            raise TableFileError("unnamed_column", column=i + 1)
+            raise TableFileError("unnamed_column", column=get_column_letter(i + 1))
         if name:
             kept.append(i)
 

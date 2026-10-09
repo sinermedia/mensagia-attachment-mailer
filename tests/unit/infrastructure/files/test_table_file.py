@@ -153,14 +153,14 @@ class TestTableErrors:
         assert error.code == "no_header"
 
     def test_column_with_data_but_no_name(self, tmp_path):
-        """A column with data and an empty header cell is reported with its position."""
+        """A column with data and an empty header cell is reported with its letter, as Excel shows it."""
         error = self.error_of(write_csv(tmp_path / "f.csv", "Correo;;Adjunto\na@x.com;x;a.pdf\n"))
-        assert (error.code, error.details) == ("unnamed_column", {"column": 2})
+        assert (error.code, error.details) == ("unnamed_column", {"column": "B"})
 
     def test_cells_beyond_the_header_are_an_unnamed_column(self, tmp_path):
         """Data past the last named column is reported as a column without a name."""
         error = self.error_of(write_csv(tmp_path / "f.csv", "Correo\na@x.com;a.pdf\n"))
-        assert (error.code, error.details) == ("unnamed_column", {"column": 2})
+        assert (error.code, error.details) == ("unnamed_column", {"column": "B"})
 
     def test_repeated_column_names(self, tmp_path):
         """Two columns with the same name, ignoring case and spaces around it, are reported."""
