@@ -68,6 +68,27 @@ MENSAGIA_API_TOKEN=el_teu_token_api_aqui
 
 ---
 
+## Avís de versió nova
+
+En arrencar, l'aplicació comprova si s'ha publicat una versió més recent a la [pàgina de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest). Si n'hi ha, mostra un avís discret amb el número de la versió nova i l'enllaç per descarregar-la:
+
+- **Mode gràfic:** a la part inferior de la primera pantalla (la del token). Fes clic a l'enllaç per obrir la pàgina de descàrregues.
+- **Mode consola:** una línia abans de demanar l'assumpte.
+
+L'aplicació només avisa: no descarrega ni instal·la res. Per actualitzar-la, descarrega la versió nova tal com s'explica a [Ús de l'executable](#ús-de-lexecutable-clients-sense-python) i substitueix l'anterior. A Windows, posa el `.exe` nou a la mateixa carpeta per conservar els fitxers de la [carpeta de dades](#fitxers-de-laplicació).
+
+Si no hi ha connexió o GitHub no respon en 3 segons, no es mostra res i l'aplicació funciona amb normalitat.
+
+Per desactivar la comprovació, afegeix aquesta línia al fitxer `.env`:
+
+```
+MENSAGIA_CHECK_UPDATES=false
+```
+
+> Des del codi font l'aplicació no coneix el seu número de versió i no comprova res. Per provar l'avís, crea el fitxer `src/build_version.py` amb una versió anterior a l'última publicada, per exemple `VERSION = "v1.3.0"`, i esborra'l en acabar. Git ignora aquest fitxer, així que no es puja mai al repositori.
+
+---
+
 ## Fitxers de l'aplicació
 
 L'aplicació desa els seus fitxers en una carpeta de dades, que depèn de com s'executi:
@@ -398,8 +419,8 @@ Idiomes disponibles: **Español, Català, Galego, Euskera, English**.
 
 Els executables es generen automàticament amb GitHub Actions (`.github/workflows/build-release.yml`). El PyInstaller no pot compilar per a un altre sistema, així que cada versió es compila en una màquina del sistema corresponent: Windows, Mac amb Apple Silicon i Mac amb Intel.
 
-- **En pujar un tag `vX.Y.Z`**, el workflow compila les tres versions i crea un **esborrany de release** amb els sis fitxers adjunts. Després es redacten les notes i es publica.
-- **A mà**, des de la pestanya **Actions** → **Run workflow**, compila les tres versions sense crear cap release i deixa els fitxers per descarregar a la mateixa execució (apartat **Artifacts**).
+- **En pujar un tag `vX.Y.Z`**, el workflow compila les tres versions i crea un **esborrany de release** amb els sis fitxers adjunts. Després es redacten les notes i es publica. Els executables porten el número de versió del tag, que fa servir l'[avís de versió nova](#avís-de-versió-nova).
+- **A mà**, des de la pestanya **Actions** → **Run workflow**, compila les tres versions sense crear cap release i deixa els fitxers per descarregar a la mateixa execució (apartat **Artifacts**). Aquests executables tenen la versió `dev` i no avisen de versions noves.
 
 > Si la compilació per a Mac amb Intel falla perquè GitHub ja ha retirat aquestes màquines, l'esborrany de release es crea igualment amb els fitxers de Windows i d'Apple Silicon.
 

@@ -68,6 +68,27 @@ MENSAGIA_API_TOKEN=tu_token_api_aqui
 
 ---
 
+## Aviso de versión nueva
+
+Al arrancar, la aplicación comprueba si se ha publicado una versión más reciente en la [página de releases](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest). Si la hay, muestra un aviso discreto con el número de la versión nueva y el enlace para descargarla:
+
+- **Modo gráfico:** en la parte inferior de la primera pantalla (la del token). Haz clic en el enlace para abrir la página de descargas.
+- **Modo consola:** una línea antes de pedir el asunto.
+
+La aplicación solo avisa: no descarga ni instala nada. Para actualizarla, descarga la versión nueva como se explica en [Uso del ejecutable](#uso-del-ejecutable-clientes-sin-python) y sustituye la anterior. En Windows, pon el `.exe` nuevo en la misma carpeta para conservar los archivos de la [carpeta de datos](#archivos-de-la-aplicación).
+
+Si no hay conexión o GitHub no responde en 3 segundos, no se muestra nada y la aplicación funciona con normalidad.
+
+Para desactivar la comprobación, añade esta línea al archivo `.env`:
+
+```
+MENSAGIA_CHECK_UPDATES=false
+```
+
+> Desde el código fuente la aplicación no conoce su número de versión y no comprueba nada. Para probar el aviso, crea el archivo `src/build_version.py` con una versión anterior a la última publicada, por ejemplo `VERSION = "v1.3.0"`, y bórralo al terminar. Git ignora este archivo, así que nunca se sube al repositorio.
+
+---
+
 ## Archivos de la aplicación
 
 La aplicación guarda sus archivos en una carpeta de datos, que depende de cómo se ejecute:
@@ -398,8 +419,8 @@ Idiomas disponibles: **Español, Català, Galego, Euskera, English**.
 
 Los ejecutables se generan automáticamente con GitHub Actions (`.github/workflows/build-release.yml`). PyInstaller no puede compilar para otro sistema, así que cada versión se compila en una máquina del sistema correspondiente: Windows, Mac con Apple Silicon y Mac con Intel.
 
-- **Al subir un tag `vX.Y.Z`**, el workflow compila las tres versiones y crea un **borrador de release** con los seis archivos adjuntos. Después se redactan las notas y se publica.
-- **A mano**, desde la pestaña **Actions** → **Run workflow**, compila las tres versiones sin crear ninguna release y deja los archivos para descargar en la propia ejecución (apartado **Artifacts**).
+- **Al subir un tag `vX.Y.Z`**, el workflow compila las tres versiones y crea un **borrador de release** con los seis archivos adjuntos. Después se redactan las notas y se publica. Los ejecutables llevan el número de versión del tag, que usa el [aviso de versión nueva](#aviso-de-versión-nueva).
+- **A mano**, desde la pestaña **Actions** → **Run workflow**, compila las tres versiones sin crear ninguna release y deja los archivos para descargar en la propia ejecución (apartado **Artifacts**). Estos ejecutables tienen la versión `dev` y no avisan de versiones nuevas.
 
 > Si la compilación para Mac con Intel falla porque GitHub ya ha retirado esas máquinas, el borrador de release se crea igualmente con los archivos de Windows y de Apple Silicon.
 

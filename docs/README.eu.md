@@ -70,6 +70,27 @@ MENSAGIA_API_TOKEN=zure_api_tokena_hemen
 
 ---
 
+## Bertsio berriaren abisua
+
+Abiaraztean, aplikazioak egiaztatzen du [releases orrian](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest) bertsio berriagorik argitaratu den. Baldin badago, abisu txiki bat erakusten du bertsio berriaren zenbakiarekin eta deskargatzeko estekarekin:
+
+- **Modu grafikoa:** lehen pantailaren behealdean (tokenarena). Egin klik estekan deskarga-orria irekitzeko.
+- **Kontsola modua:** lerro bat gaia eskatu aurretik.
+
+Aplikazioak abisatu besterik ez du egiten: ez du ezer deskargatzen ez instalatzen. Eguneratzeko, deskargatu bertsio berria [Exekutagarriaren erabilera](#exekutagarriaren-erabilera-pythonik-gabeko-bezeroak) atalean azaltzen den bezala, eta ordeztu aurrekoa. Windowsen, jarri `.exe` berria karpeta berean, [datu-karpetako](#aplikazioaren-fitxategiak) fitxategiak gordetzeko.
+
+Konexiorik ez badago edo GitHubek 3 segundotan erantzuten ez badu, ez da ezer erakusten eta aplikazioak normal funtzionatzen du.
+
+Egiaztapena desaktibatzeko, gehitu lerro hau `.env` fitxategiari:
+
+```
+MENSAGIA_CHECK_UPDATES=false
+```
+
+> Iturburu-kodetik, aplikazioak ez daki bere bertsio-zenbakia eta ez du ezer egiaztatzen. Abisua probatzeko, sortu `src/build_version.py` fitxategia argitaratutako azkena baino bertsio zaharragoarekin, adibidez `VERSION = "v1.3.0"`, eta ezabatu amaitzean. Gitek ez dio fitxategi honi kasurik egiten, beraz ez da inoiz biltegira igotzen.
+
+---
+
 ## Aplikazioaren fitxategiak
 
 Aplikazioak datu-karpeta batean gordetzen ditu bere fitxategiak, eta karpeta hori nola exekutatzen den araberakoa da:
@@ -400,8 +421,8 @@ Hizkuntza erabilgarriak: **Español, Català, Galego, Euskera, English**.
 
 Exekutagarriak automatikoki sortzen dira GitHub Actions-ekin (`.github/workflows/build-release.yml`). PyInstallerrek ezin du beste sistema baterako konpilatu; beraz, bertsio bakoitza dagokion sistemako makina batean konpilatzen da: Windows, Apple Silicon duen Mac-a eta Intel duen Mac-a.
 
-- **`vX.Y.Z` tag bat igotzean**, workflow-ak hiru bertsioak konpilatzen ditu eta **release zirriborro** bat sortzen du sei fitxategiak erantsita. Ondoren, oharrak idatzi eta argitaratu egiten da.
-- **Eskuz**, **Actions** fitxatik → **Run workflow**, hiru bertsioak konpilatzen ditu releaserik sortu gabe, eta fitxategiak exekuzioan bertan uzten ditu deskargatzeko (**Artifacts** atala).
+- **`vX.Y.Z` tag bat igotzean**, workflow-ak hiru bertsioak konpilatzen ditu eta **release zirriborro** bat sortzen du sei fitxategiak erantsita. Ondoren, oharrak idatzi eta argitaratu egiten da. Exekutagarriek tag-aren bertsio-zenbakia daramate, [bertsio berriaren abisuak](#bertsio-berriaren-abisua) erabiltzen duena.
+- **Eskuz**, **Actions** fitxatik → **Run workflow**, hiru bertsioak konpilatzen ditu releaserik sortu gabe, eta fitxategiak exekuzioan bertan uzten ditu deskargatzeko (**Artifacts** atala). Exekutagarri hauek `dev` bertsioa dute eta ez dute bertsio berriez abisatzen.
 
 > Intel duen Mac-erako konpilazioak huts egiten badu GitHubek makina horiek dagoeneko erretiratu dituelako, release zirriborroa sortzen da hala ere, Windows eta Apple Silicon fitxategiekin.
 

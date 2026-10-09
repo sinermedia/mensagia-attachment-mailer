@@ -68,6 +68,27 @@ MENSAGIA_API_TOKEN=your_api_token_here
 
 ---
 
+## New version notice
+
+On start-up, the app checks whether a newer version has been published on the [releases page](https://github.com/sinermedia/mensagia-attachment-mailer/releases/latest). If there is one, it shows a small notice with the new version number and the link to download it:
+
+- **GUI mode:** at the bottom of the first screen (the token one). Click the link to open the download page.
+- **Console mode:** one line before the subject is asked.
+
+The app only lets you know: it does not download or install anything. To update it, download the new version as explained in [Using the executable](#using-the-executable-clients-without-python) and replace the old one. On Windows, put the new `.exe` in the same folder to keep the files of the [data folder](#app-files).
+
+If there is no connection or GitHub does not answer within 3 seconds, nothing is shown and the app works as usual.
+
+To turn the check off, add this line to the `.env` file:
+
+```
+MENSAGIA_CHECK_UPDATES=false
+```
+
+> From the source code the app does not know its version number and checks nothing. To try the notice, create the file `src/build_version.py` with a version older than the latest published one, for example `VERSION = "v1.3.0"`, and delete it when done. Git ignores this file, so it is never pushed to the repository.
+
+---
+
 ## App files
 
 The app stores its files in a data folder, which depends on how it runs:
@@ -398,8 +419,8 @@ Available languages: **Español, Català, Galego, Euskera, English**.
 
 The executables are built automatically with GitHub Actions (`.github/workflows/build-release.yml`). PyInstaller cannot build for another system, so each version is built on a machine of the matching system: Windows, Mac with Apple Silicon and Mac with Intel.
 
-- **When a `vX.Y.Z` tag is pushed**, the workflow builds the three versions and creates a **draft release** with the six files attached. The notes are then written and the release is published.
-- **Manually**, from the **Actions** tab → **Run workflow**, it builds the three versions without creating any release and leaves the files to download in the run itself (**Artifacts** section).
+- **When a `vX.Y.Z` tag is pushed**, the workflow builds the three versions and creates a **draft release** with the six files attached. The notes are then written and the release is published. The executables carry the version number of the tag, which the [new version notice](#new-version-notice) uses.
+- **Manually**, from the **Actions** tab → **Run workflow**, it builds the three versions without creating any release and leaves the files to download in the run itself (**Artifacts** section). These executables have the `dev` version and do not report new versions.
 
 > If the Intel Mac build fails because GitHub has already retired those machines, the draft release is still created with the Windows and Apple Silicon files.
 

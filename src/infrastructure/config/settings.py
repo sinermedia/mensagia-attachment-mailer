@@ -63,6 +63,21 @@ def load_show_ids() -> bool:
     return os.environ.get("MENSAGIA_SHOW_IDS", "false").strip().lower() == "true"
 
 
+def load_check_updates() -> bool:
+    """Load the flag that controls the new version check at start-up.
+
+    Reads the MENSAGIA_CHECK_UPDATES environment variable. The check is on
+    unless explicitly turned off, because clients cannot be told about new
+    versions in any other way.
+
+    Returns:
+        False if MENSAGIA_CHECK_UPDATES is set to 'false' (case-insensitive);
+        True in all other cases including when the variable is absent.
+    """
+    _load_env_files()
+    return os.environ.get("MENSAGIA_CHECK_UPDATES", "true").strip().lower() != "false"
+
+
 def _load_env_files():
     """Locate and load the nearest .env file without overriding existing env vars.
 

@@ -112,3 +112,31 @@ class TestEnvFileLocation:
         cwd = tmp_path / "cwd"
         cwd.mkdir()
         assert self._load_marker(tmp_path / "missing", cwd, monkeypatch) is None
+
+
+from src.infrastructure.config.settings import load_check_updates
+
+
+class TestUpdateSettings:
+    """Covers the .env setting that turns the new version check off."""
+
+    @staticmethod
+    def _load(loader, variables: dict):
+        """Call *loader* with only the given notice variables in the environment."""
+        env = {k: v for k, v in os.environ.items() if k != "MENSAGIA_CHECK_UPDATES"}
+        env.update(variables)
+        with patch("src.infrastructure.config.settings._load_env_files"):
+            with patch.dict(os.environ, env, clear=True):
+                return loader()
+
+    def test_checks_for_updates_by_default(self):
+        """Checks for a new version when MENSAGIA_CHECK_UPDATES is absent."""
+        assert self._load(load_check_updates, {}) is True
+
+    def test_false_turns_the_check_off(self):
+        """Does not check for a new version when MENSAGIA_CHECK_UPDATES is false, in any case."""
+        assert self._load(load_check_updates, {"MENSAGIA_CHECK_UPDATES": " False "}) is False
+
+    def test_any_other_value_keeps_the_check(self):
+        """Keeps checking for any value other than false."""
+        assert self._load(load_check_updates, {"MENSAGIA_CHECK_UPDATES": "true"}) is True

@@ -67,6 +67,7 @@ STRINGS = {
     "enter_base_url": "Introduce a URL base para construír as rutas dos adxuntos:",
     "base_url_label": "URL base adxuntos:",
     "base_url_placeholder": "https://example.com/files/",
+    "update_available": "Hai unha versión nova dispoñible ({version}):",
     "log_saved": "Log gardado en: {path}",
     "resume_title": "Envío anterior incompleto",
     "resume_detected": "{sent} contacto(s) xa recibiron este correo nun envío anterior interrompido.",

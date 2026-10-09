@@ -67,6 +67,7 @@ STRINGS = {
     "enter_base_url": "Introdueix la URL base per construir les rutes dels adjunts:",
     "base_url_label": "URL base adjunts:",
     "base_url_placeholder": "https://example.com/files/",
+    "update_available": "Hi ha una versió nova disponible ({version}):",
     "log_saved": "Log desat a: {path}",
     "resume_title": "Enviament anterior incomplet",
     "resume_detected": "{sent} contacte(s) ja van rebre aquest correu en un enviament anterior interromput.",
