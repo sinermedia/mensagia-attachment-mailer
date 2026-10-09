@@ -3,6 +3,8 @@ from unittest.mock import patch
 import openpyxl
 import pytest
 
+from src.domain.date_input import DateFormat
+from src.domain.entities.extra_field import ExtraField
 from src.infrastructure.ui.console import console_app
 from src.infrastructure.ui.i18n import set_language
 
@@ -103,3 +105,37 @@ class TestConsoleFileSelection:
         """An empty answer is not taken as a path."""
         path = write_csv(tmp_path / "f.csv", "Correo;Adjunto\na@x.com;a.pdf\n")
         assert _select("", path, "1", "1").path == path
+
+
+class TestConsoleSendDateChoice:
+    """Covers choosing where each contact's send day is and its format."""
+
+    def test_file_date_column_and_format(self, tmp_path):
+        """With dates, the date column is picked among the columns left, then the format."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto;Fecha\na@x.com;a.pdf;5/11/2026\n")
+        with patch("builtins.input", side_effect=[path, "1", "1", "1", "4"]):
+            source = console_app._select_file(with_date=True)
+        assert (source.date_column, source.date_format) == ("Fecha", DateFormat.YMD_DASH)
+
+    def test_file_without_a_column_for_the_date_is_refused(self, tmp_path, capsys):
+        """A file with no column left for the date is explained and another path is asked for."""
+        short = write_csv(tmp_path / "short.csv", "Correo;Adjunto\na@x.com;a.pdf\n")
+        full = write_csv(tmp_path / "full.csv", "Correo;Adjunto;Fecha\na@x.com;a.pdf;5/11/2026\n")
+        with patch("builtins.input", side_effect=[short, full, "1", "1", "1", "1"]):
+            source = console_app._select_file(with_date=True)
+        assert source.path == full
+        assert "no other column for the send date" in capsys.readouterr().out
+
+    def test_agenda_date_field_leaves_out_the_attachment_field(self, capsys):
+        """The date field list leaves out the attachment field, then the format is asked."""
+        fields = [ExtraField(1, "Adjunto"), ExtraField(2, "Fecha"), ExtraField(3, "Otra")]
+        with patch("builtins.input", side_effect=["1", "2"]):
+            field, fmt = console_app._select_date_field(fields, fields[0], show_ids=False)
+        assert (field.name, fmt) == ("Fecha", DateFormat.DMY_DASH)
+        assert "Adjunto" not in capsys.readouterr().out
+
+    def test_formats_are_shown_with_the_letters_of_the_language(self, capsys):
+        """The format list shows each format as the user reads it."""
+        with patch("builtins.input", side_effect=["1"]):
+            console_app._select_date_format()
+        assert "1. dd/mm/yyyy" in capsys.readouterr().out

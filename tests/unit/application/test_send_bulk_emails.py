@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, time as clock_time, timedelta
 from unittest.mock import MagicMock, call, patch
 import pytest
+from src.domain.date_input import DateFormat
 from src.domain.entities.campaign import Campaign
 from src.domain.entities.contact import Contact
 from src.domain.entities.recipient import Recipient
@@ -505,7 +506,8 @@ class TestSendBulkEmailsUseCaseWithLogger:
 
         logger.log_start.assert_called_once()
         logger.log_ok.assert_called_once_with(
-            make_recipient(1, "a@test.com", "https://example.com/a.pdf"), "https://example.com/a.pdf"
+            make_recipient(1, "a@test.com", "https://example.com/a.pdf"), "https://example.com/a.pdf",
+            datetime(2024, 1, 15, 14, 40, 0),
         )
         logger.log_skip.assert_called_once_with(
             make_recipient(2, "", "https://example.com/b.pdf", "no_email"), "no_email"
@@ -721,7 +723,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             now=FIXED_NOW, send_registry=send_registry,
         )
 
-        send_registry.mark_sent.assert_called_once_with(Campaign("10", 5, "attachment_url", "Test"), "1", datetime(2024, 1, 15, 14, 40, 0))
+        send_registry.mark_sent.assert_called_once_with(Campaign("10", 5, "attachment_url", "Test"), "1", datetime(2024, 1, 15, 14, 40, 0), None)
 
     def test_mark_sent_not_called_when_send_fails(self, use_case, contact_repo, email_sender, source, send_registry):
         """mark_sent() is not called for a contact whose send attempt raised an exception."""
@@ -1083,7 +1085,7 @@ class TestSendBulkEmailsUseCaseRegistryAttempts:
 
         run(use_case, source, send_registry=send_registry)
 
-        assert order == [("attempt", (Campaign("10", 5, "attachment_url", "Test"), "1", slot(0))), ("send", slot(0))]
+        assert order == [("attempt", (Campaign("10", 5, "attachment_url", "Test"), "1", slot(0), None)), ("send", slot(0))]
 
     @pytest.mark.parametrize("error", [EmailRejectedError("invalid"), EmailNotSentError("no connection")])
     def test_attempt_is_discarded_when_nothing_was_scheduled(self, use_case, email_sender, source, one_contact, send_registry, error):
@@ -1256,8 +1258,8 @@ class TestSendBulkEmailsUseCaseWithFile:
 
         campaign = Campaign(file_source.identity, 5, "Adjunto", "Test")
         assert send_registry.mark_sent.call_args_list == [
-            call(campaign, row_key("agencia@x.com", "https://example.com/a.pdf"), slot(0)),
-            call(campaign, row_key("agencia@x.com", "https://example.com/b.pdf"), slot(1)),
+            call(campaign, row_key("agencia@x.com", "https://example.com/a.pdf"), slot(0), None),
+            call(campaign, row_key("agencia@x.com", "https://example.com/b.pdf"), slot(1), None),
         ]
 
     def test_rows_already_sent_are_not_sent_again(self, use_case, email_sender, file_source, send_registry):
@@ -1269,3 +1271,139 @@ class TestSendBulkEmailsUseCaseWithFile:
 
         assert [c.args[0].attachments for c in email_sender.send.call_args_list] == [["https://example.com/b.pdf"]]
         assert [r.row for r in result.already_sent] == [2]
+
+
+class TestSendBulkEmailsUseCaseByContactDate:
+    """Tests for the contact date start mode.
+
+    Each recipient is sent on the day given in its data, at the chosen
+    time, 12 seconds after the previous email of the same day. Days that
+    have passed or are beyond the limit are skipped, and an interrupted
+    send continues each day after its last slot.
+    """
+
+    # Thursday 8 October 2026, 10:07, with 09:00 chosen for every day
+    NOW = datetime(2026, 10, 8, 10, 7, 0)
+    NINE = clock_time(9, 0)
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
+
+    @pytest.fixture
+    def dated(self, contact_repo):
+        """Agenda source reading the send day from the 'Fecha' field, as dd/mm/yyyy."""
+        return AgendaRecipientSource(contact_repo, 10, "attachment_url", "Fecha", DateFormat.DMY_SLASH)
+
+    @staticmethod
+    def contact(contact_id: int, day: str) -> Contact:
+        """Build a sendable contact whose 'Fecha' field holds *day*."""
+        return Contact(id=contact_id, name=f"Contact {contact_id}", email=f"c{contact_id}@test.com",
+                       extra_fields={"attachment_url": "https://example.com/a.pdf", "Fecha": day})
+
+    def run(self, use_case, source, **kwargs):
+        """Execute the use case in the contact date mode at 09:00."""
+        return use_case.execute(
+            from_email="sender@test.com", recipient_source=source, subject="Test", template_id=5,
+            certified=0, now=self.NOW, start_mode=StartMode.CONTACT_DATE, start_time=self.NINE, **kwargs,
+        )
+
+    def test_each_day_is_sent_at_the_chosen_time_earliest_first(self, use_case, contact_repo, email_sender, dated):
+        """Emails go out day by day at 09:00, 12 seconds apart within each day."""
+        contact_repo.get_by_group.return_value = [
+            self.contact(1, "10/10/2026"), self.contact(2, "9/10/2026"), self.contact(3, "10/10/2026"),
+        ]
+        email_sender.send.return_value = {}
+
+        self.run(use_case, dated)
+
+        assert sent_slots(email_sender) == [
+            ("c2@test.com", datetime(2026, 10, 9, 9, 0, 0)),
+            ("c1@test.com", datetime(2026, 10, 10, 9, 0, 0)),
+            ("c3@test.com", datetime(2026, 10, 10, 9, 0, 12)),
+        ]
+
+    def test_today_after_the_chosen_time_uses_the_now_schedule(self, use_case, contact_repo, email_sender, dated):
+        """At 10:07 with 09:00 chosen, the emails of today go out at 10:20."""
+        contact_repo.get_by_group.return_value = [self.contact(1, "8/10/2026")]
+        email_sender.send.return_value = {}
+
+        self.run(use_case, dated)
+
+        assert sent_slots(email_sender) == [("c1@test.com", datetime(2026, 10, 8, 10, 20, 0))]
+
+    def test_past_and_far_days_are_skipped_and_logged(self, use_case, contact_repo, email_sender, dated):
+        """A day before today or beyond six weeks is skipped with its reason."""
+        contact_repo.get_by_group.return_value = [
+            self.contact(1, "7/10/2026"), self.contact(2, "1/12/2026"), self.contact(3, "9/10/2026"),
+        ]
+        email_sender.send.return_value = {}
+        logger = MagicMock()
+
+        result = self.run(use_case, dated, logger=logger)
+
+        assert [(r.key, r.skip_reason) for r in result.skipped] == [("1", "past_send_date"), ("2", "send_date_too_far")]
+        assert [c.args[1] for c in logger.log_skip.call_args_list] == ["past_send_date", "send_date_too_far"]
+        assert [s[0] for s in sent_slots(email_sender)] == ["c3@test.com"]
+
+    def test_unreadable_dates_are_skipped(self, use_case, contact_repo, email_sender, dated):
+        """A contact whose date cannot be read is skipped with the reason given by the source."""
+        contact_repo.get_by_group.return_value = [self.contact(1, "2026-10-09")]
+
+        result = self.run(use_case, dated)
+
+        assert result.skipped[0].skip_reason == "invalid_send_date"
+        email_sender.send.assert_not_called()
+
+    def test_resuming_continues_each_day(self, use_case, contact_repo, email_sender, dated, send_registry):
+        """Each day continues after the last slot the registry holds for it."""
+        contact_repo.get_by_group.return_value = [self.contact(1, "9/10/2026"), self.contact(2, "10/10/2026")]
+        send_registry.get_last_start_dates_by_day.return_value = {date(2026, 10, 9): datetime(2026, 10, 9, 9, 0, 24)}
+        email_sender.send.return_value = {}
+
+        self.run(use_case, dated, send_registry=send_registry)
+
+        assert sent_slots(email_sender) == [
+            ("c1@test.com", datetime(2026, 10, 9, 9, 0, 36)), ("c2@test.com", datetime(2026, 10, 10, 9, 0, 0)),
+        ]
+
+    def test_registry_records_the_send_day(self, use_case, contact_repo, email_sender, dated, send_registry):
+        """Attempts and sends are recorded with the send day of the contact, in its date field campaign."""
+        contact_repo.get_by_group.return_value = [self.contact(1, "9/10/2026")]
+        email_sender.send.return_value = {}
+
+        self.run(use_case, dated, send_registry=send_registry)
+
+        campaign = Campaign("10", 5, "attachment_url", "Test", StartMode.CONTACT_DATE, "Fecha")
+        first = datetime(2026, 10, 9, 9, 0, 0)
+        send_registry.mark_attempt.assert_called_once_with(campaign, "1", first, date(2026, 10, 9))
+        send_registry.mark_sent.assert_called_once_with(campaign, "1", first, date(2026, 10, 9))
+
+    def test_retry_continues_the_day_of_the_contact(self, use_case, contact_repo, email_sender, dated):
+        """An unanswered send is retried after the last slot of its own day."""
+        contact_repo.get_by_group.return_value = [self.contact(1, "9/10/2026"), self.contact(2, "10/10/2026")]
+        email_sender.send.side_effect = [EmailNotSentError("no connection"), {}, {}]
+
+        self.run(use_case, dated)
+
+        assert sent_slots(email_sender)[2] == ("c1@test.com", datetime(2026, 10, 9, 9, 0, 12))
+
+    def test_logs_the_chosen_time_and_each_slot(self, use_case, contact_repo, email_sender, dated):
+        """The log opens with the chosen time and records the slot of every email."""
+        contact_repo.get_by_group.return_value = [self.contact(1, "9/10/2026")]
+        email_sender.send.return_value = {}
+        logger = MagicMock()
+
+        self.run(use_case, dated, logger=logger)
+
+        assert logger.log_start.call_args.kwargs["start_time"] == self.NINE
+        assert logger.log_start.call_args.kwargs["first_slot"] == datetime(2026, 10, 9, 9, 0, 0)
+        assert logger.log_ok.call_args.args[2] == datetime(2026, 10, 9, 9, 0, 0)
+
+    def test_requires_a_start_time(self, use_case, dated):
+        """The contact date mode cannot run without the chosen time."""
+        with pytest.raises(ValueError):
+            use_case.execute(from_email="s@test.com", recipient_source=dated, subject="T", template_id=5,
+                             certified=0, now=self.NOW, start_mode=StartMode.CONTACT_DATE)

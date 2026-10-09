@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 
 from src.domain.scheduling import StartMode
@@ -135,6 +135,7 @@ class SendLogger:
         start_mode: StartMode = StartMode.NOW,
         start_at: datetime | None = None,
         first_slot: datetime | None = None,
+        start_time: time | None = None,
     ) -> None:
         """Log the opening line of a send session with all shared parameters.
 
@@ -157,12 +158,16 @@ class SendLogger:
             first_slot: Slot actually given to the first email, which can
                 differ from *start_at* when it was postponed or the send
                 was resumed. None when no email is scheduled.
+            start_time: Time chosen for each day in the contact date start
+                mode, or None in the other modes.
         """
         # The chosen start and the first slot are recorded side by side, so
         # a postponed start can be spotted in the log
         schedule = f"start_mode={start_mode.value}"
         if start_at is not None:
             schedule += f" start_at={start_at.isoformat()}"
+        if start_time is not None:
+            schedule += f" start_time={start_time.strftime('%H:%M')}"
         if first_slot is not None:
             schedule += f" first_slot={first_slot.isoformat()}"
         origin = " ".join(f"{name}={_q(value)}" for name, value in source.items())
@@ -172,20 +177,23 @@ class SendLogger:
             f"certified={certified} eligible={eligible_count} skipped={skipped_count} {schedule}"
         )
 
-    def log_ok(self, recipient, attachment_url: str) -> None:
+    def log_ok(self, recipient, attachment_url: str, start_date: datetime | None = None) -> None:
         """Log a successful individual email dispatch.
 
         Args:
             recipient: Recipient that received the email.
             attachment_url: Fully resolved URL of the sent attachment, shown
                 in place of a file row's attachment value.
+            start_date: Slot the email was scheduled for, so it can be found
+                in the Mensagia portal. Left out when None.
         """
         # A file row already shows its attachment: replace it with the URL
         if recipient.row is not None:
             who = f"row={recipient.row} to={recipient.email}"
         else:
             who = _who(recipient)
-        self._logger.info(f"[SEND_OK]    {who} attachment={_q(attachment_url)}")
+        slot = f" start_date={start_date.isoformat()}" if start_date is not None else ""
+        self._logger.info(f"[SEND_OK]    {who} attachment={_q(attachment_url)}{slot}")
 
     def log_skip(self, recipient, reason: str) -> None:
         """Log a recipient that was excluded before any send attempt.

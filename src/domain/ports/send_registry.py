@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 
 from src.domain.entities.campaign import Campaign
 
@@ -53,6 +53,24 @@ class SendRegistry(ABC):
         pass
 
     @abstractmethod
+    def get_last_start_dates_by_day(
+        self, campaign: Campaign
+    ) -> dict[date, datetime]:
+        """Return the latest slot attempted for each send day of this campaign.
+
+        Used in the contact date mode, where every day is resumed on its
+        own right after its last slot.
+
+        Args:
+            campaign: Campaign the progress belongs to.
+
+        Returns:
+            A dict mapping each send day passed to mark_attempt() or
+            mark_sent() to its latest slot. Empty when there is none.
+        """
+        pass
+
+    @abstractmethod
     def get_uncertain_attempts(
         self, campaign: Campaign
     ) -> dict[str, list[datetime]]:
@@ -71,30 +89,33 @@ class SendRegistry(ABC):
     @abstractmethod
     def mark_attempt(
         self, campaign: Campaign,
-        key: str, start_date: datetime,
+        key: str, start_date: datetime, day: date | None = None,
     ) -> None:
         """Record that an email is about to be sent to a recipient for a given slot.
 
         Must be called right before calling the delivery service and be
         persisted immediately, so an abrupt close leaves the attempt on
-        record as uncertain. Also advances the campaign's last start date.
+        record as uncertain. Also advances the campaign's last start date,
+        and that of the send day when one is given.
 
         Args:
             campaign: Campaign the progress belongs to.
             key: Key of the recipient about to be emailed.
             start_date: Send slot requested for this email.
+            day: Send day of the recipient in the contact date mode, or None.
         """
         pass
 
     @abstractmethod
     def mark_sent(
         self, campaign: Campaign,
-        key: str, start_date: datetime,
+        key: str, start_date: datetime, day: date | None = None,
     ) -> None:
         """Record that a recipient successfully received an email in this campaign.
 
         Resolves the attempt for the same slot, if any, and advances the
-        campaign's last start date. Earlier unresolved attempts of the same
+        campaign's last start date, and that of the send day when one is
+        given. Earlier unresolved attempts of the same
         recipient are kept, since they may be duplicates. Implementations
         must persist this immediately so progress survives an interruption.
 
@@ -102,6 +123,7 @@ class SendRegistry(ABC):
             campaign: Campaign the progress belongs to.
             key: Key of the recipient that was successfully emailed.
             start_date: Send slot the email was scheduled for.
+            day: Send day of the recipient in the contact date mode, or None.
         """
         pass
 

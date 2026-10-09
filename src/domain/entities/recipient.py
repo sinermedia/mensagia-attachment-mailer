@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,8 @@ class Recipient:
             spreadsheet shows it, or None when the source has no rows.
         skip_reason: Machine-readable reason why the recipient cannot be
             sent (e.g. 'no_email'), or None when it can.
+        send_date: Day the recipient must be sent on, in the contact date
+            start mode; None otherwise or when it could not be read.
     """
 
     key: str
@@ -29,3 +32,4 @@ class Recipient:
     name: str = ""
     row: int | None = None
     skip_reason: str | None = None
+    send_date: date | None = None

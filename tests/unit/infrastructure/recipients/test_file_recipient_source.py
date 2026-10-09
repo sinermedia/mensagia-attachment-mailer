@@ -1,8 +1,10 @@
 import json
+from datetime import date, datetime
 
 import openpyxl
 import pytest
 
+from src.domain.date_input import DateFormat
 from src.domain.file_rows import row_key
 from src.infrastructure.files.table_file import TableFileError
 from src.infrastructure.recipients.file_recipient_source import FileRecipientSource
@@ -140,3 +142,80 @@ class TestFileRecipientSourceIdentity:
     def test_log_fields_leave_out_the_sheet_of_a_csv(self, tmp_path):
         """A CSV file has no sheet to name."""
         assert "sheet" not in source_for(str(tmp_path / "f.csv")).log_fields
+
+
+def dated_source(path: str, fmt: DateFormat = DateFormat.DMY_SLASH) -> FileRecipientSource:
+    """Build a source reading the send day from the 'Fecha' column of *path*."""
+    return FileRecipientSource(path, None, "Correo", "Adjunto", date_column="Fecha", date_format=fmt)
+
+
+def write_dated_xlsx(path, dates: list) -> str:
+    """Write a workbook with one sendable row per value of *dates* in its 'Fecha' column."""
+    workbook = openpyxl.Workbook()
+    workbook.active.append(["Correo", "Adjunto", "Fecha"])
+    for i, value in enumerate(dates):
+        workbook.active.append([f"a{i}@x.com", "a.pdf", value])
+    workbook.save(path)
+    return str(path)
+
+
+class TestFileRecipientSourceSendDate:
+    """Covers reading the send day of each row from a column."""
+
+    def test_text_cells_use_the_chosen_format(self, tmp_path):
+        """A date written as text is read with the chosen format."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto;Fecha\na@x.com;a.pdf;2026-11-05\n")
+        [recipient] = dated_source(path, DateFormat.YMD_DASH).get_recipients()
+        assert (recipient.send_date, recipient.skip_reason) == (date(2026, 11, 5), None)
+
+    def test_excel_dates_are_read_directly(self, tmp_path):
+        """A cell that is already an Excel date is read whatever the chosen format."""
+        path = write_dated_xlsx(tmp_path / "f.xlsx", [datetime(2026, 11, 5), date(2026, 11, 6)])
+        recipients = dated_source(path, DateFormat.YMD_DASH).get_recipients()
+        assert [r.send_date for r in recipients] == [date(2026, 11, 5), date(2026, 11, 6)]
+
+    def test_excel_dates_with_a_time_are_skipped(self, tmp_path):
+        """An Excel date with a time other than 00:00 is skipped."""
+        path = write_dated_xlsx(tmp_path / "f.xlsx", [datetime(2026, 11, 5, 9, 30)])
+        assert dated_source(path).get_recipients()[0].skip_reason == "send_date_has_time"
+
+    @pytest.mark.parametrize("value, reason", [
+        ("", "no_send_date"),
+        ("5-11-2026", "invalid_send_date"),
+        ("5/11/2026 09:00", "send_date_has_time"),
+    ])
+    def test_unusable_text_dates_are_skipped(self, tmp_path, value, reason):
+        """An empty, unreadable or timed text date skips the row with its reason."""
+        path = write_csv(tmp_path / "f.csv", f"Correo;Adjunto;Fecha\na@x.com;a.pdf;{value}\n")
+        assert dated_source(path).get_recipients()[0].skip_reason == reason
+
+    def test_numbers_are_invalid_dates(self, tmp_path):
+        """A number in the date column is not a date."""
+        path = write_dated_xlsx(tmp_path / "f.xlsx", [12])
+        assert dated_source(path).get_recipients()[0].skip_reason == "invalid_send_date"
+
+    def test_same_row_on_another_date_is_not_a_duplicate(self, tmp_path):
+        """The same address and attachment on two dates are two rows to send; on the same date, a duplicate."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto;Fecha\n"
+                         "a@x.com;a.pdf;5/11/2026\na@x.com;a.pdf;6/11/2026\na@x.com;a.pdf;05/11/26\n")
+        reasons = [r.skip_reason for r in dated_source(path).get_recipients()]
+        assert reasons == [None, None, "duplicate_row"]
+
+    def test_key_holds_the_date(self, tmp_path):
+        """The key of a dated row holds its send day."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto;Fecha\na@x.com;a.pdf;5/11/2026\n")
+        assert dated_source(path).get_recipients()[0].key == row_key("a@x.com", "a.pdf", "2026-11-05")
+
+    def test_missing_date_column_is_reported(self, tmp_path):
+        """A date column that is no longer in the file is reported with its name."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto\na@x.com;a.pdf\n")
+        with pytest.raises(TableFileError) as info:
+            dated_source(path).get_recipients()
+        assert info.value.details == {"name": "Fecha"}
+
+    def test_date_field_and_log(self, tmp_path):
+        """The source names its date column, and the log shows it with its format."""
+        source = dated_source(str(tmp_path / "f.csv"))
+        assert source.date_field == "Fecha"
+        assert source.log_fields["date_column"] == "Fecha"
+        assert source.log_fields["date_format"] == "dd/mm/yyyy"

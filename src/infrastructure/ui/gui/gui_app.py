@@ -27,8 +27,13 @@ from src.infrastructure.logging.send_logger import SendLogger
 from src.domain.entities.campaign import Campaign
 from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
 from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
-from src.infrastructure.ui.start_time import StartInputError, default_start_fields, read_fixed_start, summary_start_lines
-from src.domain.scheduling import StartMode
+from src.infrastructure.ui.start_time import (
+    StartInputError, default_start_fields, read_contact_start_time, read_fixed_start, summary_start_lines,
+)
+from src.infrastructure.ui.send_summary import date_format_label, day_lines, repeated_lines, skipped_lines
+from src.domain.scheduling import StartMode, preview_days, split_by_send_date
+from src.domain.date_input import DateFormat
+from src.domain.file_rows import rows_on_several_dates
 
 
 # Apply the light theme globally before any widget is created;
@@ -113,6 +118,12 @@ class App(ctk.CTk):
             only a simulation is possible because nothing can be sent.
         _start_mode: Start mode accepted on the subject step.
         _start_at: Start date and time accepted in the fixed mode, or None.
+        _start_time: Time accepted in the contact date mode, or None.
+        selected_date_field: Extra field chosen for the send day of each
+            contact (agenda, contact date mode), or None.
+        _date_format: Format chosen for the send days, or None.
+        _date_column: Column chosen for the send day of each row (file,
+            contact date mode), or None.
         _source_kind: Where the recipients come from, accepted on the
             subject step: 'agenda' or 'file'.
         _file_path: File chosen on the file step, or None.
@@ -158,8 +169,10 @@ class App(ctk.CTk):
         # Start chosen on the subject step; the fields are only read on Next
         self._start_mode = StartMode.NOW
         self._start_at = None
+        self._start_time = None
         self._source_kind = "agenda"
         self._reset_file_state()
+        self._reset_date_field()
 
         # Updates handed over by background threads, applied by _pump_ui
         self._ui_queue = queue.Queue()
@@ -232,8 +245,10 @@ class App(ctk.CTk):
         self.selected_field = None
         self._start_mode = StartMode.NOW
         self._start_at = None
+        self._start_time = None
         self._source_kind = "agenda"
         self._reset_file_state()
+        self._reset_date_field()
 
         self._build_frames()
         self._show_frame("token")
@@ -246,6 +261,12 @@ class App(ctk.CTk):
         self._file_columns = []
         self._email_column = None
         self._attachment_column = None
+        self._date_column = None
+
+    def _reset_date_field(self):
+        """Forget the send day field and format chosen for the contact date mode."""
+        self.selected_date_field = None
+        self._date_format = None
 
     # ── Frame container ────────────────────────────────────────────────────────
 
@@ -262,7 +283,7 @@ class App(ctk.CTk):
         self._frames = {}
 
         # Create an empty frame for each wizard step
-        for name in ("token", "subject", "template", "sender", "group", "field", "file", "columns",
+        for name in ("token", "subject", "template", "sender", "group", "field", "date", "file", "columns",
                      "certified", "summary", "sending"):
             frame = ctk.CTkFrame(self._container, fg_color="transparent")
             frame.grid(row=0, column=0, sticky="nsew")
@@ -279,6 +300,7 @@ class App(ctk.CTk):
         self._build_sender_frame()
         self._build_group_frame()
         self._build_field_frame()
+        self._build_date_frame()
         self._build_file_frame()
         self._build_columns_frame()
         self._build_certified_frame()
@@ -396,7 +418,8 @@ class App(ctk.CTk):
         # later mode only needs one more button here
         ctk.CTkLabel(f, text=t("start_label"), font=ctk.CTkFont(size=13)).pack(anchor="w", pady=(8, 4))
         self._start_mode_var = tk.StringVar(value=StartMode.NOW.value)
-        for mode, key in ((StartMode.NOW, "start_now"), (StartMode.FIXED, "start_fixed")):
+        for mode, key in ((StartMode.NOW, "start_now"), (StartMode.FIXED, "start_fixed"),
+                          (StartMode.CONTACT_DATE, "start_contact_date")):
             ctk.CTkRadioButton(f, text=t(key), variable=self._start_mode_var, value=mode.value,
                                command=self._update_start_fields,
                                font=ctk.CTkFont(size=13)).pack(anchor="w", pady=2)
@@ -464,17 +487,25 @@ class App(ctk.CTk):
         self._update_start_fields()
 
     def _update_start_fields(self):
-        """Enable the date and time fields only for the fixed start mode.
+        """Enable the date and time fields that the chosen start mode uses.
 
-        They stay visible in the "now" mode so the page keeps its layout
-        when the mode changes.
+        The fixed mode uses both; the contact date mode only the time, since
+        the day comes from each contact. They stay visible in the other
+        modes so the page keeps its layout when the mode changes.
         """
-        enabled = self._start_mode_var.get() == StartMode.FIXED.value
-        entry_color, label_color = self._start_enabled_colors if enabled else (_DISABLED_TEXT, _DISABLED_TEXT)
-        for entry in self._start_fields:
-            entry.configure(state="normal" if enabled else "disabled", text_color=entry_color)
-        for label in self._start_labels:
-            label.configure(text_color=label_color)
+        mode = self._start_mode_var.get()
+        date_enabled = mode == StartMode.FIXED.value
+        time_enabled = mode in (StartMode.FIXED.value, StartMode.CONTACT_DATE.value)
+
+        # The first three fields and labels (row label and two separators)
+        # belong to the date, the rest to the time
+        for i, entry in enumerate(self._start_fields):
+            enabled = date_enabled if i < 3 else time_enabled
+            color = self._start_enabled_colors[0] if enabled else _DISABLED_TEXT
+            entry.configure(state="normal" if enabled else "disabled", text_color=color)
+        for i, label in enumerate(self._start_labels):
+            enabled = date_enabled if i < 3 else time_enabled
+            label.configure(text_color=self._start_enabled_colors[1] if enabled else _DISABLED_TEXT)
         self._start_error.configure(text="")
 
     def _advance_start_field(self, index: int, event):
@@ -499,14 +530,16 @@ class App(ctk.CTk):
     def _start_selections(self) -> dict:
         """Return the start choices to remember for the next session.
 
-        In the "now" mode the time chosen in an earlier fixed start is
-        kept, so switching back to the fixed mode proposes it again.
+        In the "now" mode the time chosen in an earlier start is kept, so
+        switching back to another mode proposes it again.
 
         Returns:
             The 'start_mode' and 'start_time' ('hh:mm') entries to save.
         """
         if self._start_at is not None:
             start_time = self._start_at.strftime("%H:%M")
+        elif self._start_time is not None:
+            start_time = self._start_time.strftime("%H:%M")
         else:
             start_time = self._last_sel.get("start_time")
         return {"start_mode": self._start_mode.value, "start_time": start_time}
@@ -528,16 +561,20 @@ class App(ctk.CTk):
         # mistake is reported on this page. If it gets too close while the
         # user goes through the other steps, the send postpones it
         mode = StartMode(self._start_mode_var.get())
-        start_at = None
-        if mode == StartMode.FIXED:
-            day, month, year, hour, minute = (entry.get().strip() for entry in self._start_fields)
-            try:
+        start_at = start_time = None
+        day, month, year, hour, minute = (entry.get().strip() for entry in self._start_fields)
+        try:
+            if mode == StartMode.FIXED:
                 start_at = read_fixed_start(f"{day}/{month}/{year}", f"{hour}:{minute}", _now())
-            except StartInputError as e:
-                self._start_error.configure(text=str(e))
-                return
+            elif mode == StartMode.CONTACT_DATE:
+                # No limit to check: the emails of today fall back to the
+                # "now" schedule when the time has passed
+                start_time = read_contact_start_time(f"{hour}:{minute}")
+        except StartInputError as e:
+            self._start_error.configure(text=str(e))
+            return
         self._start_error.configure(text="")
-        self._start_mode, self._start_at = mode, start_at
+        self._start_mode, self._start_at, self._start_time = mode, start_at, start_time
         self._source_kind = self._source_var.get()
         self._load_templates()
 
@@ -822,13 +859,109 @@ class App(ctk.CTk):
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _field_next(self):
-        """Validate that an extra field is selected and advance to the certified step."""
+        """Validate that an extra field is selected and advance to the date or certified step."""
         val = self._field_var.get()
         if not val:
             self._field_error.configure(text="  ⚠")
             return
         self.selected_field = next(ef for ef in self.extra_fields if str(ef.id) == val)
         self._field_error.configure(text="")
+        if self._start_mode == StartMode.CONTACT_DATE:
+            self._show_date_step()
+        else:
+            self._show_frame("certified")
+
+    # ── Step 5b (agenda, contact date mode): Send date field ────────────────────
+
+    def _build_date_frame(self):
+        """Build the step that chooses the custom field and format of the send day."""
+        f = self._frames["date"]
+        ctk.CTkLabel(f, text=t("step_date_field"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
+        ctk.CTkLabel(f, text=t("date_field_label"), font=ctk.CTkFont(size=13)).pack(anchor="w")
+        self._date_field_var = tk.StringVar()
+        self._date_field_list = ctk.CTkScrollableFrame(f, height=200)
+        self._date_field_list.pack(fill="x", pady=(4, 0))
+        self._date_format_var = tk.StringVar(value="")
+        self._date_format_menu = self._build_date_format_menu(f)
+        self._date_field_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12),
+                                              wraplength=560, justify="left")
+        self._date_field_error.pack(anchor="w", pady=(8, 0))
+        self._nav_buttons(f, back="field", next_cmd=self._date_next)
+
+    def _build_date_format_menu(self, parent, variable=None):
+        """Add the date format selector, labelled, to a step.
+
+        The menu shows each format with the letters of the language, while
+        its variable holds the DateFormat value.
+
+        Args:
+            parent: Frame to add the selector to.
+            variable: StringVar receiving the chosen DateFormat value;
+                defaults to the date field step one.
+
+        Returns:
+            The CTkOptionMenu created.
+        """
+        variable = variable or self._date_format_var
+        labels = {date_format_label(fmt): fmt.value for fmt in DateFormat}
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(anchor="w", pady=(8, 0))
+        ctk.CTkLabel(row, text=t("date_format_label"), font=ctk.CTkFont(size=13)).pack(side="left", padx=(0, 8))
+        menu = ctk.CTkOptionMenu(row, values=list(labels), width=160,
+                                 command=lambda label: variable.set(labels[label]))
+        menu.pack(side="left")
+
+        # Keep the menu showing the format whenever the variable is set
+        names = {value: label for label, value in labels.items()}
+        variable.trace_add("write", lambda *_: menu.set(names.get(variable.get(), "")))
+        return menu
+
+    def _remembered_date_format(self) -> str:
+        """Return the date format to preselect: the one used last, or the first one.
+
+        Returns:
+            A DateFormat value.
+        """
+        saved = self._last_sel.get("date_format")
+        return saved if saved in {fmt.value for fmt in DateFormat} else DateFormat.DMY_SLASH.value
+
+    def _show_date_step(self):
+        """Offer every custom field for the send day, except the attachment one.
+
+        The attachment field stays listed but cannot be selected, so the
+        list matches the one of the previous step. The field and format used
+        last time are preselected.
+        """
+        for w in self._date_field_list.winfo_children():
+            w.destroy()
+        self._date_field_var.set("")
+        for ef in self.extra_fields:
+            ctk.CTkRadioButton(
+                self._date_field_list, text=f"[{ef.id}]  {ef.name}" if self._show_ids else ef.name,
+                variable=self._date_field_var, value=str(ef.id), font=ctk.CTkFont(size=13),
+                state="disabled" if ef.name == self.selected_field.name else "normal",
+            ).pack(anchor="w", pady=2)
+        saved = self._last_sel.get("date_field")
+        match = next((ef for ef in self.extra_fields if ef.name == saved and ef.name != self.selected_field.name), None)
+        if match:
+            self._date_field_var.set(str(match.id))
+        self._date_format_var.set(self._remembered_date_format())
+        self._date_field_error.configure(text="")
+        self._show_frame("date")
+
+    def _date_next(self):
+        """Validate the send day field and advance to the certified step."""
+        val = self._date_field_var.get()
+        if not val:
+            self._date_field_error.configure(text="  ⚠")
+            return
+        field = next(ef for ef in self.extra_fields if str(ef.id) == val)
+        if field.name == self.selected_field.name:
+            self._date_field_error.configure(text=t("date_field_error_same"))
+            return
+        self._date_field_error.configure(text="")
+        self.selected_date_field = field
+        self._date_format = DateFormat(self._date_format_var.get())
         self._show_frame("certified")
 
     # ── Step 4 (file): File and sheet ──────────────────────────────────────────
@@ -946,7 +1079,12 @@ class App(ctk.CTk):
     # ── Step 5 (file): Columns ─────────────────────────────────────────────────
 
     def _build_columns_frame(self):
-        """Build the step that chooses the email and attachment columns."""
+        """Build the step that chooses the email and attachment columns.
+
+        In the contact date mode it also chooses the column of the send day
+        and the format of the dates written as text; those controls sit in
+        a box that is only shown in that mode.
+        """
         f = self._frames["columns"]
         ctk.CTkLabel(f, text=t("step_columns"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
         self._email_column_var = tk.StringVar(value="")
@@ -959,6 +1097,20 @@ class App(ctk.CTk):
             menu.pack(anchor="w")
             menus.append(menu)
         self._email_column_menu, self._attachment_column_menu = menus
+
+        # Send day column and format, packed into their slot only when needed
+        self._date_column_slot = ctk.CTkFrame(f, fg_color="transparent")
+        self._date_column_slot.pack(anchor="w", fill="x")
+        self._date_column_box = ctk.CTkFrame(self._date_column_slot, fg_color="transparent")
+        self._date_column_var = tk.StringVar(value="")
+        ctk.CTkLabel(self._date_column_box, text=t("date_column_label"), font=ctk.CTkFont(size=13)).pack(anchor="w", pady=(8, 4))
+        self._date_column_menu = ctk.CTkOptionMenu(self._date_column_box, values=[""], variable=self._date_column_var, width=300)
+        self._date_column_menu.pack(anchor="w")
+        self._column_date_format_var = tk.StringVar(value="")
+        self._build_date_format_menu(self._date_column_box, self._column_date_format_var)
+        ctk.CTkLabel(self._date_column_box, text=t("date_format_hint"), font=ctk.CTkFont(size=12), text_color="gray",
+                     wraplength=560, justify="left").pack(anchor="w", pady=(4, 0))
+
         self._columns_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12),
                                            wraplength=560, justify="left")
         self._columns_error.pack(anchor="w", pady=(8, 0))
@@ -978,28 +1130,47 @@ class App(ctk.CTk):
             menu.configure(values=self._file_columns)
             remembered = self._last_sel.get(key)
             variable.set(remembered if remembered in self._file_columns else "")
+
+        # The send day column is only asked for in the contact date mode
+        self._date_column_box.pack_forget()
+        if self._start_mode == StartMode.CONTACT_DATE:
+            self._date_column_menu.configure(values=self._file_columns)
+            remembered = self._last_sel.get("date_column")
+            self._date_column_var.set(remembered if remembered in self._file_columns else "")
+            self._column_date_format_var.set(self._remembered_date_format())
+            self._date_column_box.pack(anchor="w", fill="x")
         self._columns_error.configure(text="")
         self._show_frame("columns")
 
     def _columns_next(self):
         """Validate the chosen columns and advance to the certified step."""
-        email_column = self._email_column_var.get()
-        attachment_column = self._attachment_column_var.get()
-        if not email_column or not attachment_column:
+        chosen = [self._email_column_var.get(), self._attachment_column_var.get()]
+        by_day = self._start_mode == StartMode.CONTACT_DATE
+        if by_day:
+            chosen.append(self._date_column_var.get())
+        if not all(chosen):
             self._columns_error.configure(text="  ⚠")
             return
-        if email_column == attachment_column:
+        if len(set(chosen)) < len(chosen):
             self._columns_error.configure(text=t("columns_error_same"))
             return
         self._columns_error.configure(text="")
-        self._email_column, self._attachment_column = email_column, attachment_column
+        self._email_column, self._attachment_column = chosen[:2]
+        if by_day:
+            self._date_column = chosen[2]
+            self._date_format = DateFormat(self._column_date_format_var.get())
         self._show_frame("certified")
 
     # ── Step 6: Certified ──────────────────────────────────────────────────────
 
     def _certified_back(self):
         """Go back from the certified step to the last step of the chosen source."""
-        self._show_frame("columns" if self._source_kind == "file" else "field")
+        if self._source_kind == "file":
+            self._show_frame("columns")
+        elif self._start_mode == StartMode.CONTACT_DATE:
+            self._show_frame("date")
+        else:
+            self._show_frame("field")
 
     def _build_certified_frame(self):
         """Build the certified email option step (step 6).
@@ -1034,6 +1205,7 @@ class App(ctk.CTk):
         self._summary_text.configure(text="")
         self._summary_contacts_label.configure(text=t("loading"))
         self._summary_skipped_label.configure(text="")
+        self._show_summary_details([])
         self._summary_error.configure(text="")
 
         # Keep both send actions out of reach until we know there is something
@@ -1064,6 +1236,13 @@ class App(ctk.CTk):
         self._summary_contacts_label.pack(anchor="w", pady=(8, 0))
         self._summary_skipped_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=12), text_color="gray")
         self._summary_skipped_label.pack(anchor="w")
+
+        # Details that can be long (reasons, one line per day, repeated rows)
+        # go in a scrollable box, packed into its slot only when there are any
+        self._summary_details_slot = ctk.CTkFrame(f, fg_color="transparent")
+        self._summary_details_slot.pack(anchor="w", fill="x")
+        self._summary_details = ctk.CTkTextbox(self._summary_details_slot, height=110, wrap="word",
+                                               font=ctk.CTkFont(size=12))
         self._summary_error = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=12), text_color="red",
                                            wraplength=460, justify="left")
         self._summary_error.pack(anchor="w", pady=(8, 0))
@@ -1088,29 +1267,46 @@ class App(ctk.CTk):
 
         Returns:
             The RecipientSource of the chosen file, sheet and columns, or of
-            the selected group and attachment field.
+            the selected group and attachment field; with the send day field
+            or column in the contact date mode.
         """
+        by_day = self._start_mode == StartMode.CONTACT_DATE
+
         # The base URL lets a file tell a relative path and the full URL it
         # resolves to apart from different files when looking for duplicates
         if self._source_kind == "file":
             return FileRecipientSource(self._file_path, self._file_sheet,
                                        self._email_column, self._attachment_column,
-                                       self._base_url_entry.get().strip() or None)
+                                       self._base_url_entry.get().strip() or None,
+                                       date_column=self._date_column if by_day else None,
+                                       date_format=self._date_format if by_day else None)
         return AgendaRecipientSource(MensagiaContactRepository(self.client),
-                                     self.selected_agenda.id, self.selected_field.name)
+                                     self.selected_agenda.id, self.selected_field.name,
+                                     self.selected_date_field.name if by_day else None,
+                                     self._date_format if by_day else None)
 
     def _source_summary_lines(self) -> list[str]:
         """Describe the chosen recipient source in the summary.
 
         Returns:
             The file, sheet and columns for a file; the group and the
-            extra field for an agenda group.
+            extra field for an agenda group; and the send day field or
+            column with its format in the contact date mode.
         """
+        by_day = self._start_mode == StartMode.CONTACT_DATE
         if self._source_kind == "file":
-            return file_summary_lines(self._file_path, self._file_sheet,
-                                      self._email_column, self._attachment_column)
-        return [t("summary_group", value=self.selected_agenda.name),
-                t("summary_field", value=self.selected_field.name)]
+            lines = file_summary_lines(self._file_path, self._file_sheet,
+                                       self._email_column, self._attachment_column)
+            if by_day:
+                lines.append(t("summary_date_column", value=self._date_column,
+                               format=date_format_label(self._date_format)))
+            return lines
+        lines = [t("summary_group", value=self.selected_agenda.name),
+                 t("summary_field", value=self.selected_field.name)]
+        if by_day:
+            lines.append(t("summary_date_field", value=self.selected_date_field.name,
+                           format=date_format_label(self._date_format)))
+        return lines
 
     def _fetch_summary(self, source):
         """Background thread: read the chosen recipients for the summary.
@@ -1154,8 +1350,10 @@ class App(ctk.CTk):
         """
         # The source tells which recipients cannot be sent (no email, no attachment...)
         eligible = [r for r in recipients if r.skip_reason is None]
+        skipped = [r for r in recipients if r.skip_reason is not None]
         source = self._recipient_source()
         subject = self._subject_entry.get().strip()
+        by_day = self._start_mode == StartMode.CONTACT_DATE
 
         # Texts that count contacts of a group, or rows of a file
         rows = self._source_kind == "file"
@@ -1165,7 +1363,7 @@ class App(ctk.CTk):
         # duplicates), and let the user decide whether to skip the sent
         # ones or start the whole campaign over again
         campaign = Campaign(source.identity, self.selected_template.id, source.attachment_field,
-                            subject, self._start_mode)
+                            subject, self._start_mode, source.date_field)
         sent_keys = self._send_registry.get_sent_keys(campaign)
         already_sent_count = len([r for r in eligible if r.key in sent_keys])
         uncertain = self._send_registry.get_uncertain_attempts(campaign)
@@ -1179,10 +1377,29 @@ class App(ctk.CTk):
             continue_pending = messagebox.askyesno(t("resume_title"), "\n\n".join(parts))
             if not continue_pending:
                 self._send_registry.clear(campaign)
+                sent_keys = set()
                 already_sent_count = 0
 
-        # Number of recipients that will actually be sent to in this run
-        to_send_count = len(eligible) - already_sent_count
+        # Recipients that will actually be sent to in this run. Sending by
+        # contact date, the same checks as the send leave out the days that
+        # have passed or are too far, and the schedule of each day is estimated
+        pending = [r for r in eligible if r.key not in sent_keys]
+        details = []
+        if by_day:
+            now = _now()
+            pending, out_of_range = split_by_send_date(pending, self._start_time, now)
+            skipped += out_of_range
+            details = day_lines(preview_days([r.send_date for r in pending], self._start_time, now,
+                                             self._send_registry.get_last_start_dates_by_day(campaign)))
+        to_send_count = len(pending)
+
+        # The discarded total stays in view; the reasons, when there are
+        # several, go to the details with the per-day table and the warning
+        # about the same address and attachment on several dates
+        headline, *reasons = skipped_lines(skipped, rows)
+        repeated = repeated_lines(rows_on_several_dates(pending)) if rows and by_day else []
+        details = [line.strip() for line in reasons] + ([""] if reasons and details else []) + details
+        details += ([""] if details and repeated else []) + repeated
 
         # Build the multi-line summary text with all selected options
         lines = "\n".join([
@@ -1191,12 +1408,12 @@ class App(ctk.CTk):
             t("summary_template", value=self.selected_template.name),
             *self._source_summary_lines(),
             t("summary_certified", value=t("yes") if self._certified_var.get() else t("no")),
-            *summary_start_lines(self._start_mode, self._start_at),
+            *summary_start_lines(self._start_mode, self._start_at, self._start_time),
         ])
         self._summary_text.configure(text=lines)
-        count_key, skipped_key = ("summary_rows", "summary_skipped_rows") if rows else ("summary_contacts", "summary_skipped")
-        self._summary_contacts_label.configure(text=t(count_key, count=to_send_count))
-        self._summary_skipped_label.configure(text=t(skipped_key, count=len(recipients) - len(eligible)))
+        self._summary_contacts_label.configure(text=t("summary_rows" if rows else "summary_contacts", count=to_send_count))
+        self._summary_skipped_label.configure(text=headline)
+        self._show_summary_details(details)
         no_eligible = t("no_eligible_rows" if rows else "no_eligible_contacts")
 
         # Without a single recipient there is nothing to send nor to explain
@@ -1206,9 +1423,10 @@ class App(ctk.CTk):
             return
 
         # A source can hold recipients and still have none that can be written
-        # to, when they lack a valid address or an attachment. Say so, and
-        # point to the simulation: its log gives the reason for each one
-        if not eligible:
+        # to, when they lack a valid address, an attachment or a usable send
+        # day. Say so, and point to the simulation: its log gives the reason
+        # for each one
+        if not pending and not already_sent_count:
             self._summary_error.configure(text=no_eligible + "\n" + t("no_eligible_simulate_hint"))
 
         # Simulating is always possible from here on, but a real send only
@@ -1218,6 +1436,20 @@ class App(ctk.CTk):
         self._dry_run_btn.configure(state="normal")
         if self._can_send:
             self._send_btn.configure(state="normal")
+
+    def _show_summary_details(self, lines: list[str]):
+        """Fill the scrollable details of the summary, hiding the box when empty.
+
+        Args:
+            lines: Lines to show; an empty string leaves a blank line.
+        """
+        self._summary_details.configure(state="normal")
+        self._summary_details.delete("1.0", "end")
+        self._summary_details.pack_forget()
+        if lines:
+            self._summary_details.insert("1.0", "\n".join(lines))
+            self._summary_details.pack(anchor="w", fill="x", pady=(4, 0))
+        self._summary_details.configure(state="disabled")
 
     # ── Step 8: Sending ────────────────────────────────────────────────────────
 
@@ -1263,17 +1495,26 @@ class App(ctk.CTk):
             "certified": self._certified_var.get(),
             **self._start_selections(),
         })
+        by_day = self._start_mode == StartMode.CONTACT_DATE
         if self._source_kind == "file":
             selections.update({
                 "file_dir": str(Path(self._file_path).parent),
                 "email_column": self._email_column,
                 "attachment_column": self._attachment_column,
             })
+            if by_day:
+                selections["date_column"] = self._date_column
         else:
             selections.update({
                 "agenda_id": str(self.selected_agenda.id),
                 "field_id": str(self.selected_field.id),
             })
+            if by_day:
+                selections["date_field"] = self.selected_date_field.name
+
+        # The format is shared by both sources: it is usually the same habit
+        if by_day:
+            selections["date_format"] = self._date_format.value
         return selections
 
     def _reset_for_new_send(self):
@@ -1298,6 +1539,8 @@ class App(ctk.CTk):
 
         # Forget the file: the next send is usually made with a new one
         self._reset_file_state()
+        self._reset_date_field()
+        self._date_field_var.set("")
         self._file_name_label.configure(text=t("file_none"))
         self._sheet_row.pack_forget()
         self._file_error.configure(text="")
@@ -1363,6 +1606,7 @@ class App(ctk.CTk):
                     send_registry=self._send_registry,
                     start_mode=self._start_mode,
                     start_at=self._start_at,
+                    start_time=self._start_time,
                 )
 
                 # Build the result text, appending per-contact error details if any

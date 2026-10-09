@@ -75,3 +75,28 @@ def skip_duplicate_rows(recipients: list[Recipient]) -> list[Recipient]:
                 seen.add(recipient.key)
         result.append(recipient)
     return result
+
+
+def rows_on_several_dates(recipients: list[Recipient]) -> list[list[Recipient]]:
+    """Find the address and attachment pairs that will be sent on different days.
+
+    With send days, the same address and attachment on two days are two
+    emails and both are sent. That may be intended (a reminder) or a
+    mistake in the file, so the summary warns about them and the user can
+    remove the extra ones in the Mensagia portal.
+
+    Args:
+        recipients: Rows of the file, in any order (the send orders them
+            by date).
+
+    Returns:
+        One group per repeated pair, each with its sendable rows in file
+        order; groups are ordered by their first row. Rows without a send
+        day or that will not be sent are left out.
+    """
+    groups = {}
+    for recipient in sorted(recipients, key=lambda r: r.row or 0):
+        if recipient.skip_reason is None and recipient.send_date is not None:
+            _, email, attachment = json.loads(recipient.key)
+            groups.setdefault((email, attachment), []).append(recipient)
+    return [rows for rows in groups.values() if len({r.send_date for r in rows}) > 1]

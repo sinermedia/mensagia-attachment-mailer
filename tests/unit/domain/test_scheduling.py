@@ -1,9 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 import pytest
 from src.domain.scheduling import (
-    MAX_SCHEDULE_AHEAD, MIN_START_LEAD, SECONDS_BETWEEN_EMAILS, StartTooFarError, StartTooSoonError,
-    calculate_start_dates, default_start_time, next_ten_minute_mark, validate_fixed_start,
+    MAX_SCHEDULE_AHEAD, MIN_START_LEAD, SECONDS_BETWEEN_EMAILS, DayPreview, SendSchedule, StartMode,
+    StartTooFarError, StartTooSoonError, calculate_start_dates, default_start_time, next_ten_minute_mark,
+    preview_days, send_date_skip_reason, split_by_send_date, validate_fixed_start,
 )
+from src.domain.entities.recipient import Recipient
 
 
 class TestNextTenMinuteMark:
@@ -265,3 +267,168 @@ class TestValidateFixedStart:
     def test_maximum_lead_is_six_weeks(self):
         """The maximum lead is six weeks."""
         assert MAX_SCHEDULE_AHEAD == timedelta(weeks=6)
+
+
+class TestSendScheduleByContactDate:
+    """Tests for SendSchedule with the contact date start mode.
+
+    Each contact is sent on its own day at the chosen time, 12 seconds
+    after the previous email of the same day. The rules are applied when
+    each email is scheduled, with the current time of that moment.
+    """
+
+    # Thursday 8 October 2026, 10:07; the chosen time is 10:00
+    NOW = datetime(2026, 10, 8, 10, 7, 0)
+    TODAY = date(2026, 10, 8)
+    TOMORROW = date(2026, 10, 9)
+    TEN = time(10, 0)
+
+    def schedule(self, last_by_day=None) -> SendSchedule:
+        """Build a contact date schedule at 10:00, optionally resuming."""
+        return SendSchedule(StartMode.CONTACT_DATE, start_time=self.TEN, last_scheduled=last_by_day)
+
+    def test_future_day_starts_at_the_chosen_time(self):
+        """The first email of a future day goes out at the chosen time of that day."""
+        assert self.schedule().next_slot(self.TOMORROW, self.NOW) == datetime(2026, 10, 9, 10, 0, 0)
+
+    def test_each_day_counts_its_own_emails(self):
+        """The 12-second gap is counted per day, starting again at the chosen time each day."""
+        schedule = self.schedule()
+        slots = [schedule.next_slot(day, self.NOW) for day in (self.TOMORROW, date(2026, 10, 10), self.TOMORROW)]
+        assert slots == [datetime(2026, 10, 9, 10, 0, 0), datetime(2026, 10, 10, 10, 0, 0), datetime(2026, 10, 9, 10, 0, 12)]
+
+    def test_today_after_the_chosen_time_uses_the_now_schedule(self):
+        """At 10:07 with 10:00 chosen, the emails of today go out at 10:20:00, 10:20:12..."""
+        schedule = self.schedule()
+        assert [schedule.next_slot(self.TODAY, self.NOW) for _ in range(2)] == [
+            datetime(2026, 10, 8, 10, 20, 0), datetime(2026, 10, 8, 10, 20, 12),
+        ]
+
+    def test_today_with_enough_lead_uses_the_chosen_time(self):
+        """The emails of today go out at the chosen time when it is at least 10 minutes ahead."""
+        assert self.schedule().next_slot(self.TODAY, datetime(2026, 10, 8, 9, 50)) == datetime(2026, 10, 8, 10, 0)
+
+    def test_today_with_less_lead_uses_the_now_schedule(self):
+        """A chosen time less than 10 minutes ahead is postponed like the "now" mode."""
+        assert self.schedule().next_slot(self.TODAY, datetime(2026, 10, 8, 9, 55)) == datetime(2026, 10, 8, 10, 10)
+
+    def test_rules_use_the_time_of_each_call(self):
+        """A slot that has lost its lead by the time it is scheduled is postponed then."""
+        schedule = self.schedule()
+        assert schedule.next_slot(self.TODAY, datetime(2026, 10, 8, 9, 49)) == datetime(2026, 10, 8, 10, 0, 0)
+        assert schedule.next_slot(self.TODAY, datetime(2026, 10, 8, 9, 55)) == datetime(2026, 10, 8, 10, 10, 0)
+
+    def test_may_run_past_midnight(self):
+        """The emails of a day may continue after midnight without moving the next day."""
+        schedule = SendSchedule(StartMode.CONTACT_DATE, start_time=time(23, 59, 48))
+        slots = [schedule.next_slot(self.TOMORROW, self.NOW) for _ in range(2)]
+        assert slots == [datetime(2026, 10, 9, 23, 59, 48), datetime(2026, 10, 10, 0, 0, 0)]
+        assert schedule.next_slot(date(2026, 10, 10), self.NOW) == datetime(2026, 10, 10, 23, 59, 48)
+
+    def test_resuming_continues_after_the_last_slot_of_each_day(self):
+        """A resumed send continues each day after its last slot, and starts new days at the chosen time."""
+        schedule = self.schedule({self.TOMORROW: datetime(2026, 10, 9, 10, 0, 24)})
+        assert schedule.next_slot(self.TOMORROW, self.NOW) == datetime(2026, 10, 9, 10, 0, 36)
+        assert schedule.next_slot(date(2026, 10, 10), self.NOW) == datetime(2026, 10, 10, 10, 0, 0)
+
+    def test_resuming_today_without_lead_uses_the_now_schedule(self):
+        """Resumed emails of today use the "now" schedule when the next slot is less than 10 minutes ahead."""
+        schedule = self.schedule({self.TODAY: datetime(2026, 10, 8, 10, 0, 24)})
+        assert schedule.next_slot(self.TODAY, self.NOW) == datetime(2026, 10, 8, 10, 20, 0)
+
+
+class TestSendScheduleSingleStart:
+    """Tests for SendSchedule with the "now" and fixed start modes, where every email shares one sequence."""
+
+    NOW = datetime(2024, 1, 15, 14, 23, 0)
+
+    def test_now_mode_matches_calculate_start_dates(self):
+        """The "now" mode hands out the same slots as calculate_start_dates()."""
+        schedule = SendSchedule(StartMode.NOW)
+        assert [schedule.next_slot(None, self.NOW) for _ in range(3)] == calculate_start_dates(3, self.NOW)
+
+    def test_fixed_mode_starts_at_the_chosen_start(self):
+        """The fixed mode starts at the chosen date and time."""
+        start = datetime(2024, 1, 16, 9, 0)
+        schedule = SendSchedule(StartMode.FIXED, start_at=start)
+        assert [schedule.next_slot(None, self.NOW) for _ in range(2)] == [start, start + timedelta(seconds=12)]
+
+    def test_a_retry_continues_after_the_last_slot(self):
+        """A later call, such as an end-of-run retry, continues after the last slot handed out."""
+        schedule = SendSchedule(StartMode.NOW)
+        first = schedule.next_slot(None, self.NOW)
+        assert schedule.next_slot(None, self.NOW + timedelta(minutes=1)) == first + timedelta(seconds=12)
+
+    def test_a_late_retry_uses_the_now_schedule(self):
+        """A retry made when the next slot has less than 10 minutes of lead is postponed."""
+        schedule = SendSchedule(StartMode.NOW)
+        schedule.next_slot(None, self.NOW)
+        later = datetime(2024, 1, 15, 14, 38, 0)
+        assert schedule.next_slot(None, later) == default_start_time(later)
+
+
+class TestSendDateSkipReason:
+    """Tests for the checks of the send date of a contact against the current time."""
+
+    NOW = datetime(2026, 10, 8, 10, 7, 0)
+
+    def test_today_and_future_days_are_accepted(self):
+        """Today and later days within the limit can be scheduled."""
+        assert send_date_skip_reason(date(2026, 10, 8), time(10, 0), self.NOW) is None
+        assert send_date_skip_reason(date(2026, 10, 9), time(10, 0), self.NOW) is None
+
+    def test_past_day_is_skipped(self):
+        """A day before today is skipped as past_send_date."""
+        assert send_date_skip_reason(date(2026, 10, 7), time(23, 0), self.NOW) == "past_send_date"
+
+    def test_day_beyond_the_limit_is_skipped(self):
+        """A day whose chosen time is more than 6 weeks ahead is skipped as send_date_too_far."""
+        last_allowed = (self.NOW + MAX_SCHEDULE_AHEAD).date()
+        assert send_date_skip_reason(last_allowed, time(10, 7), self.NOW) is None
+        assert send_date_skip_reason(last_allowed, time(10, 8), self.NOW) == "send_date_too_far"
+        assert send_date_skip_reason(last_allowed + timedelta(days=1), time(0, 0), self.NOW) == "send_date_too_far"
+
+
+class TestSplitBySendDate:
+    """Tests for separating the recipients that can be scheduled by their send day."""
+
+    NOW = datetime(2026, 10, 8, 10, 7, 0)
+
+    @staticmethod
+    def recipient(key: str, day: date) -> Recipient:
+        """Build a sendable recipient for *day*."""
+        return Recipient(key=key, email=f"{key}@x.com", attachment="a.pdf", send_date=day)
+
+    def test_keeps_valid_days_in_date_order_and_skips_the_rest(self):
+        """Valid recipients come back ordered by day (stable); past and far ones are skipped with the reason."""
+        recipients = [
+            self.recipient("a", date(2026, 10, 10)), self.recipient("b", date(2026, 10, 7)),
+            self.recipient("c", date(2026, 10, 9)), self.recipient("d", date(2026, 12, 1)),
+            self.recipient("e", date(2026, 10, 9)),
+        ]
+        valid, skipped = split_by_send_date(recipients, time(9, 0), self.NOW)
+        assert [r.key for r in valid] == ["c", "e", "a"]
+        assert [(r.key, r.skip_reason) for r in skipped] == [("b", "past_send_date"), ("d", "send_date_too_far")]
+
+
+class TestPreviewDays:
+    """Tests for the per-day preview of a contact date send shown in the summary."""
+
+    NOW = datetime(2026, 10, 8, 10, 7, 0)
+
+    def test_counts_each_day_with_its_first_and_last_slot(self):
+        """Each day appears once, in date order, with its number of emails and first and last slot."""
+        days = [date(2026, 10, 10), date(2026, 10, 9), date(2026, 10, 10), date(2026, 10, 10)]
+        assert preview_days(days, time(9, 0), self.NOW) == [
+            DayPreview(date(2026, 10, 9), 1, datetime(2026, 10, 9, 9, 0, 0), datetime(2026, 10, 9, 9, 0, 0)),
+            DayPreview(date(2026, 10, 10), 3, datetime(2026, 10, 10, 9, 0, 0), datetime(2026, 10, 10, 9, 0, 24)),
+        ]
+
+    def test_resumed_days_continue_after_their_last_slot(self):
+        """A resumed day starts after the last slot recorded for it."""
+        last = {date(2026, 10, 9): datetime(2026, 10, 9, 9, 1)}
+        assert preview_days([date(2026, 10, 9)], time(9, 0), self.NOW, last)[0].first == datetime(2026, 10, 9, 9, 1, 12)
+
+    def test_no_dates_no_days(self):
+        """Without emails there is nothing to preview."""
+        assert preview_days([], time(9, 0), self.NOW) == []

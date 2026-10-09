@@ -136,15 +136,15 @@ python main.py
 ## Fluxo de envío
 
 1. **Token API** — Lese do `.env` ou solicítase ao usuario.
-2. **Asunto, hora de inicio e orixe** — O usuario introduce o asunto do correo, escolle cando sae o primeiro correo (ver [Programar a hora de inicio](#programar-a-hora-de-inicio)) e de onde saen os destinatarios: un **grupo da axenda** ou un **ficheiro** (ver [Enviar aos destinatarios dun ficheiro](#enviar-aos-destinatarios-dun-ficheiro)).
+2. **Asunto, hora de inicio e orixe** — O usuario introduce o asunto do correo, escolle cando saen os correos: agora, nunha data e hora concretas ou o día de cada contacto (ver [Programar a hora de inicio](#programar-a-hora-de-inicio)) e de onde saen os destinatarios: un **grupo da axenda** ou un **ficheiro** (ver [Enviar aos destinatarios dun ficheiro](#enviar-aos-destinatarios-dun-ficheiro)).
 3. **Modelo** — Móstrase a lista de modelos de email dispoñibles.
 4. **Remitente** — Móstrase a lista de enderezos de envío verificados.
 5. **Grupo ou ficheiro**:
    - Coa axenda, móstrase unha primeira páxina de grupos. Se o grupo buscado non aparece, pódese filtrar polo nome. Os grupos sen contactos móstranse, pero non se poden seleccionar.
    - Cun ficheiro, elíxese o ficheiro e, se é un Excel con varias follas, a folla.
 6. **Campo adxunto ou columnas**:
-   - Coa axenda, elíxese que campo personalizado contén a URL do adxunto.
-   - Cun ficheiro, elíxese que columna contén o correo e cal o adxunto.
+   - Coa axenda, elíxese que campo personalizado contén a URL do adxunto. Se os correos saen o día de cada contacto, a continuación elíxese o campo coa data e o seu formato.
+   - Cun ficheiro, elíxese que columna contén o correo e cal o adxunto. Se os correos saen o día de cada contacto, tamén a columna coa data e o seu formato.
 7. **Certificado** — O usuario decide se certificar os envíos.
 8. **Envío** — Descártanse os destinatarios sen un correo válido ou sen adxunto, e envíase un correo por cada un a razón de 5/minuto.
 
@@ -208,7 +208,7 @@ Descártanse estas filas, e o [log](#simular-un-envío) indica o motivo:
 
 - sen correo (`no_email`) ou cun correo non válido (`invalid_email`);
 - sen adxunto (`no_attachment`);
-- co mesmo correo (sen distinguir maiúsculas) e o mesmo adxunto que unha fila anterior (`duplicate_row`): só se envía a primeira. Un nome de arquivo e a URL completa que se obtén coa URL base contan como o mesmo adxunto.
+- co mesmo correo (sen distinguir maiúsculas) e o mesmo adxunto que unha fila anterior (`duplicate_row`): só se envía a primeira. Se os correos saen o día de cada contacto, tamén debe coincidir a data. Un nome de arquivo e a URL completa que se obtén coa URL base contan como o mesmo adxunto.
 
 No log, cada fila identifícase polo seu número tal como o mostra Excel (a cabeceira é a fila 1), o correo e o adxunto. Por exemplo:
 
@@ -252,10 +252,11 @@ O programa **non envía os correos de forma inmediata**. Por cada contacto elixi
 
 ## Programar a hora de inicio
 
-Na páxina do asunto (no modo consola, xusto despois do asunto) escóllese cando sae o primeiro correo:
+Na páxina do asunto (no modo consola, xusto despois do asunto) escóllese cando saen os correos:
 
 - **Agora**: entre 10 e 20 minutos despois de comezar o envío.
 - **Día e hora concretos**: o primeiro correo sae na data e hora indicadas, e os seguintes, cada 12 segundos. Os envíos poden pasar da medianoite.
+- **Día de cada contacto, a unha hora concreta**: cada correo sae o día indicado nos datos do contacto, á hora escollida (ver [Enviar cada correo o día do contacto](#enviar-cada-correo-o-día-do-contacto)).
 
 A data e a hora escríbense sempre na orde `dd/mm/aaaa` e `hh:mm`, sexa cal sexa o idioma. No modo gráfico hai un campo para cada parte, e o cursor pasa só ao seguinte ao completar un. No modo consola tamén se aceptan outras formas habituais (`8/10/26`, `8-10-2026`, `9h30`, `9`…), e con Intro acéptase o valor proposto entre corchetes.
 
@@ -271,6 +272,54 @@ Límites:
 A aplicación propón a data de hoxe e, como hora, a última escollida no modo gráfico ou, se non hai ningunha, a que correspondería á opción «Agora».
 
 Para [retomar un envío interrompido](#retomar-un-envío-interrompido) hai que repetir exactamente as mesmas opcións, incluído o modo de hora de inicio: se se cambia o modo, trátase como un envío novo. En cambio, cambiar a data ou a hora non crea un envío novo: ao retomalo, os correos continúan despois do último programado, e a nova hora só se usa se ese momento xa non ten 10 minutos de marxe.
+
+---
+
+## Enviar cada correo o día do contacto
+
+Coa opción **Día de cada contacto, a unha hora concreta**, cada destinatario recibe o correo o día indicado nos seus propios datos: nun campo personalizado (axenda) ou nunha columna (ficheiro). Só se escolle a hora, que é a mesma para todos os días.
+
+- Coa axenda, despois do campo do adxunto elíxese o campo coa data. Non pode ser o mesmo que o do adxunto.
+- Cun ficheiro, na páxina de columnas elíxese tamén a columna coa data. Non pode ser ningunha das outras dúas.
+
+Cada día comeza á hora escollida e engade 12 segundos por cada correo anterior **do mesmo día**. Por exemplo, coas 09:00, tres correos do 15/10 saen ás 09:00:00, 09:00:12 e 09:00:24, e un do 16/10, ás 09:00:00.
+
+| Data do contacto | Que pasa |
+|---|---|
+| Un día futuro | Sae á hora escollida dese día |
+| Hoxe | Á hora escollida se faltan polo menos 10 minutos; se non, como con «Agora» (de 10 a 20 minutos despois) |
+| Un día pasado | Descártase (`past_send_date`) |
+| A máis de 6 semanas | Descártase (`send_date_too_far`) |
+| Baleira | Descártase (`no_send_date`) |
+| Con outro formato | Descártase (`invalid_send_date`) |
+| Con hora | Descártase (`send_date_has_time`) |
+
+Por exemplo, ás 10:07 e coa hora 10:00, os contactos de hoxe saen ás 10:20:00, 10:20:12…, e os dos días seguintes, ás 10:00:00, 10:00:12… do seu día.
+
+- Os correos dun día poden pasar da medianoite. O día seguinte non se despraza, aínda que durante un tempo saian máis correos por minuto.
+- Os días prográmanse en orde, do máis próximo ao máis afastado.
+
+### Formato da data
+
+Mensagia non indica o formato dos seus campos de data, así que hai que escollelo: `dd/mm/aaaa`, `dd-mm-aaaa`, `aaaa/mm/dd` ou `aaaa-mm-dd`.
+
+A orde e o separador deben coincidir co formato escollido, pero os ceros son opcionais e o ano pode ter 2 cifras: con `dd/mm/aaaa`, `3/4/26` é o 3 de abril de 2026. Unha data con hora (`15/10/2026 10:00`) descártase.
+
+Nun ficheiro, o formato só se aplica ás datas escritas como texto (nun CSV, ou nun Excel coa cela en formato de texto). As celas que Excel xa recoñece como data lense directamente; se teñen unha hora distinta de 00:00, descártanse.
+
+### Resumo previo
+
+Antes de enviar, o resumo mostra:
+
+- unha táboa cunha fila por día, co número de correos e a hora aproximada do primeiro e do último;
+- os descartados, agrupados por motivo (o detalle de cada un está no log);
+- cun ficheiro, as filas que enviarán o mesmo adxunto ao mesmo enderezo en datas distintas. Envíanse todas; se sobra algunha, pódese eliminar dende o portal de Mensagia.
+
+As horas son orientativas: a hora definitiva de cada correo calcúlase ao programalo.
+
+### Retomar
+
+Cada día retómase por separado: continúa despois do último correo programado dese día ou, se non tiña ningún, á hora escollida (hoxe, só se faltan polo menos 10 minutos). Os contactos pendentes de días que xa pasaron descártanse. O campo ou a columna da data forman parte do envío: se se cambian, é un envío novo.
 
 ---
 
@@ -291,6 +340,10 @@ Motivos de descarte (`reason=` nas liñas `[SEND_SKIP]`):
 - `no_attachment`: o campo personalizado ou a columna do adxunto está baleiro.
 - `duplicate_row`: a fila repite o correo e o adxunto dunha fila anterior (só cun ficheiro).
 - `already_sent`: o destinatario xa recibiu o correo nun envío anterior interrompido da mesma campaña.
+- `no_send_date`, `invalid_send_date` e `send_date_has_time`: a data do contacto está baleira, non ten o formato escollido ou contén unha hora (ver [Enviar cada correo o día do contacto](#enviar-cada-correo-o-día-do-contacto)).
+- `past_send_date` e `send_date_too_far`: a data do contacto xa pasou ou está a máis de 6 semanas.
+
+As liñas `[SEND_OK]` indican tamén a data e a hora para as que se programou cada correo (`start_date`), para atopalo no portal de Mensagia. O resumo previo mostra os descartados agrupados por motivo.
 
 As liñas `[SEND_ERROR]` corresponden a contactos aptos cuxo adxunto non se puido preparar (por exemplo, unha ruta relativa sen URL base ou un ficheiro que non se pode descargar).
 
@@ -302,7 +355,7 @@ Cando **ningún contacto do grupo nin ningunha fila do ficheiro é apto** (ou to
 
 Se un envío se interrompe a medias (péchase a aplicación, córtase a conexión, apágase o ordenador…), a aplicación lembra a que contactos xa se lles programou o correo.
 
-Ao volver preparar **a mesma campaña** (mesmo grupo —ou mesmo ficheiro, folla e columna do correo—, modelo, campo ou columna do adxunto e modo de hora de inicio, e **exactamente o mesmo asunto**), ao chegar ao resumo a aplicación avisa de que hai un envío anterior incompleto e pregunta que facer:
+Ao volver preparar **a mesma campaña** (mesmo grupo —ou mesmo ficheiro, folla e columna do correo—, modelo, campo ou columna do adxunto e modo de hora de inicio —e, se os correos saen o día de cada contacto, o mesmo campo ou columna da data—, e **exactamente o mesmo asunto**), ao chegar ao resumo a aplicación avisa de que hai un envío anterior incompleto e pregunta que facer:
 
 - **Continuar**: só se envía aos contactos pendentes. Os seus correos prográmanse a continuación dos do envío anterior, sen solaparse con eles.
 - **Non continuar**: descártase o envío anterior e vólvese enviar a todos os contactos, incluídos os que xa o recibiron.
@@ -324,7 +377,7 @@ A API de Mensagia non permite consultar os envíos programados, así que esta co
 
 Tras cada envío ou simulación, a aplicación garda os parámetros escollidos
 (orixe dos destinatarios, modelo, remitente, grupo, campo adxunto, cartafol do último ficheiro,
-columnas do correo e do adxunto, certificado, e o modo e a hora de inicio) nun ficheiro
+columnas do correo e do adxunto, campo ou columna da data e o seu formato, certificado, e o modo e a hora de inicio) nun ficheiro
 `last_selections.json`, no [cartafol de datos da aplicación](#ficheiros-da-aplicación).
 
 Na seguinte execución, esas opcións quedarán marcadas por defecto. As columnas só se marcan se

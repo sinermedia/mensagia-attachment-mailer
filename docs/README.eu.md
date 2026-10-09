@@ -136,15 +136,15 @@ python main.py
 ## Bidaltzeko fluxua
 
 1. **API tokena** — `.env`-tik irakurtzen da edo erabiltzaileari eskatzen zaio.
-2. **Gaia, hasiera-ordua eta jatorria** — Erabiltzaileak mezu elektronikoaren gaia sartzen du, lehen mezua noiz bidaliko den aukeratzen du (ikus [Hasiera-ordua programatu](#hasiera-ordua-programatu)) eta hartzaileak nondik datozen: **agendako talde** batetik edo **fitxategi** batetik (ikus [Fitxategi bateko hartzaileei bidali](#fitxategi-bateko-hartzaileei-bidali)).
+2. **Gaia, hasiera-ordua eta jatorria** — Erabiltzaileak mezu elektronikoaren gaia sartzen du, mezuak noiz bidaliko diren aukeratzen du: orain, data eta ordu jakin batean edo kontaktu bakoitzaren egunean (ikus [Hasiera-ordua programatu](#hasiera-ordua-programatu)) eta hartzaileak nondik datozen: **agendako talde** batetik edo **fitxategi** batetik (ikus [Fitxategi bateko hartzaileei bidali](#fitxategi-bateko-hartzaileei-bidali)).
 3. **Txantiloia** — Eskuragarri dauden email txantiloien zerrenda erakusten da.
 4. **Bidaltzailea** — Egiaztatutako bidaltzaile helbideen zerrenda erakusten da.
 5. **Taldea edo fitxategia**:
    - Agendarekin, taldeen lehen orria erakusten da. Bilatzen ari zaren taldea agertzen ez bada, izenaren arabera iragaz daiteke. Kontakturik gabeko taldeak erakusten dira, baina ezin dira hautatu.
    - Fitxategi batekin, fitxategia aukeratzen da eta, hainbat orri dituen Excel bat bada, orria.
 6. **Eranskin eremua edo zutabeak**:
-   - Agendarekin, eranskinaren URLa duen eremu pertsonalizatua aukeratzen da.
-   - Fitxategi batekin, helbide elektronikoa zein zutabetan dagoen eta eranskina zeinetan dagoen aukeratzen da.
+   - Agendarekin, eranskinaren URLa duen eremu pertsonalizatua aukeratzen da. Mezuak kontaktu bakoitzaren egunean bidaltzen badira, ondoren data duen eremua eta haren formatua aukeratzen dira.
+   - Fitxategi batekin, helbide elektronikoa zein zutabetan dagoen eta eranskina zeinetan dagoen aukeratzen da. Mezuak kontaktu bakoitzaren egunean bidaltzen badira, data duen zutabea eta haren formatua ere bai.
 7. **Ziurtagiria** — Erabiltzaileak bidalketak ziurtatzea erabakitzen du.
 8. **Bidalketa** — Helbide baliozkorik edo eranskinik ez duten hartzaileak baztertzen dira, eta minutuko 5eko abiaduran mezu bat bidaltzen zaio bakoitzari.
 
@@ -208,7 +208,7 @@ Errenkada hauek baztertu egiten dira, eta [logak](#bidalketa-bat-simulatu) arraz
 
 - helbiderik gabekoak (`no_email`) edo helbide baliogabea dutenak (`invalid_email`);
 - eranskinik gabekoak (`no_attachment`);
-- aurreko errenkada baten helbide bera (maiuskulak bereizi gabe) eta eranskin bera dutenak (`duplicate_row`): lehena bakarrik bidaltzen da. Fitxategi-izen bat eta oinarrizko URLarekin lortzen den URL osoa eranskin bera dira.
+- aurreko errenkada baten helbide bera (maiuskulak bereizi gabe) eta eranskin bera dutenak (`duplicate_row`): lehena bakarrik bidaltzen da. Mezuak kontaktu bakoitzaren egunean bidaltzen badira, datak ere bat etorri behar du. Fitxategi-izen bat eta oinarrizko URLarekin lortzen den URL osoa eranskin bera dira.
 
 Logean, errenkada bakoitza Excelek erakusten duen zenbakiarekin (goiburua 1. errenkada da), helbidearekin eta eranskinarekin identifikatzen da. Adibidez:
 
@@ -252,10 +252,11 @@ Programak **ez ditu mezu elektronikoak berehala bidaltzen**. Kontaktu hautagarri
 
 ## Hasiera-ordua programatu
 
-Gaiaren orrian (kontsola moduan, gaiaren ondoren) lehen mezua noiz bidaliko den aukeratzen da:
+Gaiaren orrian (kontsola moduan, gaiaren ondoren) mezuak noiz bidaliko diren aukeratzen da:
 
 - **Orain**: bidalketa hasi eta 10-20 minutu barru.
 - **Data eta ordu jakin batean**: lehen mezua adierazitako data eta orduan bidaltzen da, eta hurrengoak 12 segundoro. Bidalketek gauerdia gaindi dezakete.
+- **Kontaktu bakoitzaren eguna, ordu jakin batean**: mezu bakoitza kontaktuaren datuetan adierazitako egunean bidaltzen da, aukeratutako orduan (ikus [Mezu bakoitza kontaktuaren egunean bidali](#mezu-bakoitza-kontaktuaren-egunean-bidali)).
 
 Data eta ordua beti `ee/hh/uuuu` eta `oo:mm` ordenan idazten dira, hizkuntza edozein dela ere. Modu grafikoan zati bakoitzak bere eremua du, eta kurtsorea bakarrik pasatzen da hurrengora eremu bat betetzean. Kontsola moduan ohiko beste forma batzuk ere onartzen dira (`8/10/26`, `8-10-2026`, `9h30`, `9`…), eta Sartu tekla sakatuta kortxete artean proposatutako balioa onartzen da.
 
@@ -271,6 +272,54 @@ Mugak:
 Aplikazioak gaurko data proposatzen du eta, ordu gisa, modu grafikoan aukeratutako azkena edo, bat ere ez badago, «Orain» aukerari legokiokeena.
 
 [Etendako bidalketa bat berriro hasteko](#etendako-bidalketa-berriro-hasi) aukera berak errepikatu behar dira, hasiera-orduaren modua barne: modua aldatzen bada, bidalketa berritzat hartzen da. Aldiz, data edo ordua aldatzeak ez du bidalketa berririk sortzen: berriro hastean, mezuak programatutako azkenaren ondoren jarraitzen dute, eta ordu berria une horrek 10 minutuko tartea ez badu bakarrik erabiltzen da.
+
+---
+
+## Mezu bakoitza kontaktuaren egunean bidali
+
+**Kontaktu bakoitzaren eguna, ordu jakin batean** aukerarekin, hartzaile bakoitzak bere datuetan adierazitako egunean jasotzen du mezua: eremu pertsonalizatu batean (agenda) edo zutabe batean (fitxategia). Ordua bakarrik aukeratzen da, eta egun guztietarako bera da.
+
+- Agendarekin, eranskinaren eremuaren ondoren data duen eremua aukeratzen da. Ezin da eranskinarena izan.
+- Fitxategi batekin, zutabeen orrian data duen zutabea ere aukeratzen da. Ezin da beste bietako bat izan.
+
+Egun bakoitza aukeratutako orduan hasten da, eta 12 segundo gehitzen ditu **egun bereko** aurreko mezu bakoitzeko. Adibidez, 09:00ekin, 15/10eko hiru mezu 09:00:00etan, 09:00:12etan eta 09:00:24etan bidaltzen dira, eta 16/10eko bat, 09:00:00etan.
+
+| Kontaktuaren data | Zer gertatzen da |
+|---|---|
+| Etorkizuneko egun bat | Egun horretako aukeratutako orduan bidaltzen da |
+| Gaur | Aukeratutako orduan, gutxienez 10 minutu falta badira; bestela, «Orain» aukeran bezala (10 eta 20 minutu geroago) |
+| Iragandako egun bat | Baztertu egiten da (`past_send_date`) |
+| 6 aste baino urrunago | Baztertu egiten da (`send_date_too_far`) |
+| Hutsik | Baztertu egiten da (`no_send_date`) |
+| Beste formatu batean | Baztertu egiten da (`invalid_send_date`) |
+| Orduarekin | Baztertu egiten da (`send_date_has_time`) |
+
+Adibidez, 10:07an eta 10:00ko orduarekin, gaurko kontaktuak 10:20:00etan, 10:20:12etan… bidaltzen dira, eta hurrengo egunetakoak, beren eguneko 10:00:00etan, 10:00:12etan…
+
+- Egun bateko mezuek gauerdia gaindi dezakete. Hurrengo eguna ez da mugitzen, nahiz eta denbora batez minutuko mezu gehiago bidali.
+- Egunak ordenan programatzen dira, hurbilenetik urrunenera.
+
+### Dataren formatua
+
+Mensagiak ez du bere data-eremuen formatua adierazten; beraz, aukeratu egin behar da: `ee/hh/uuuu`, `ee-hh-uuuu`, `uuuu/hh/ee` edo `uuuu-hh-ee`.
+
+Ordenak eta bereizleak aukeratutako formatuarekin bat etorri behar dute, baina zeroak aukerakoak dira eta urteak 2 zifra izan ditzake: `ee/hh/uuuu` formatuarekin, `3/4/26` 2026ko apirilaren 3a da. Orduarekin datorren data bat (`15/10/2026 10:00`) baztertu egiten da.
+
+Fitxategi batean, formatua testu gisa idatzitako datei bakarrik aplikatzen zaie (CSV batean, edo gelaxka testu formatuan duen Excel batean). Excelek data gisa ezagutzen dituen gelaxkak zuzenean irakurtzen dira; 00:00 ez den ordu bat badute, baztertu egiten dira.
+
+### Aurretiko laburpena
+
+Bidali aurretik, laburpenak hau erakusten du:
+
+- egun bakoitzeko errenkada bat duen taula, mezu kopuruarekin eta lehenaren eta azkenaren gutxi gorabeherako orduarekin;
+- baztertutakoak, arrazoiaren arabera taldekatuta (bakoitzaren xehetasuna logean dago);
+- fitxategi batekin, helbide berera eranskin bera data desberdinetan bidaliko duten errenkadak. Guztiak bidaltzen dira; bat soberan badago, Mensagiako atarian ezaba daiteke.
+
+Orduak gutxi gorabeherakoak dira: mezu bakoitzaren behin betiko ordua programatzean kalkulatzen da.
+
+### Berriro hasi
+
+Egun bakoitza bere aldetik hasten da berriro: egun horretan programatutako azken mezuaren ondoren jarraitzen du edo, bat ere ez bazuen, aukeratutako orduan (gaur, gutxienez 10 minutu falta badira bakarrik). Dagoeneko igaro diren egunetako kontaktu pendienteak baztertu egiten dira. Dataren eremua edo zutabea bidalketaren parte dira: aldatzen badira, bidalketa berria da.
 
 ---
 
@@ -291,6 +340,10 @@ Baztertzeko arrazoiak (`reason=`, `[SEND_SKIP]` lerroetan):
 - `no_attachment`: eranskinaren eremu pertsonalizatua edo zutabea hutsik dago.
 - `duplicate_row`: errenkadak aurreko errenkada baten helbidea eta eranskina errepikatzen ditu (fitxategi batekin bakarrik).
 - `already_sent`: hartzaileak kanpaina bereko aurreko bidalketa eten batean jaso zuen mezua.
+- `no_send_date`, `invalid_send_date` eta `send_date_has_time`: kontaktuaren data hutsik dago, ez du aukeratutako formatua edo ordua du (ikus [Mezu bakoitza kontaktuaren egunean bidali](#mezu-bakoitza-kontaktuaren-egunean-bidali)).
+- `past_send_date` eta `send_date_too_far`: kontaktuaren data igaro da edo 6 aste baino urrunago dago.
+
+`[SEND_OK]` lerroek mezu bakoitza zein data eta ordutarako programatu den ere adierazten dute (`start_date`), Mensagiako atarian aurkitzeko. Aurretiko laburpenak baztertutakoak arrazoiaren arabera taldekatuta erakusten ditu.
 
 `[SEND_ERROR]` lerroak eranskina prestatu ezin izan zaien kontaktu egokiak dira (adibidez, oinarrizko URLrik gabeko bide erlatibo bat edo deskargatu ezin den fitxategi bat).
 
@@ -302,7 +355,7 @@ Baztertzeko arrazoiak (`reason=`, `[SEND_SKIP]` lerroetan):
 
 Bidalketa bat erdibidean eteten bada (aplikazioa ixten da, konexioa eteten da, ordenagailua itzaltzen da…), aplikazioak gogoratzen du zein kontakturi programatu zaien dagoeneko mezua.
 
-**Kanpaina bera** berriro prestatzean (talde bera —edo fitxategi, orri eta helbide-zutabe berak—, txantiloi, eranskin eremu edo zutabe eta hasiera-ordu modu berak, eta **gai bera, hitzez hitz**), laburpenera iristean aplikazioak aurreko bidalketa osatu gabe dagoela ohartarazten du eta zer egin galdetzen du:
+**Kanpaina bera** berriro prestatzean (talde bera —edo fitxategi, orri eta helbide-zutabe berak—, txantiloi, eranskin eremu edo zutabe eta hasiera-ordu modu berak —eta, mezuak kontaktu bakoitzaren egunean bidaltzen badira, dataren eremu edo zutabe bera—, eta **gai bera, hitzez hitz**), laburpenera iristean aplikazioak aurreko bidalketa osatu gabe dagoela ohartarazten du eta zer egin galdetzen du:
 
 - **Jarraitu**: falta diren kontaktuei bakarrik bidaltzen zaie. Haien mezuak aurreko bidalketakoen ondoren programatzen dira, haiekin gainjarri gabe.
 - **Ez jarraitu**: aurreko bidalketa baztertu eta kontaktu guztiei bidaltzen zaie berriro, dagoeneko jaso dutenei barne.
@@ -324,7 +377,7 @@ Mensagiaren APIak ez du programatutako bidalketak kontsultatzen uzten; beraz, eg
 
 Bidalketa edo simulazio bakoitzaren ondoren, aplikazioak aukeratutako
 parametroak (hartzaileen jatorria, txantiloia, bidaltzailea, taldea, eranskin eremua, azken fitxategiaren karpeta,
-helbidearen eta eranskinaren zutabeak, ziurtagiria, eta hasiera-orduaren modua eta ordua) `last_selections.json` fitxategi batean gordetzen ditu,
+helbidearen eta eranskinaren zutabeak, dataren eremua edo zutabea eta haren formatua, ziurtagiria, eta hasiera-orduaren modua eta ordua) `last_selections.json` fitxategi batean gordetzen ditu,
 [aplikazioaren datu-karpetan](#aplikazioaren-fitxategiak).
 
 Hurrengo exekuzioan, aukera horiek lehenespenez markatuta agertuko dira. Zutabeak fitxategi berriak

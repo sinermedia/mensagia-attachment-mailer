@@ -1,4 +1,6 @@
-from datetime import datetime, timedelta
+import dataclasses
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
 from enum import Enum
 
 
@@ -28,10 +30,13 @@ class StartMode(str, Enum):
     Attributes:
         NOW: Between 10 and 20 minutes after the send starts.
         FIXED: At a date and time chosen by the user.
+        CONTACT_DATE: Each contact on the day given in its data, at a time
+            chosen by the user.
     """
 
     NOW = "now"
     FIXED = "fixed"
+    CONTACT_DATE = "contact_date"
 
 
 class StartTooSoonError(ValueError):
@@ -122,6 +127,106 @@ def default_start_time(now: datetime) -> datetime:
     # mark, the second ensures a full 10-minute buffer before the first email
     return next_ten_minute_mark(next_ten_minute_mark(now))
 
+class SendSchedule:
+    """Hands out the send slot of each email of a bulk send, when it is scheduled.
+
+    Emails are spread out by SECONDS_BETWEEN_EMAILS so Mensagia does not
+    reject a large batch as spam. In the "now" and fixed start modes every
+    email belongs to one sequence; with the contact date mode each send day
+    has its own sequence, starting at the chosen time of that day.
+
+    The rules are applied when each slot is requested, with the current
+    time of that moment, so an email scheduled late in a long run (or
+    retried at the end) never gets a slot that has lost its lead. The slot
+    of a sequence is, by priority:
+
+    1. Right after the last slot of the sequence (handed out by this
+       schedule, or recorded by a previous run being resumed), if it is
+       at least MIN_START_LEAD in the future. Runs never overlap.
+    2. The first slot chosen by the user (the fixed start, or the chosen
+       time on the contact's day), if it is at least MIN_START_LEAD in the
+       future.
+    3. Otherwise default_start_time(), 10 to 20 minutes from now. A chosen
+       time that no longer has enough lead is thus postponed, never
+       brought forward.
+
+    Attributes:
+        start_mode: How the first email of each sequence is scheduled.
+        start_at: First slot chosen in the fixed mode, or None.
+        start_time: Time chosen in the contact date mode, or None.
+    """
+
+    def __init__(
+        self,
+        start_mode: StartMode,
+        start_at: datetime | None = None,
+        start_time: time | None = None,
+        last_scheduled: dict | None = None,
+    ):
+        """Initialise the schedule, optionally resuming an interrupted send.
+
+        Args:
+            start_mode: How the first email of each sequence is scheduled.
+            start_at: First slot chosen in the fixed mode.
+            start_time: Time chosen in the contact date mode.
+            last_scheduled: Last slot recorded by a previous run of the same
+                campaign for each sequence: keyed by send day in the contact
+                date mode, and by None in the other modes.
+        """
+        self.start_mode = start_mode
+        self.start_at = start_at
+        self.start_time = start_time
+        self._last = dict(last_scheduled or {})
+
+    def _chosen_slot(self, day: date | None) -> datetime | None:
+        """Return the first slot the user chose for a sequence.
+
+        Args:
+            day: Send day of the sequence, or None outside the contact date mode.
+
+        Returns:
+            The fixed start, the chosen time on *day*, or None in the "now" mode.
+        """
+        if self.start_mode == StartMode.CONTACT_DATE:
+            return datetime.combine(day, self.start_time)
+        if self.start_mode == StartMode.FIXED:
+            return self.start_at
+        return None
+
+    def next_slot(self, day: date | None, now: datetime) -> datetime:
+        """Return the slot of the next email of a sequence, and record it.
+
+        Args:
+            day: Send day of the email in the contact date mode; None in the
+                other modes.
+            now: Current date and time.
+
+        Returns:
+            The datetime the email must be scheduled for.
+        """
+        # Continue the sequence while its next slot still leaves the lead
+        last = self._last.get(day)
+        slot = None
+        if last is not None:
+            following = last + timedelta(seconds=SECONDS_BETWEEN_EMAILS)
+            if following - now >= MIN_START_LEAD:
+                slot = following
+
+        # Otherwise the chosen start, if it still leaves the lead. When the
+        # check above failed, the last slot is less than MIN_START_LEAD
+        # ahead, so a chosen start that passes is later than it
+        chosen = self._chosen_slot(day)
+        if slot is None and chosen is not None and chosen - now >= MIN_START_LEAD:
+            slot = chosen
+
+        # The "now" schedule is at least MIN_START_LEAD ahead, so it is also
+        # always later than a last slot that failed the check
+        if slot is None:
+            slot = default_start_time(now)
+
+        self._last[day] = slot
+        return slot
+
 
 def calculate_start_dates(
     count: int,
@@ -129,20 +234,10 @@ def calculate_start_dates(
     last_scheduled: datetime | None = None,
     start_at: datetime | None = None,
 ) -> list[datetime]:
-    """Calculate staggered send datetimes for a bulk email campaign.
+    """Calculate the staggered send datetimes of a single sequence at once.
 
-    To avoid Mensagia rejecting a large batch as spam, emails are spread
-    out by SECONDS_BETWEEN_EMAILS. The first slot is, by priority:
-
-    1. When resuming an interrupted campaign, the slot right after
-       *last_scheduled* (the last email already queued), if it is at least
-       MIN_START_LEAD in the future. The sending rhythm is kept and both
-       runs never overlap.
-    2. The date and time chosen by the user (*start_at*), if it is at
-       least MIN_START_LEAD in the future.
-    3. Otherwise default_start_time(), 10 to 20 minutes from now. A chosen
-       time that no longer has enough lead is thus postponed, never
-       brought forward.
+    Follows the rules of SendSchedule (see there) with one current time
+    for every slot.
 
     Args:
         count: Number of emails (and therefore dates) to generate.
@@ -163,25 +258,104 @@ def calculate_start_dates(
     if now is None:
         now = datetime.now()
 
-    # A resumed campaign was already validated by the user, so it does not
-    # need the cancellation gap: continue right after the previous run as
-    # long as that slot leaves enough time to queue the emails safely
-    base = None
-    if last_scheduled is not None:
-        next_slot = last_scheduled + timedelta(seconds=SECONDS_BETWEEN_EMAILS)
-        if next_slot - now >= MIN_START_LEAD:
-            base = next_slot
+    mode = StartMode.FIXED if start_at is not None else StartMode.NOW
+    last = {None: last_scheduled} if last_scheduled is not None else None
+    schedule = SendSchedule(mode, start_at=start_at, last_scheduled=last)
+    return [schedule.next_slot(None, now) for _ in range(count)]
 
-    # Use the chosen start only while it still leaves the minimum lead. If
-    # a previous run failed the check above, its slots are less than
-    # MIN_START_LEAD ahead, so a chosen start that passes is later than them
-    if base is None and start_at is not None and start_at - now >= MIN_START_LEAD:
-        base = start_at
 
-    # The "now" schedule is at least MIN_START_LEAD ahead, so it is also
-    # always later than any previous last_scheduled that failed the check
-    if base is None:
-        base = default_start_time(now)
+def send_date_skip_reason(send_date: date, start_time: time, now: datetime) -> str | None:
+    """Check whether a contact's send day can still be scheduled.
 
-    # Spread each email by the inter-message gap starting from base
-    return [base + timedelta(seconds=SECONDS_BETWEEN_EMAILS * i) for i in range(count)]
+    Today is always accepted: if the chosen time no longer leaves the
+    lead, the schedule falls back to the "now" slots.
+
+    Args:
+        send_date: Day given in the contact's data.
+        start_time: Time chosen by the user.
+        now: Current date and time.
+
+    Returns:
+        'past_send_date' for a day before today, 'send_date_too_far' when
+        the chosen time on that day is more than MAX_SCHEDULE_AHEAD ahead,
+        or None when the day can be scheduled.
+    """
+    if send_date < now.date():
+        return "past_send_date"
+    if datetime.combine(send_date, start_time) - now > MAX_SCHEDULE_AHEAD:
+        return "send_date_too_far"
+    return None
+
+
+def split_by_send_date(recipients: list, start_time: time, now: datetime) -> tuple[list, list]:
+    """Separate the recipients whose send day can still be scheduled.
+
+    The ones that can are ordered by day, earliest first and otherwise in
+    their original order, so the emails of the nearest days are scheduled
+    before their slots can lose their lead.
+
+    Args:
+        recipients: Sendable Recipient objects, each with a send_date.
+        start_time: Time chosen by the user.
+        now: Current date and time.
+
+    Returns:
+        The recipients that can be scheduled, ordered by day, and the ones
+        that cannot, as copies carrying the reason (see
+        send_date_skip_reason()).
+    """
+    valid, skipped = [], []
+    for recipient in recipients:
+        reason = send_date_skip_reason(recipient.send_date, start_time, now)
+        if reason:
+            skipped.append(dataclasses.replace(recipient, skip_reason=reason))
+        else:
+            valid.append(recipient)
+    return sorted(valid, key=lambda r: r.send_date), skipped
+
+
+@dataclass(frozen=True)
+class DayPreview:
+    """Expected schedule of one send day, for the summary shown before sending.
+
+    Attributes:
+        day: Send day.
+        count: Number of emails of that day.
+        first: Approximate slot of its first email.
+        last: Approximate slot of its last email.
+    """
+
+    day: date
+    count: int
+    first: datetime
+    last: datetime
+
+
+def preview_days(
+    send_dates: list[date],
+    start_time: time,
+    now: datetime,
+    last_scheduled: dict | None = None,
+) -> list[DayPreview]:
+    """Estimate the schedule of a contact date send, one entry per day.
+
+    The slots are only approximate: the real ones are set when each email
+    is scheduled, and the time goes on while the send runs.
+
+    Args:
+        send_dates: Send day of each email that will be sent.
+        start_time: Time chosen by the user.
+        now: Current date and time.
+        last_scheduled: Last slot per day recorded by a previous run of the
+            same campaign, when resuming it.
+
+    Returns:
+        One DayPreview per distinct day, in date order.
+    """
+    schedule = SendSchedule(StartMode.CONTACT_DATE, start_time=start_time, last_scheduled=last_scheduled)
+    days = {}
+    for day in sorted(send_dates):
+        slot = schedule.next_slot(day, now)
+        count, first, _ = days.get(day, (0, slot, slot))
+        days[day] = (count + 1, first, slot)
+    return [DayPreview(day, count, first, last) for day, (count, first, last) in days.items()]

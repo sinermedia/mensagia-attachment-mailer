@@ -34,6 +34,16 @@ class RecipientSource(ABC):
 
     @property
     @abstractmethod
+    def date_field(self) -> str | None:
+        """Name the field that holds each recipient's send day.
+
+        Returns:
+            The name of the extra field or column chosen for the send day
+            in the contact date start mode, or None.
+        """
+
+    @property
+    @abstractmethod
     def log_fields(self) -> dict[str, str]:
         """Describe this source in the opening line of the log.
 

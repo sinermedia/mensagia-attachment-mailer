@@ -1,6 +1,6 @@
 import getpass
 import sys
-from datetime import datetime
+from datetime import datetime, time
 from src.infrastructure.api.mensagia_client import MensagiaClient, MensagiaAPIError
 from src.infrastructure.api.mensagia_agenda_repository import MensagiaAgendaRepository
 from src.infrastructure.api.mensagia_contact_repository import MensagiaContactRepository
@@ -21,9 +21,13 @@ from src.infrastructure.logging.send_logger import SendLogger
 from src.domain.entities.campaign import Campaign
 from src.infrastructure.persistence.json_send_registry import JsonSendRegistry
 from src.infrastructure.ui.uncertain_sends import resume_uncertain_lines, result_uncertain_lines
-from src.infrastructure.ui.start_time import StartInputError, default_start_fields, read_fixed_start, summary_start_lines
-from src.domain.date_input import parse_date, parse_time
-from src.domain.scheduling import StartMode
+from src.infrastructure.ui.start_time import (
+    StartInputError, default_start_fields, read_contact_start_time, read_fixed_start, summary_start_lines,
+)
+from src.infrastructure.ui.send_summary import date_format_label, day_lines, repeated_lines, skipped_lines
+from src.domain.date_input import DateFormat, parse_date, parse_time
+from src.domain.scheduling import StartMode, preview_days, split_by_send_date
+from src.domain.file_rows import rows_on_several_dates
 
 
 def _choose_language():
@@ -141,32 +145,41 @@ def _ask_with_default(prompt: str, default: str, parse, error_key: str) -> str:
             print(f"  {t(error_key)}")
 
 
-def _choose_start(now: datetime) -> tuple[StartMode, datetime | None]:
-    """Ask when the first email must go out.
+def _choose_start(now: datetime) -> tuple[StartMode, datetime | None, time | None]:
+    """Ask when the emails must go out.
 
     With a fixed start, the date and the time are asked separately and
     each is asked again until it can be read. If the combination is too
     soon or too far ahead, both are asked again, proposing the values
-    just typed so only the wrong part has to be changed.
+    just typed so only the wrong part has to be changed. On each contact's
+    date only the time is asked, since the day comes from each contact.
 
     Args:
         now: Current date and time, used for the proposals and the limits.
 
     Returns:
-        The chosen start mode and, for a fixed start, its date and time
-        (None in the "now" mode).
+        The chosen start mode, the date and time of a fixed start (None
+        otherwise) and the time of a send by contact date (None otherwise).
     """
-    labels = {StartMode.NOW: t("start_now"), StartMode.FIXED: t("start_fixed")}
-    mode = _select_from_list(t("start_label"), [StartMode.NOW, StartMode.FIXED], labels.get)
+    labels = {
+        StartMode.NOW: t("start_now"),
+        StartMode.FIXED: t("start_fixed"),
+        StartMode.CONTACT_DATE: t("start_contact_date"),
+    }
+    mode = _select_from_list(t("start_label"), list(labels), labels.get)
     if mode == StartMode.NOW:
-        return mode, None
+        return mode, None, None
 
     date_text, time_text = default_start_fields(now, None)
+    if mode == StartMode.CONTACT_DATE:
+        time_text = _ask_with_default(t("start_time_prompt"), time_text, parse_time, "start_error_invalid_time")
+        return mode, None, read_contact_start_time(time_text)
+
     while True:
         date_text = _ask_with_default(t("start_date_prompt"), date_text, parse_date, "start_error_invalid_date")
         time_text = _ask_with_default(t("start_time_prompt"), time_text, parse_time, "start_error_invalid_time")
         try:
-            return mode, read_fixed_start(date_text, time_text, now)
+            return mode, read_fixed_start(date_text, time_text, now), None
         except StartInputError as e:
             print(f"  {e}")
 
@@ -239,7 +252,37 @@ def _choose_source() -> str:
     return _select_from_list(t("source_label"), ["agenda", "file"], labels.get)
 
 
-def _select_file() -> FileRecipientSource:
+def _select_date_format() -> DateFormat:
+    """Ask the format of the send dates written as text.
+
+    Returns:
+        The chosen format.
+    """
+    return _select_from_list(t("date_format_label"), list(DateFormat), date_format_label)
+
+
+def _select_date_field(extra_fields: list, attachment_field, show_ids: bool) -> tuple:
+    """Let the user pick the custom field holding each contact's send day, and its format.
+
+    The attachment field is not offered, since one field cannot hold both.
+
+    Args:
+        extra_fields: Every custom field of the account.
+        attachment_field: The field already chosen for the attachment.
+        show_ids: Whether to prefix each field with its id.
+
+    Returns:
+        The chosen ExtraField and DateFormat.
+    """
+    others = [f for f in extra_fields if f.name != attachment_field.name]
+    if not others:
+        print(f"  {t('error_no_date_fields')}")
+        sys.exit(1)
+    field = _select_from_list(t("date_field_label"), others, lambda x: f"[{x.id}] {x.name}" if show_ids else x.name)
+    return field, _select_date_format()
+
+
+def _select_file(with_date: bool = False) -> FileRecipientSource:
     """Let the user pick the recipients file, its sheet and its columns.
 
     The path is typed or pasted; the quotes added by Windows' "Copy as
@@ -247,9 +290,15 @@ def _select_file() -> FileRecipientSource:
     more than one. Whenever the file cannot be used, the reason is shown
     and a path is asked for again, since the fix is usually in the file.
 
+    Args:
+        with_date: True in the contact date start mode, to also ask for the
+            column holding the send day and the format of its dates.
+
     Returns:
         The source reading the chosen file, sheet and columns.
     """
+    # A send by contact date needs a third column, for the send day
+    needed = 3 if with_date else 2
     while True:
         path = clean_path(input(f"  {t('file_prompt')} "))
         if not path:
@@ -261,14 +310,24 @@ def _select_file() -> FileRecipientSource:
         except TableFileError as e:
             print(f"  {file_error_message(e)}")
             continue
+        if with_date and len(table.columns) < needed:
+            print(f"  {t('file_error_no_date_column')}")
+            continue
         break
 
-    # The same column cannot hold the address and the attachment, so the
-    # one chosen for the address is not offered again
+    # The same column cannot hold two things, so the columns already chosen
+    # are not offered again
     email_column = _select_from_list(t("email_column_label"), table.columns, str)
     others = [c for c in table.columns if c != email_column]
     attachment_column = _select_from_list(t("attachment_column_label"), others, str)
-    return FileRecipientSource(path, sheet, email_column, attachment_column)
+    if not with_date:
+        return FileRecipientSource(path, sheet, email_column, attachment_column)
+
+    others = [c for c in others if c != attachment_column]
+    date_column = _select_from_list(t("date_column_label"), others, str)
+    print(f"  {t('date_format_hint')}")
+    return FileRecipientSource(path, sheet, email_column, attachment_column,
+                               date_column=date_column, date_format=_select_date_format())
 
 
 def _confirm_action() -> str | None:
@@ -395,7 +454,8 @@ def run():
     # A fixed start is checked against the current time right away; if it
     # gets too close before the send starts, the send postpones it
     print(f"\n--- {t('step_start')} ---")
-    start_mode, start_at = _choose_start(datetime.now())
+    start_mode, start_at, start_time = _choose_start(datetime.now())
+    by_day = start_mode == StartMode.CONTACT_DATE
 
     # ── Step 1c: Recipient source ─────────────────────────────────────────────
     source_kind = _choose_source()
@@ -448,13 +508,24 @@ def run():
             print(f"  {t('error_no_fields')}")
             sys.exit(1)
         extra_field = _select_from_list(t("field_label"), extra_fields, lambda x: f"[{x.id}] {x.name}" if show_ids else x.name)
-        source = AgendaRecipientSource(MensagiaContactRepository(client), agenda.id, extra_field.name)
         source_lines = [t("summary_group", value=agenda.name), t("summary_field", value=extra_field.name)]
+        if by_day:
+            # ── Step 5b: Send date field and format ───────────────────────────
+            print(f"\n--- {t('step_date_field')} ---")
+            date_field, date_format = _select_date_field(extra_fields, extra_field, show_ids)
+            source = AgendaRecipientSource(MensagiaContactRepository(client), agenda.id, extra_field.name,
+                                           date_field.name, date_format)
+            source_lines.append(t("summary_date_field", value=date_field.name, format=date_format_label(date_format)))
+        else:
+            source = AgendaRecipientSource(MensagiaContactRepository(client), agenda.id, extra_field.name)
     else:
         # ── Step 4: File, sheet and columns selection ─────────────────────────
         print(f"\n--- {t('step_file')} ---")
-        source = _select_file()
+        source = _select_file(with_date=by_day)
         source_lines = file_summary_lines(source.path, source.sheet, source.email_column, source.attachment_column)
+        if by_day:
+            source_lines.append(t("summary_date_column", value=source.date_column,
+                                  format=date_format_label(source.date_format)))
 
     # Texts that count contacts of a group, or rows of a file
     rows = source_kind == "file"
@@ -491,14 +562,15 @@ def run():
             print(f"  {file_error_message(e)}")
             sys.exit(1)
         eligible = [r for r in recipients if r.skip_reason is None]
-    skipped_count = len(recipients) - len(eligible)
+    skipped = [r for r in recipients if r.skip_reason is not None]
 
     # Detect contacts already sent this exact campaign in a previous,
     # interrupted run, and attempts it left unconfirmed (possible
     # duplicates), and let the user decide whether to skip the sent ones
     # or start the whole campaign over again
     send_registry = JsonSendRegistry()
-    campaign = Campaign(source.identity, template.id, source.attachment_field, subject, start_mode)
+    campaign = Campaign(source.identity, template.id, source.attachment_field, subject, start_mode,
+                        source.date_field)
     sent_keys = send_registry.get_sent_keys(campaign)
     already_sent_count = len([r for r in eligible if r.key in sent_keys])
     uncertain = send_registry.get_uncertain_attempts(campaign)
@@ -511,10 +583,21 @@ def run():
                 print(f"    {line}")
         if not _yes_no(f"  {t('resume_continue_prompt_rows' if rows else 'resume_continue_prompt')}"):
             send_registry.clear(campaign)
+            sent_keys = set()
             already_sent_count = 0
 
-    # Number of contacts that will actually be sent to in this run
-    to_send_count = len(eligible) - already_sent_count
+    # Recipients that will actually be sent to in this run. Sending by
+    # contact date, the same checks as the send leave out the days that
+    # have passed or are too far, and the schedule of each day is estimated
+    pending = [r for r in eligible if r.key not in sent_keys]
+    preview = []
+    if by_day:
+        now = datetime.now()
+        pending, out_of_range = split_by_send_date(pending, start_time, now)
+        skipped += out_of_range
+        preview = preview_days([r.send_date for r in pending], start_time, now,
+                               send_registry.get_last_start_dates_by_day(campaign))
+    to_send_count = len(pending)
 
     # Print the summary for the user to review before committing to send
     sender_display = f"{sender.name} <{sender.email}>" if sender.name else sender.email
@@ -524,10 +607,20 @@ def run():
     for line in source_lines:
         print(f"  {line}")
     print(f"  {t('summary_certified', value=t('yes') if certified else t('no'))}")
-    for line in summary_start_lines(start_mode, start_at):
+    for line in summary_start_lines(start_mode, start_at, start_time):
         print(f"  {line}")
     print(f"  {t('summary_rows' if rows else 'summary_contacts', count=to_send_count)}")
-    print(f"  {t('summary_skipped_rows' if rows else 'summary_skipped', count=skipped_count)}")
+    for line in skipped_lines(skipped, rows):
+        print(f"  {line}")
+
+    # The per-day table and the warning about repeated rows are blocks of
+    # their own, each set apart by a blank line so they read separately
+    repeated = repeated_lines(rows_on_several_dates(pending)) if rows and by_day else []
+    for block in (day_lines(preview), repeated):
+        if block:
+            print()
+        for line in block:
+            print(f"  {line}")
 
     # Without a single recipient there is nothing to send nor to explain in
     # a simulation log, so exit cleanly without error
@@ -536,11 +629,11 @@ def run():
         sys.exit(0)
 
     # The source may hold recipients and still have none that can be written
-    # to, when they all lack a valid address or an attachment: say why. In
-    # that case, or when every eligible recipient already received this
-    # campaign in a previous run, only a simulation is offered, since its
-    # log is the way to find out why each one was left out
-    if not eligible:
+    # to, when they all lack a valid address, an attachment or a usable send
+    # day: say why. In that case, or when every eligible recipient already
+    # received this campaign in a previous run, only a simulation is offered,
+    # since its log is the way to find out why each one was left out
+    if not pending and not already_sent_count:
         print(f"\n  {t('no_eligible_rows' if rows else 'no_eligible_contacts')}")
     action = _choose_action(can_send=to_send_count > 0)
     if action is None:
@@ -571,6 +664,7 @@ def run():
             send_registry=send_registry,
             start_mode=start_mode,
             start_at=start_at,
+            start_time=start_time,
         )
     except TableFileError as e:
         print(f"  {file_error_message(e)}")

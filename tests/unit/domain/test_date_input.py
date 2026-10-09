@@ -1,6 +1,6 @@
 from datetime import date, time
 import pytest
-from src.domain.date_input import parse_date, parse_time
+from src.domain.date_input import DateFormat, SendDateError, parse_date, parse_send_date, parse_time
 
 
 class TestParseDate:
@@ -50,3 +50,53 @@ class TestParseTime:
         """Rejects out-of-range values, seconds, missing minutes after a separator and non-numeric text."""
         with pytest.raises(ValueError):
             parse_time(text)
+
+
+class TestParseSendDate:
+    """Tests for parse_send_date(), the reader of a contact's send date in a chosen format."""
+
+    @pytest.mark.parametrize("fmt, text", [
+        (DateFormat.DMY_SLASH, "15/10/2026"),
+        (DateFormat.DMY_DASH, "15-10-2026"),
+        (DateFormat.YMD_SLASH, "2026/10/15"),
+        (DateFormat.YMD_DASH, "2026-10-15"),
+    ])
+    def test_reads_each_format(self, fmt, text):
+        """Each supported format is read in its own order and separator."""
+        assert parse_send_date(text, fmt) == date(2026, 10, 15)
+
+    @pytest.mark.parametrize("fmt, text", [
+        (DateFormat.DMY_SLASH, "3/4/2026"),
+        (DateFormat.DMY_SLASH, "03/04/26"),
+        (DateFormat.YMD_DASH, "26-4-3"),
+        (DateFormat.YMD_DASH, " 2026-04-03 "),
+    ])
+    def test_tolerates_missing_zeros_short_years_and_spaces(self, fmt, text):
+        """Leading zeros are optional, a 2-digit year is 20yy and surrounding spaces are ignored."""
+        assert parse_send_date(text, fmt) == date(2026, 4, 3)
+
+    @pytest.mark.parametrize("fmt, text", [
+        (DateFormat.DMY_SLASH, "15-10-2026"),     # another separator
+        (DateFormat.DMY_SLASH, "2026/10/15"),     # another order
+        (DateFormat.YMD_DASH, "15-10-2026"),      # day first in a year-first format
+        (DateFormat.DMY_SLASH, "31/02/2026"),     # a day that does not exist
+        (DateFormat.DMY_SLASH, "mañana"),
+        (DateFormat.DMY_SLASH, "15/10/2026 x"),
+    ])
+    def test_rejects_values_that_do_not_match_the_format(self, fmt, text):
+        """A value in another order or separator, or that is not a real date, is invalid."""
+        with pytest.raises(SendDateError) as info:
+            parse_send_date(text, fmt)
+        assert info.value.reason == "invalid_send_date"
+
+    @pytest.mark.parametrize("fmt, text", [
+        (DateFormat.DMY_SLASH, "15/10/2026 10:00"),
+        (DateFormat.DMY_SLASH, "15/10/2026 00:00:00"),
+        (DateFormat.YMD_DASH, "2026-10-15T09:30"),
+        (DateFormat.YMD_DASH, "2026-10-15 9h30"),
+    ])
+    def test_rejects_values_with_a_time(self, fmt, text):
+        """A date followed by a time is rejected with its own reason, whatever the time."""
+        with pytest.raises(SendDateError) as info:
+            parse_send_date(text, fmt)
+        assert info.value.reason == "send_date_has_time"

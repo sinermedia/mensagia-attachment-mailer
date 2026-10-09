@@ -1,9 +1,10 @@
 import json
+from datetime import date
 
 import pytest
 
 from src.domain.entities.recipient import Recipient
-from src.domain.file_rows import email_skip_reason, row_key, skip_duplicate_rows
+from src.domain.file_rows import email_skip_reason, row_key, rows_on_several_dates, skip_duplicate_rows
 
 
 class TestEmailSkipReason:
@@ -89,3 +90,46 @@ class TestSkipDuplicateRows:
         """Rows come back in the same order, with their row numbers."""
         rows = [make_row(2, "a@x.com", "a.pdf"), make_row(5, "b@x.com", "b.pdf"), make_row(9, "a@x.com", "a.pdf")]
         assert [r.row for r in skip_duplicate_rows(rows)] == [2, 5, 9]
+
+
+def make_dated_row(row: int, email: str, attachment: str, day: date | None,
+                   skip_reason: str | None = None) -> Recipient:
+    """Build a dated file-row recipient keyed like the file source does."""
+    return Recipient(key=row_key(email, attachment, day.isoformat() if day else ""), email=email,
+                     attachment=attachment, row=row, send_date=day, skip_reason=skip_reason)
+
+
+class TestRowsOnSeveralDates:
+    """Covers finding the same address and attachment sent on different days."""
+
+    def test_groups_the_rows_of_each_repeated_pair(self):
+        """Rows with the same address (any case) and attachment on different days are grouped, in row order."""
+        rows = [
+            make_dated_row(2, "a@x.com", "a.pdf", date(2026, 11, 5)),
+            make_dated_row(3, "b@x.com", "b.pdf", date(2026, 11, 5)),
+            make_dated_row(4, "A@x.com", "a.pdf", date(2026, 11, 6)),
+        ]
+        assert [[r.row for r in group] for group in rows_on_several_dates(rows)] == [[2, 4]]
+
+    def test_rows_are_listed_in_file_order_whatever_the_input_order(self):
+        """Rows already ordered by date come back in file order, groups by their first row."""
+        rows = [
+            make_dated_row(9, "b@x.com", "b.pdf", date(2026, 11, 4)),
+            make_dated_row(5, "a@x.com", "a.pdf", date(2026, 11, 5)),
+            make_dated_row(3, "b@x.com", "b.pdf", date(2026, 11, 6)),
+            make_dated_row(2, "a@x.com", "a.pdf", date(2026, 11, 6)),
+        ]
+        assert [[r.row for r in group] for group in rows_on_several_dates(rows)] == [[2, 5], [3, 9]]
+
+    def test_rows_that_are_not_sent_are_ignored(self):
+        """Skipped rows, such as duplicates or past days, do not count."""
+        rows = [
+            make_dated_row(2, "a@x.com", "a.pdf", date(2026, 11, 5)),
+            make_dated_row(3, "a@x.com", "a.pdf", date(2026, 11, 6), "past_send_date"),
+        ]
+        assert rows_on_several_dates(rows) == []
+
+    def test_rows_without_dates_are_ignored(self):
+        """Outside the contact date mode nothing is reported."""
+        rows = [make_dated_row(2, "a@x.com", "a.pdf", None), make_dated_row(3, "a@x.com", "b.pdf", None)]
+        assert rows_on_several_dates(rows) == []

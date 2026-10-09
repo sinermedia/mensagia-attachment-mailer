@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import datetime, time
 import pytest
 from src.domain.scheduling import StartMode
 from src.infrastructure.ui.i18n import set_language
 from src.infrastructure.ui.start_time import (
-    StartInputError, default_start_fields, read_fixed_start, summary_start_lines,
+    StartInputError, default_start_fields, read_contact_start_time, read_fixed_start, summary_start_lines,
 )
 
 
@@ -79,3 +79,21 @@ class TestSummaryStartLines:
         """Shows the chosen date and time of a fixed start."""
         lines = summary_start_lines(StartMode.FIXED, datetime(2026, 10, 15, 9, 0))
         assert lines[0] == "Start: fixed date, 15/10/2026 at 09:00"
+
+    def test_describes_a_contact_date_start(self):
+        """Shows the chosen time of a send on each contact's date."""
+        lines = summary_start_lines(StartMode.CONTACT_DATE, None, time(9, 0))
+        assert lines[0] == "Start: on the date given for each contact, at 09:00"
+
+
+class TestReadContactStartTime:
+    """Covers reading the time of a send on each contact's date."""
+
+    def test_reads_a_time(self):
+        """A valid time is read with the tolerant rules."""
+        assert read_contact_start_time("9h30") == time(9, 30)
+
+    def test_reports_an_invalid_time(self):
+        """An unreadable time is reported with the translated message."""
+        with pytest.raises(StartInputError, match="The time is not valid."):
+            read_contact_start_time("25:00")

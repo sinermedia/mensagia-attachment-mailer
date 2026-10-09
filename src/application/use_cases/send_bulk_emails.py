@@ -1,12 +1,12 @@
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, time as clock_time
 
 from src.domain.entities.campaign import Campaign
 from src.domain.entities.email_message import EmailMessage
 from src.domain.ports.email_sender import EmailNotSentError, EmailRejectedError, EmailSender
 from src.domain.ports.recipient_source import RecipientSource
-from src.domain.scheduling import StartMode, calculate_start_dates
+from src.domain.scheduling import SendSchedule, StartMode, split_by_send_date
 from src.domain.attachment_url import resolve_attachment_url
 
 
@@ -98,21 +98,25 @@ class SendBulkEmailsUseCase:
         send_registry=None,
         start_mode: StartMode = StartMode.NOW,
         start_at: datetime | None = None,
+        start_time: clock_time | None = None,
     ) -> SendResult:
         """Run the bulk send for all sendable recipients of the given source.
 
         Workflow:
         1. Read every recipient of the source.
         2. Leave out those the source marks with a skip reason.
-        3. Compute staggered send dates to respect Mensagia's rate limits,
-           from the chosen start (postponed if it is too close) or 10 to 20
-           minutes from now, continuing after the last slot of a previous
-           run when resuming.
-        4. For each eligible recipient: resolve the attachment URL, optionally
+        3. In the contact date mode, leave out the recipients whose send
+           day has passed or is beyond the limit, and order the rest by day.
+        4. Give each email a staggered slot to respect Mensagia's rate
+           limits when it is scheduled (see SendSchedule): from the chosen
+           start (postponed if it is too close), the chosen time on the
+           recipient's day, or 10 to 20 minutes from now, continuing after
+           the last slot of a previous run when resuming.
+        5. For each eligible recipient: resolve the attachment URL, optionally
            verify it is reachable, build the EmailMessage, and send it.
-        5. Retry once, after all other recipients, every send that got no
+        6. Retry once, after all other recipients, every send that got no
            answer from the API (not processed or uncertain outcome).
-        6. Collect outcomes in a SendResult (sent / skipped / errors /
+        7. Collect outcomes in a SendResult (sent / skipped / errors /
            uncertain).
 
         Args:
@@ -123,7 +127,8 @@ class SendBulkEmailsUseCase:
             template_id: ID of the Mensagia template that defines the email body.
             certified: 1 to send as certified email, 0 for standard.
             now: Override for the current datetime, used in tests to make
-                scheduling deterministic. Defaults to datetime.now().
+                scheduling deterministic. Defaults to datetime.now(). Read again
+                each time an email is scheduled when not given.
             attachment_base_url: Root URL prepended to relative attachment values.
                 Required when any recipient stores only a filename in its
                 attachment field. Optional when all values are absolute URLs.
@@ -150,7 +155,8 @@ class SendBulkEmailsUseCase:
                 for end-of-run retries. Pass None to disable.
             send_registry: Optional SendRegistry instance. When provided,
                 recipients already recorded as sent for this exact campaign
-                (source, template, attachment field, subject and start mode) are
+                (source, template, attachment field, subject, start mode and
+                date field) are
                 excluded from the eligible list and reported in
                 already_sent instead, and the schedule continues after the
                 campaign's last recorded slot. Each API call is recorded
@@ -167,19 +173,36 @@ class SendBulkEmailsUseCase:
                 with StartMode.FIXED and ignored otherwise. A start that no
                 longer leaves 10 minutes is postponed, never brought forward.
                 It is not validated here: a dry run only checks the data.
+            start_time: Time chosen for the emails of each day; required
+                with StartMode.CONTACT_DATE and ignored otherwise. The day
+                comes from each recipient's send_date.
 
         Returns:
             A SendResult containing lists of sent, skipped, already-sent,
             errored and uncertain recipients.
 
         Raises:
-            ValueError: If start_mode is StartMode.FIXED and start_at is None.
+            ValueError: If start_mode is StartMode.FIXED and start_at is None,
+                or StartMode.CONTACT_DATE and start_time is None.
         """
-        # A fixed start needs its date; fail before touching anything
+        # Each start mode needs its own choice; fail before touching anything
         if start_mode == StartMode.FIXED and start_at is None:
             raise ValueError("a fixed start mode requires start_at")
+        if start_mode == StartMode.CONTACT_DATE and start_time is None:
+            raise ValueError("a contact date start mode requires start_time")
         if start_mode != StartMode.FIXED:
             start_at = None
+        if start_mode != StartMode.CONTACT_DATE:
+            start_time = None
+        by_day = start_mode == StartMode.CONTACT_DATE
+
+        def clock() -> datetime:
+            """Return the current time, or the one fixed by the caller.
+
+            Returns:
+                *now* when given (tests), the current system time otherwise.
+            """
+            return now if now is not None else datetime.now()
 
         # Read every recipient: the source decides which ones cannot be sent,
         # since that depends on what it can hold
@@ -191,9 +214,9 @@ class SendBulkEmailsUseCase:
         # interrupted run so restarting never double-sends. Filtering (but
         # not writing) also applies during dry-run so previews stay accurate.
         campaign = Campaign(recipient_source.identity, template_id, recipient_source.attachment_field,
-                            subject, start_mode)
+                            subject, start_mode, recipient_source.date_field)
         already_sent = []
-        last_scheduled = None
+        last_scheduled = {}
         uncertain = {}
         if send_registry:
             sent_keys = send_registry.get_sent_keys(campaign)
@@ -201,8 +224,12 @@ class SendBulkEmailsUseCase:
             eligible = [r for r in eligible if r.key not in sent_keys]
 
             # The emails of a previous run may still be queued: continue the
-            # schedule after its last slot so both runs never overlap
-            last_scheduled = send_registry.get_last_start_date(campaign)
+            # schedule after its last slot (of each day, when sending by
+            # contact date) so both runs never overlap
+            if by_day:
+                last_scheduled = send_registry.get_last_start_dates_by_day(campaign)
+            elif (last := send_registry.get_last_start_date(campaign)) is not None:
+                last_scheduled = {None: last}
 
             # Attempts a previous run left unresolved may have been scheduled;
             # carry them over so they are reported with this run's outcome.
@@ -213,8 +240,33 @@ class SendBulkEmailsUseCase:
                     for key, dates in send_registry.get_uncertain_attempts(campaign).items()
                 }
 
-        # Compute staggered start dates so emails are not sent all at once
-        start_dates = calculate_start_dates(len(eligible), now, last_scheduled, start_at)
+        # A send day that has passed, or is beyond the limit, can no longer be
+        # scheduled. Checked after the registry, so a recipient already sent
+        # is reported as such. The rest go out day by day, earliest first,
+        # so the emails of the nearest days are scheduled before their slots
+        # can lose their lead
+        if by_day:
+            eligible, out_of_range = split_by_send_date(eligible, start_time, clock())
+            skipped.extend(out_of_range)
+
+        # Slots are handed out as each email is scheduled, with the time of
+        # that moment, so a long run or a late retry never gets a stale one
+        schedule = SendSchedule(start_mode, start_at=start_at, start_time=start_time,
+                                last_scheduled=last_scheduled)
+
+        def next_slot(recipient) -> datetime:
+            """Return the slot of the next email of a recipient's sequence.
+
+            Args:
+                recipient: Recipient about to be scheduled.
+
+            Returns:
+                The datetime its email must be scheduled for.
+            """
+            return schedule.next_slot(recipient.send_date if by_day else None, clock())
+
+        # The first slot is taken now, so the opening log line can show it
+        first_slot = next_slot(eligible[0]) if eligible else None
         result = SendResult(skipped=skipped, already_sent=already_sent)
 
         # Log the opening summary and all skipped/already-sent recipients before the send loop
@@ -222,8 +274,7 @@ class SendBulkEmailsUseCase:
             logger.log_start(
                 from_email, subject, template_id, recipient_source.log_fields,
                 recipient_source.attachment_field, certified, len(eligible), len(skipped),
-                start_mode=start_mode, start_at=start_at,
-                first_slot=start_dates[0] if start_dates else None,
+                start_mode=start_mode, start_at=start_at, first_slot=first_slot, start_time=start_time,
             )
             for r in skipped:
                 logger.log_skip(r, r.skip_reason)
@@ -278,14 +329,15 @@ class SendBulkEmailsUseCase:
             if dry_run:
                 result.sent.append({"recipient": recipient, "response": {}})
                 if logger:
-                    logger.log_ok(recipient, attachment_url)
+                    logger.log_ok(recipient, attachment_url, start_date)
                 return False
 
             # Record the attempt before calling the API, so an abrupt close
             # right after the API accepts it leaves it on record as uncertain.
             # Pause before each API call to stay within the 1 request-per-second limit
+            day = recipient.send_date if by_day else None
             if send_registry:
-                send_registry.mark_attempt(campaign, recipient.key, start_date)
+                send_registry.mark_attempt(campaign, recipient.key, start_date, day)
             time.sleep(1)
 
             try:
@@ -309,20 +361,21 @@ class SendBulkEmailsUseCase:
             else:
                 result.sent.append({"recipient": recipient, "response": response})
                 if logger:
-                    logger.log_ok(recipient, attachment_url)
+                    logger.log_ok(recipient, attachment_url, start_date)
                 if send_registry:
-                    send_registry.mark_sent(campaign, recipient.key, start_date)
+                    send_registry.mark_sent(campaign, recipient.key, start_date, day)
                 return False
 
             if not retry:
                 record_error(recipient, error)
             return retry
 
-        # Process each eligible recipient paired with its scheduled send time,
-        # reporting progress after every one regardless of outcome (dry-run
-        # included) so a UI progress bar stays accurate
+        # Process each eligible recipient at its slot, reporting progress
+        # after every one regardless of outcome (dry-run included) so a UI
+        # progress bar stays accurate
         to_retry = []
-        for i, (recipient, start_date) in enumerate(zip(eligible, start_dates), 1):
+        for i, recipient in enumerate(eligible, 1):
+            start_date = first_slot if i == 1 else next_slot(recipient)
             if process(recipient, start_date, final=False):
                 to_retry.append(recipient)
             if progress_callback:
@@ -330,11 +383,9 @@ class SendBulkEmailsUseCase:
 
         # Retry unanswered sends once, after every other recipient: this gives a
         # transient network failure time to recover, and the new slots follow
-        # the last one of this run so the sending rhythm is kept
-        if to_retry:
-            retry_dates = calculate_start_dates(len(to_retry), now, start_dates[-1])
-            for recipient, start_date in zip(to_retry, retry_dates):
-                process(recipient, start_date, final=True)
+        # the last one of their sequence so the sending rhythm is kept
+        for recipient in to_retry:
+            process(recipient, next_slot(recipient), final=True)
 
         # Report every uncertain attempt with whether the recipient ended up
         # sent, which turns those slots into possible duplicates. Recipients
