@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from src.domain.entities.campaign import Campaign
@@ -33,7 +33,8 @@ def _campaign_key(campaign: Campaign) -> str:
     Hashing avoids issues with special characters in the subject and
     keeps the registry file's keys short. The start mode is only added
     when it is not StartMode.NOW, so campaigns recorded by earlier
-    versions, which always started now, keep their key. The source of an
+    versions, which always started now, keep their key, and so does the
+    date field, which only the contact date mode has. The source of an
     agenda group is its ID, the value earlier versions used in its place.
 
     Args:
@@ -45,6 +46,8 @@ def _campaign_key(campaign: Campaign) -> str:
     raw = f"{campaign.source}|{campaign.template_id}|{campaign.field_name}|{campaign.subject}"
     if campaign.start_mode != StartMode.NOW:
         raw += f"|{campaign.start_mode.value}"
+    if campaign.date_field is not None:
+        raw += f"|{campaign.date_field}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
@@ -126,6 +129,7 @@ class JsonSendRegistry(SendRegistry):
             "field": campaign.field_name,
             "subject": campaign.subject,
             "start_mode": campaign.start_mode.value,
+            "date_field": campaign.date_field,
         })
 
         # Fill every key so *change* never deals with missing ones, including
@@ -136,22 +140,32 @@ class JsonSendRegistry(SendRegistry):
             if str(contact_id) not in record["sent_keys"]:
                 record["sent_keys"].append(str(contact_id))
         record.setdefault("last_start_date", None)
+        record.setdefault("last_start_by_day", {})
         record.setdefault("uncertain_attempts", {})
 
         change(record)
         self._save(data)
 
     @staticmethod
-    def _advance_last_start_date(record: dict, start_date: datetime) -> None:
-        """Move the record's last start date forward to *start_date* if it is later.
+    def _advance_last_start_date(record: dict, start_date: datetime, day: date | None = None) -> None:
+        """Move the record's last start dates forward to *start_date* if it is later.
+
+        The campaign's last start date always moves; the one of the send
+        day only when a day is given (contact date mode).
 
         Args:
             record: Mutable campaign record.
             start_date: Slot just attempted or sent.
+            day: Send day of the recipient, or None.
         """
         current = record["last_start_date"]
         if current is None or datetime.fromisoformat(current) < start_date:
             record["last_start_date"] = start_date.isoformat()
+        if day is not None:
+            by_day = record["last_start_by_day"]
+            current = by_day.get(day.isoformat())
+            if current is None or datetime.fromisoformat(current) < start_date:
+                by_day[day.isoformat()] = start_date.isoformat()
 
     @staticmethod
     def _remove_attempt(record: dict, key: str, start_date: datetime) -> None:
@@ -201,6 +215,20 @@ class JsonSendRegistry(SendRegistry):
         value = self._get_record(campaign).get("last_start_date")
         return datetime.fromisoformat(value) if value else None
 
+    def get_last_start_dates_by_day(
+        self, campaign: Campaign
+    ) -> dict[date, datetime]:
+        """Return the latest slot attempted for each send day of this campaign.
+
+        Args:
+            campaign: Campaign the progress belongs to.
+
+        Returns:
+            A dict mapping send days to their latest recorded slot.
+        """
+        by_day = self._get_record(campaign).get("last_start_by_day", {})
+        return {date.fromisoformat(day): datetime.fromisoformat(slot) for day, slot in by_day.items()}
+
     def get_uncertain_attempts(
         self, campaign: Campaign
     ) -> dict[str, list[datetime]]:
@@ -217,7 +245,7 @@ class JsonSendRegistry(SendRegistry):
 
     def mark_attempt(
         self, campaign: Campaign,
-        key: str, start_date: datetime,
+        key: str, start_date: datetime, day: date | None = None,
     ) -> None:
         """Record that an email is about to be sent to a recipient for a given slot.
 
@@ -225,16 +253,17 @@ class JsonSendRegistry(SendRegistry):
             campaign: Campaign the progress belongs to.
             key: Key of the recipient about to be emailed.
             start_date: Send slot requested for this email.
+            day: Send day of the recipient in the contact date mode, or None.
         """
         def change(record):
             record["uncertain_attempts"].setdefault(key, []).append(start_date.isoformat())
-            self._advance_last_start_date(record, start_date)
+            self._advance_last_start_date(record, start_date, day)
 
         self._update_record(campaign, change)
 
     def mark_sent(
         self, campaign: Campaign,
-        key: str, start_date: datetime,
+        key: str, start_date: datetime, day: date | None = None,
     ) -> None:
         """Record that a recipient successfully received an email in this campaign.
 
@@ -242,13 +271,14 @@ class JsonSendRegistry(SendRegistry):
             campaign: Campaign the progress belongs to.
             key: Key of the recipient that was successfully emailed.
             start_date: Send slot the email was scheduled for.
+            day: Send day of the recipient in the contact date mode, or None.
         """
         def change(record):
             # Avoid duplicate entries if the same recipient is marked more than once
             if key not in record["sent_keys"]:
                 record["sent_keys"].append(key)
             self._remove_attempt(record, key, start_date)
-            self._advance_last_start_date(record, start_date)
+            self._advance_last_start_date(record, start_date, day)
 
         self._update_record(campaign, change)
 

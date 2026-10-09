@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime
+from datetime import date, datetime
 import json
 from src.domain.entities.campaign import Campaign
 from src.domain.scheduling import StartMode
@@ -285,3 +285,70 @@ class TestJsonSendRegistryStartMode:
         JsonSendRegistry(path).mark_sent(Campaign("10", 5, "attachment_url", "Hello", StartMode.FIXED), "1", T)
         record = next(iter(json.loads(path.read_text(encoding="utf-8")).values()))
         assert record["start_mode"] == "fixed"
+
+
+# Campaign sent on the day of each contact, read from the 'Fecha' field
+BY_DATE = Campaign("10", 5, "attachment_url", "Hello", StartMode.CONTACT_DATE, "Fecha")
+DAY = date(2026, 10, 15)
+
+
+class TestJsonSendRegistryByDay:
+    """Tests for tracking the last slot of each send day in the contact date mode.
+
+    Each day is resumed on its own, right after its last slot, so the
+    registry keeps the latest slot of every day, keyed by the send day of
+    the contact (which may differ from the slot day past midnight).
+    """
+
+    def test_no_days_when_campaign_has_no_record(self, tmp_path):
+        """A campaign without records has no last slot for any day."""
+        assert JsonSendRegistry(tmp_path / "p.json").get_last_start_dates_by_day(BY_DATE) == {}
+
+    def test_attempts_record_the_last_slot_of_their_day(self, tmp_path):
+        """Each attempt advances the last slot of the send day it belongs to."""
+        registry = JsonSendRegistry(tmp_path / "p.json")
+        registry.mark_attempt(BY_DATE, "1", datetime(2026, 10, 15, 9, 0, 12), DAY)
+        registry.mark_attempt(BY_DATE, "2", datetime(2026, 10, 15, 9, 0, 0), DAY)
+        registry.mark_sent(BY_DATE, "3", datetime(2026, 10, 16, 9, 0, 0), date(2026, 10, 16))
+        assert registry.get_last_start_dates_by_day(BY_DATE) == {
+            DAY: datetime(2026, 10, 15, 9, 0, 12), date(2026, 10, 16): datetime(2026, 10, 16, 9, 0, 0),
+        }
+
+    def test_day_is_the_send_day_not_the_slot_day(self, tmp_path):
+        """A slot after midnight still counts for the send day of the contact."""
+        registry = JsonSendRegistry(tmp_path / "p.json")
+        registry.mark_sent(BY_DATE, "1", datetime(2026, 10, 16, 0, 0, 12), DAY)
+        assert registry.get_last_start_dates_by_day(BY_DATE) == {DAY: datetime(2026, 10, 16, 0, 0, 12)}
+
+    def test_days_survive_a_new_instance(self, tmp_path):
+        """The last slot of each day is persisted and read back."""
+        JsonSendRegistry(tmp_path / "p.json").mark_attempt(BY_DATE, "1", datetime(2026, 10, 15, 9, 0), DAY)
+        assert JsonSendRegistry(tmp_path / "p.json").get_last_start_dates_by_day(BY_DATE) == {DAY: datetime(2026, 10, 15, 9, 0)}
+
+    def test_attempts_without_a_day_record_no_day(self, tmp_path):
+        """Outside the contact date mode no day is recorded."""
+        registry = JsonSendRegistry(tmp_path / "p.json")
+        registry.mark_sent(Campaign("10", 5, "attachment_url", "Hello"), "1", T)
+        assert registry.get_last_start_dates_by_day(Campaign("10", 5, "attachment_url", "Hello")) == {}
+
+    def test_date_field_is_part_of_the_campaign(self, tmp_path):
+        """The same send with another date field is another campaign."""
+        registry = JsonSendRegistry(tmp_path / "p.json")
+        registry.mark_sent(BY_DATE, "1", T, DAY)
+        other = Campaign("10", 5, "attachment_url", "Hello", StartMode.CONTACT_DATE, "Otra fecha")
+        assert registry.get_sent_keys(other) == set()
+        assert registry.get_sent_keys(BY_DATE) == {"1"}
+
+    def test_the_record_shows_the_date_field(self, tmp_path):
+        """The stored record names the date field so the file stays readable."""
+        path = tmp_path / "p.json"
+        JsonSendRegistry(path).mark_sent(BY_DATE, "1", T, DAY)
+        record = next(iter(json.loads(path.read_text(encoding="utf-8")).values()))
+        assert record["date_field"] == "Fecha"
+
+    def test_campaigns_without_date_field_keep_their_key(self, tmp_path):
+        """A campaign without a date field keeps the key of earlier versions."""
+        path = tmp_path / "p.json"
+        key = hashlib.sha1("10|5|attachment_url|Hello|fixed".encode("utf-8")).hexdigest()
+        path.write_text(json.dumps({key: {"sent_keys": ["7"]}}), encoding="utf-8")
+        assert JsonSendRegistry(path).get_sent_keys(Campaign("10", 5, "attachment_url", "Hello", StartMode.FIXED)) == {"7"}

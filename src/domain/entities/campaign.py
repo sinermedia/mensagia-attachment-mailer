@@ -9,8 +9,9 @@ class Campaign:
 
     A campaign is defined by the choices a user would make again when
     restarting an interrupted send: where the recipients come from, the
-    template, the field holding the attachment, the subject and the start
-    mode. Two sends with the same values are the same campaign for the send
+    template, the field holding the attachment, the subject, the start
+    mode and, when each contact is sent on its own day, the field holding
+    that day. Two sends with the same values are the same campaign for the send
     registry. The chosen start date is not part of it: changing it must
     not turn an interrupted send into a new one that emails everybody
     again. The class is immutable so it can be compared and passed around
@@ -24,6 +25,8 @@ class Campaign:
         subject: Email subject line.
         start_mode: How the first email is scheduled. Defaults to
             StartMode.NOW.
+        date_field: Name of the field or column holding the send day of
+            each contact in the contact date mode, or None.
     """
 
     source: str
@@ -31,3 +34,4 @@ class Campaign:
     field_name: str
     subject: str
     start_mode: StartMode = StartMode.NOW
+    date_field: str | None = None
