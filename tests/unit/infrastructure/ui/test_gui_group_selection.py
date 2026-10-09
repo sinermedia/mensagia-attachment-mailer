@@ -26,12 +26,18 @@ pytestmark = pytest.mark.skipif(not _tk_available(), reason="Tk is not available
 
 
 @pytest.fixture
-def app():
+def app(tmp_path, monkeypatch):
     """Create a hidden App window and destroy it once the test finishes.
+
+    The window works on an empty data folder, so the selections, progress
+    and .env of a real run in the repository never change what it shows.
 
     Yields:
         An App instance sitting on the token step, ready to be driven.
     """
+    for module in ("config.last_selections", "config.settings", "logging.send_logger",
+                   "persistence.json_send_registry"):
+        monkeypatch.setattr(f"src.infrastructure.{module}.user_data_dir", lambda: tmp_path)
     set_language("en")
     from src.infrastructure.ui.gui.gui_app import App
     window = App()
