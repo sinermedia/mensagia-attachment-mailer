@@ -50,6 +50,6 @@ class TestAgendaRecipientSource:
         """The attachment field is the name of the extra field chosen by the user."""
         assert make_source([]).attachment_field == "attachment_url"
 
-    def test_log_label_names_the_group(self):
+    def test_log_fields_name_the_group(self):
         """The log describes the source by its group ID."""
-        assert make_source([], group_id=42).log_label == "group_id=42"
+        assert make_source([], group_id=42).log_fields == {"group_id": "42"}

@@ -34,11 +34,12 @@ class RecipientSource(ABC):
 
     @property
     @abstractmethod
-    def log_label(self) -> str:
+    def log_fields(self) -> dict[str, str]:
         """Describe this source in the opening line of the log.
 
         Returns:
-            One or more 'name=value' pairs separated by spaces.
+            The values identifying the source, keyed by the name each one
+            gets in the log, in the order they must appear.
         """
 
     @abstractmethod

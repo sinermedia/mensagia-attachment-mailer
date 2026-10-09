@@ -4,7 +4,9 @@ import pytest
 from src.domain.entities.campaign import Campaign
 from src.domain.entities.contact import Contact
 from src.domain.entities.recipient import Recipient
+from src.domain.file_rows import row_key
 from src.infrastructure.recipients.agenda_recipient_source import AgendaRecipientSource
+from src.infrastructure.recipients.file_recipient_source import FileRecipientSource
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.domain.ports.email_sender import EmailNotSentError, EmailRejectedError, EmailSendUncertainError
 from src.domain.scheduling import StartMode
@@ -1204,3 +1206,66 @@ class TestSendBulkEmailsUseCaseFixedStart:
         run(use_case, source)
 
         assert sent_slots(email_sender)[0] == ("a@test.com", FIRST_SLOT)
+
+
+class TestSendBulkEmailsUseCaseWithFile:
+    """Tests for a bulk send whose recipients are the rows of a file.
+
+    The use case works the same with any recipient source; these tests make
+    sure the rows of a file, where one address can appear several times,
+    are each sent once and recorded by their own key.
+    """
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
+
+    @pytest.fixture
+    def file_source(self, tmp_path):
+        """File source over a CSV where one agency receives two attachments."""
+        path = tmp_path / "envios.csv"
+        path.write_bytes(
+            "Correo;Adjunto\n"
+            "agencia@x.com;https://example.com/a.pdf\n"
+            "agencia@x.com;https://example.com/b.pdf\n"
+            "agencia@x.com;https://example.com/a.pdf\n"
+            "sin-arroba;https://example.com/c.pdf\n".encode("utf-8")
+        )
+        return FileRecipientSource(str(path), None, "Correo", "Adjunto")
+
+    def test_each_row_is_sent_with_its_own_attachment(self, use_case, email_sender, file_source):
+        """The same address receives one email per distinct attachment; repeated and invalid rows are skipped."""
+        email_sender.send.return_value = {}
+
+        result = run(use_case, file_source)
+
+        sent = [(c.args[0].to_email, c.args[0].attachments) for c in email_sender.send.call_args_list]
+        assert sent == [
+            ("agencia@x.com", ["https://example.com/a.pdf"]),
+            ("agencia@x.com", ["https://example.com/b.pdf"]),
+        ]
+        assert [r.skip_reason for r in result.skipped] == ["duplicate_row", "invalid_email"]
+
+    def test_rows_are_recorded_by_their_key(self, use_case, email_sender, file_source, send_registry):
+        """Each sent row is recorded in the registry under its own key, within the file's campaign."""
+        email_sender.send.return_value = {}
+
+        run(use_case, file_source, send_registry=send_registry)
+
+        campaign = Campaign(file_source.identity, 5, "Adjunto", "Test")
+        assert send_registry.mark_sent.call_args_list == [
+            call(campaign, row_key("agencia@x.com", "https://example.com/a.pdf"), slot(0)),
+            call(campaign, row_key("agencia@x.com", "https://example.com/b.pdf"), slot(1)),
+        ]
+
+    def test_rows_already_sent_are_not_sent_again(self, use_case, email_sender, file_source, send_registry):
+        """Resuming skips the rows the registry lists, and only those."""
+        send_registry.get_sent_keys.return_value = {row_key("agencia@x.com", "https://example.com/a.pdf")}
+        email_sender.send.return_value = {}
+
+        result = run(use_case, file_source, send_registry=send_registry)
+
+        assert [c.args[0].attachments for c in email_sender.send.call_args_list] == [["https://example.com/b.pdf"]]
+        assert [r.row for r in result.already_sent] == [2]

@@ -220,7 +220,7 @@ class SendBulkEmailsUseCase:
         # Log the opening summary and all skipped/already-sent recipients before the send loop
         if logger:
             logger.log_start(
-                from_email, subject, template_id, recipient_source.log_label,
+                from_email, subject, template_id, recipient_source.log_fields,
                 recipient_source.attachment_field, certified, len(eligible), len(skipped),
                 start_mode=start_mode, start_at=start_at,
                 first_slot=start_dates[0] if start_dates else None,

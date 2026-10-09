@@ -22,10 +22,12 @@ class TableFileError(Exception):
 
     Attributes:
         code: Machine-readable problem: 'unsupported_format', 'unreadable',
-            'missing_sheet', 'empty', 'no_header', 'unnamed_column' or
-            'duplicate_column'.
+            'missing_sheet', 'empty', 'no_header', 'unnamed_column',
+            'duplicate_column' or, once the columns are chosen,
+            'missing_column'.
         details: Values to show in the message, such as the column
-            position ('column', 1-based) or the repeated name ('name').
+            position ('column', 1-based), the repeated or missing name
+            ('name') or the missing sheet ('sheet').
     """
 
     def __init__(self, code: str, **details):

@@ -49,13 +49,13 @@ class AgendaRecipientSource(RecipientSource):
         return self.field_name
 
     @property
-    def log_label(self) -> str:
+    def log_fields(self) -> dict[str, str]:
         """Describe the group in the opening line of the log.
 
         Returns:
-            The group ID as a 'group_id=...' pair.
+            The group ID under 'group_id'.
         """
-        return f"group_id={self.group_id}"
+        return {"group_id": str(self.group_id)}
 
     def get_recipients(self) -> list[Recipient]:
         """Fetch the group's contacts and turn each one into a recipient.

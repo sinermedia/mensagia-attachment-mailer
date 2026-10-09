@@ -127,7 +127,7 @@ class SendLogger:
         from_email: str,
         subject: str,
         template_id: int,
-        source: str,
+        source: dict[str, str],
         field_name: str,
         certified: int,
         eligible_count: int,
@@ -145,8 +145,8 @@ class SendLogger:
             from_email: Verified sender email address.
             subject: Email subject line.
             template_id: Numeric ID of the selected template.
-            source: Label of the recipient source, as given by its
-                log_label (e.g. 'group_id=15').
+            source: Fields identifying the recipient source, as given by
+                its log_fields (e.g. {'group_id': '15'}).
             field_name: Name of the extra field or column holding the attachment.
             certified: 1 if sending as certified email, 0 otherwise.
             eligible_count: Number of recipients that will be sent to.
@@ -165,9 +165,10 @@ class SendLogger:
             schedule += f" start_at={start_at.isoformat()}"
         if first_slot is not None:
             schedule += f" first_slot={first_slot.isoformat()}"
+        origin = " ".join(f"{name}={_q(value)}" for name, value in source.items())
         self._logger.info(
             f"[SEND_START] from={from_email} subject={_q(subject)} "
-            f"template_id={template_id} {source} field={field_name} "
+            f"template_id={template_id} {origin} field={_q(field_name)} "
             f"certified={certified} eligible={eligible_count} skipped={skipped_count} {schedule}"
         )
 
