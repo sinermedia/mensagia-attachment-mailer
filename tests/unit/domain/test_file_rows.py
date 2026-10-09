@@ -111,6 +111,16 @@ class TestRowsOnSeveralDates:
         ]
         assert [[r.row for r in group] for group in rows_on_several_dates(rows)] == [[2, 4]]
 
+    def test_rows_are_listed_in_file_order_whatever_the_input_order(self):
+        """Rows already ordered by date come back in file order, groups by their first row."""
+        rows = [
+            make_dated_row(9, "b@x.com", "b.pdf", date(2026, 11, 4)),
+            make_dated_row(5, "a@x.com", "a.pdf", date(2026, 11, 5)),
+            make_dated_row(3, "b@x.com", "b.pdf", date(2026, 11, 6)),
+            make_dated_row(2, "a@x.com", "a.pdf", date(2026, 11, 6)),
+        ]
+        assert [[r.row for r in group] for group in rows_on_several_dates(rows)] == [[2, 5], [3, 9]]
+
     def test_rows_that_are_not_sent_are_ignored(self):
         """Skipped rows, such as duplicates or past days, do not count."""
         rows = [

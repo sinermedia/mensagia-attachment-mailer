@@ -151,4 +151,8 @@ STRINGS = {
     "summary_repeated_dates": "Aquests destinataris rebran el mateix adjunt en dates diferents. Si en sobra algun, elimina'l des del portal de Mensagia després de l'enviament:",
     "summary_repeated_item": "- {email}, {attachment}: {rows}",
     "summary_repeated_row": "fila {row} ({date})",
+    "file_error_no_date_column": "El fitxer no té cap altra columna per a la data d'enviament.",
+    "error_no_date_fields": "No hi ha cap altre camp personalitzat per a la data d'enviament.",
+    "summary_date_field": "Camp de la data: {value} ({format})",
+    "summary_date_column": "Columna de la data: {value} ({format})",
 }

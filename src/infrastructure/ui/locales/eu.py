@@ -151,4 +151,8 @@ STRINGS = {
     "summary_repeated_dates": "Hartzaile hauek eranskin bera jasoko dute data desberdinetan. Bat soberan badago, ezabatu Mensagiako atarian bidalketaren ondoren:",
     "summary_repeated_item": "- {email}, {attachment}: {rows}",
     "summary_repeated_row": "{row}. errenkada ({date})",
+    "file_error_no_date_column": "Fitxategiak ez du bidalketa-datarako beste zutaberik.",
+    "error_no_date_fields": "Ez dago bidalketa-datarako beste eremu pertsonalizaturik.",
+    "summary_date_field": "Dataren eremua: {value} ({format})",
+    "summary_date_column": "Dataren zutabea: {value} ({format})",
 }

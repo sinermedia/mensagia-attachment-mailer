@@ -151,4 +151,8 @@ STRINGS = {
     "summary_repeated_dates": "These recipients will receive the same attachment on different dates. If any is not wanted, delete it in the Mensagia portal after the send:",
     "summary_repeated_item": "- {email}, {attachment}: {rows}",
     "summary_repeated_row": "row {row} ({date})",
+    "file_error_no_date_column": "The file has no other column for the send date.",
+    "error_no_date_fields": "There is no other custom field for the send date.",
+    "summary_date_field": "Date field: {value} ({format})",
+    "summary_date_column": "Date column: {value} ({format})",
 }

@@ -151,4 +151,8 @@ STRINGS = {
     "summary_repeated_dates": "Estos destinatarios recibirán el mismo adjunto en fechas distintas. Si sobra alguno, elimínalo desde el portal de Mensagia después del envío:",
     "summary_repeated_item": "- {email}, {attachment}: {rows}",
     "summary_repeated_row": "fila {row} ({date})",
+    "file_error_no_date_column": "El fichero no tiene ninguna otra columna para la fecha de envío.",
+    "error_no_date_fields": "No hay ningún otro campo personalizado para la fecha de envío.",
+    "summary_date_field": "Campo de la fecha: {value} ({format})",
+    "summary_date_column": "Columna de la fecha: {value} ({format})",
 }

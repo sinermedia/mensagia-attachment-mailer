@@ -86,7 +86,8 @@ def rows_on_several_dates(recipients: list[Recipient]) -> list[list[Recipient]]:
     remove the extra ones in the Mensagia portal.
 
     Args:
-        recipients: Rows of the file, in file order.
+        recipients: Rows of the file, in any order (the send orders them
+            by date).
 
     Returns:
         One group per repeated pair, each with its sendable rows in file
@@ -94,7 +95,7 @@ def rows_on_several_dates(recipients: list[Recipient]) -> list[list[Recipient]]:
         day or that will not be sent are left out.
     """
     groups = {}
-    for recipient in recipients:
+    for recipient in sorted(recipients, key=lambda r: r.row or 0):
         if recipient.skip_reason is None and recipient.send_date is not None:
             _, email, attachment = json.loads(recipient.key)
             groups.setdefault((email, attachment), []).append(recipient)
