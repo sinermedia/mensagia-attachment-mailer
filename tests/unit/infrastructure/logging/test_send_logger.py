@@ -1,13 +1,18 @@
 import re
 from datetime import datetime
-from src.domain.entities.contact import Contact
+from src.domain.entities.recipient import Recipient
 from src.domain.scheduling import StartMode
 from src.infrastructure.logging.send_logger import SendLogger
 
 
 def make_contact(contact_id, email, name=None):
-    """Build a Contact for use in logger tests."""
-    return Contact(id=contact_id, name=name or f"Contact {contact_id}", email=email, extra_fields={})
+    """Build an agenda Recipient for use in logger tests."""
+    return Recipient(key=str(contact_id), email=email, attachment="", name=name or f"Contact {contact_id}")
+
+
+def make_row(row, email, attachment):
+    """Build a Recipient read from a file row for use in logger tests."""
+    return Recipient(key=f"{email}|{attachment}", email=email, attachment=attachment, row=row)
 
 
 class TestSendLogger:
@@ -35,13 +40,13 @@ class TestSendLogger:
     def test_log_start_writes_send_start_keyword(self, tmp_path):
         """log_start() writes a line containing the [SEND_START] keyword."""
         logger = SendLogger(log_dir=str(tmp_path))
-        logger.log_start("from@test.com", "Subject", 42, 15, "attachment_url", 0, 10, 2)
+        logger.log_start("from@test.com", "Subject", 42, "group_id=15", "attachment_url", 0, 10, 2)
         assert "[SEND_START]" in logger.log_path.read_text(encoding="utf-8")
 
     def test_log_start_includes_all_parameters(self, tmp_path):
         """log_start() records from, subject, template_id, group_id, field, certified, eligible and skipped."""
         logger = SendLogger(log_dir=str(tmp_path))
-        logger.log_start("from@test.com", "My Subject", 42, 15, "attachment_url", 1, 10, 2)
+        logger.log_start("from@test.com", "My Subject", 42, "group_id=15", "attachment_url", 1, 10, 2)
         content = logger.log_path.read_text(encoding="utf-8")
         assert "from@test.com" in content
         assert "My Subject" in content
@@ -55,7 +60,7 @@ class TestSendLogger:
     def test_log_start_records_a_now_start(self, tmp_path):
         """log_start() records the "now" start mode and the first slot."""
         logger = SendLogger(log_dir=str(tmp_path))
-        logger.log_start("f@t.com", "Subj", 1, 1, "field", 0, 1, 0,
+        logger.log_start("f@t.com", "Subj", 1, "group_id=1", "field", 0, 1, 0,
                          start_mode=StartMode.NOW, first_slot=datetime(2026, 10, 8, 10, 20, 0))
         content = logger.log_path.read_text(encoding="utf-8")
         assert "start_mode=now" in content
@@ -65,7 +70,7 @@ class TestSendLogger:
     def test_log_start_records_a_fixed_start(self, tmp_path):
         """log_start() records the fixed start mode, the chosen start and the first slot."""
         logger = SendLogger(log_dir=str(tmp_path))
-        logger.log_start("f@t.com", "Subj", 1, 1, "field", 0, 1, 0, start_mode=StartMode.FIXED,
+        logger.log_start("f@t.com", "Subj", 1, "group_id=1", "field", 0, 1, 0, start_mode=StartMode.FIXED,
                          start_at=datetime(2026, 10, 15, 9, 0, 0), first_slot=datetime(2026, 10, 15, 9, 0, 0))
         content = logger.log_path.read_text(encoding="utf-8")
         assert "start_mode=fixed start_at=2026-10-15T09:00:00 first_slot=2026-10-15T09:00:00" in content
@@ -73,7 +78,7 @@ class TestSendLogger:
     def test_log_start_omits_the_first_slot_when_nothing_is_sent(self, tmp_path):
         """log_start() leaves out the first slot when no email is scheduled."""
         logger = SendLogger(log_dir=str(tmp_path))
-        logger.log_start("f@t.com", "Subj", 1, 1, "field", 0, 0, 3)
+        logger.log_start("f@t.com", "Subj", 1, "group_id=1", "field", 0, 0, 3)
         assert "first_slot=" not in logger.log_path.read_text(encoding="utf-8")
 
     def test_log_ok_writes_send_ok_keyword(self, tmp_path):
@@ -159,7 +164,7 @@ class TestSendLogger:
         """Every line written to the log starts with a YYYY-MM-DD HH:MM:SS timestamp."""
         logger = SendLogger(log_dir=str(tmp_path))
         contact = make_contact(1, "a@test.com", "Alice")
-        logger.log_start("f@t.com", "Subj", 1, 1, "field", 0, 1, 0)
+        logger.log_start("f@t.com", "Subj", 1, "group_id=1", "field", 0, 1, 0)
         logger.log_ok(contact, "https://example.com/a.pdf")
         logger.log_done(1, 0, 0)
         lines = [ln for ln in logger.log_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
@@ -176,7 +181,7 @@ class TestSendLogger:
     def test_subject_with_spaces_is_quoted(self, tmp_path):
         """Subject lines that contain spaces are wrapped in double quotes in the log."""
         logger = SendLogger(log_dir=str(tmp_path))
-        logger.log_start("f@t.com", "My Subject Line", 1, 1, "field", 0, 1, 0)
+        logger.log_start("f@t.com", "My Subject Line", 1, "group_id=1", "field", 0, 1, 0)
         content = logger.log_path.read_text(encoding="utf-8")
         assert 'subject="My Subject Line"' in content
 
@@ -204,7 +209,57 @@ class TestSendLoggerSimulation:
     def test_simulation_log_starts_with_simulation_header(self, tmp_path):
         """The first line of a simulation log is a [SIMULATION] header saying nothing was sent."""
         logger = SendLogger(log_dir=str(tmp_path), simulation=True)
-        logger.log_start("f@t.com", "Subj", 1, 1, "field", 0, 1, 0)
+        logger.log_start("f@t.com", "Subj", 1, "group_id=1", "field", 0, 1, 0)
         first_line = logger.log_path.read_text(encoding="utf-8").splitlines()[0]
         assert "[SIMULATION]" in first_line
         assert "no email was sent" in first_line
+
+
+class TestSendLoggerFileRows:
+    """Tests for the log lines of recipients read from a file.
+
+    A file row has no contact ID nor name: it is identified by its row
+    number as a spreadsheet shows it, its email and its attachment, so the
+    user can find it in the file.
+    """
+
+    def test_log_skip_identifies_the_row(self, tmp_path):
+        """log_skip() records the row number, email, attachment and reason of a file row."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_skip(make_row(14, "agencia@x.com", "factura_123.pdf"), "duplicate_row")
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert "[SEND_SKIP]  row=14 to=agencia@x.com attachment=factura_123.pdf reason=duplicate_row" in content
+
+    def test_log_ok_identifies_the_row(self, tmp_path):
+        """log_ok() records the row number, email and resolved attachment URL of a file row."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_ok(make_row(3, "a@x.com", "a.pdf"), "https://example.com/a.pdf")
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert "[SEND_OK]    row=3 to=a@x.com attachment=https://example.com/a.pdf" in content
+
+    def test_log_error_identifies_the_row(self, tmp_path):
+        """log_error() records the row number, email, attachment and reason of a file row."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_error(make_row(3, "a@x.com", "a.pdf"), "attachment not accessible")
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert '[SEND_ERROR] row=3 to=a@x.com attachment=a.pdf reason="attachment not accessible"' in content
+
+    def test_log_uncertain_identifies_the_row(self, tmp_path):
+        """log_uncertain() records the row number, email, attachment, slot and reason of a file row."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_uncertain(make_row(3, "a@x.com", "a.pdf"), datetime(2024, 1, 15, 14, 40, 12), "timeout")
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert "[SEND_UNCERTAIN] row=3 to=a@x.com attachment=a.pdf start_date=2024-01-15T14:40:12 reason=timeout" in content
+
+    def test_attachment_with_spaces_is_quoted(self, tmp_path):
+        """An attachment value with spaces is wrapped in double quotes."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_skip(make_row(2, "", "my file.pdf"), "no_email")
+        assert 'row=2 to= attachment="my file.pdf" reason=no_email' in logger.log_path.read_text(encoding="utf-8")
+
+    def test_log_start_records_the_source_label(self, tmp_path):
+        """log_start() writes the label of a file source in place of the group ID."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_start("f@t.com", "Subj", 1, 'file=clientes.xlsx sheet=Hoja1', "Adjunto", 0, 1, 0)
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert "template_id=1 file=clientes.xlsx sheet=Hoja1 field=Adjunto" in content

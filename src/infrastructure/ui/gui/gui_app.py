@@ -13,6 +13,7 @@ from src.infrastructure.api.mensagia_email_address_repository import MensagiaEma
 from src.infrastructure.api.mensagia_email_template_repository import MensagiaEmailTemplateRepository
 from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtraFieldRepository
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
+from src.infrastructure.recipients.agenda_recipient_source import AgendaRecipientSource
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language, get_language
 from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url, load_show_ids
@@ -868,21 +869,28 @@ class App(ctk.CTk):
                                        fg_color="#e05", hover_color="#c03")
         self._send_btn.pack(side="left")
 
+    def _recipient_source(self):
+        """Build the source of the recipients chosen in the wizard.
+
+        Returns:
+            The RecipientSource of the selected group and attachment field.
+        """
+        return AgendaRecipientSource(MensagiaContactRepository(self.client),
+                                     self.selected_agenda.id, self.selected_field.name)
+
     def _fetch_summary(self):
-        """Background thread: query the selected group's contacts for the summary.
+        """Background thread: read the chosen recipients for the summary.
 
         Errors are reported inline rather than in a modal dialog so the user
         can simply go back and pick another group.
         """
         try:
-            contacts = MensagiaContactRepository(self.client).get_by_group(
-                self.selected_agenda.id, in_mail_blacklist=False
-            )
+            recipients = self._recipient_source().get_recipients()
         except MensagiaAPIError as e:
             message = t("error_api", error=str(e))
             self._ui_queue.put(lambda: self._show_summary_error(message))
             return
-        self._ui_queue.put(lambda: self._build_summary(contacts))
+        self._ui_queue.put(lambda: self._build_summary(recipients))
 
     def _show_summary_error(self, message: str):
         """Report a summary failure, leaving the send actions disabled.
@@ -893,37 +901,35 @@ class App(ctk.CTk):
         self._summary_contacts_label.configure(text="")
         self._summary_error.configure(text=message)
 
-    def _build_summary(self, contacts: list):
-        """Populate the summary step widgets from the group's contacts.
+    def _build_summary(self, recipients: list):
+        """Populate the summary step widgets from the chosen recipients.
 
         Always invoked on the main thread through after(), because tkinter
         widgets may only be touched from the thread running the event loop.
 
         Args:
-            contacts: Every contact of the selected group, eligible or not.
+            recipients: Every recipient of the chosen source, sendable or not.
         """
-        # Replicate the same eligibility filter as the use case
-        eligible = [
-            c for c in contacts
-            if c.email and c.extra_fields.get(self.selected_field.name)
-        ]
+        # The source tells which recipients cannot be sent (no email, no attachment...)
+        eligible = [r for r in recipients if r.skip_reason is None]
+        source = self._recipient_source()
         subject = self._subject_entry.get().strip()
 
         # Detect contacts already sent this exact campaign in a previous,
         # interrupted run, and attempts it left unconfirmed (possible
         # duplicates), and let the user decide whether to skip the sent
         # ones or start the whole campaign over again
-        campaign = Campaign(str(self.selected_agenda.id), self.selected_template.id, self.selected_field.name,
+        campaign = Campaign(source.identity, self.selected_template.id, source.attachment_field,
                             subject, self._start_mode)
         sent_keys = self._send_registry.get_sent_keys(campaign)
-        already_sent_count = len([c for c in eligible if str(c.id) in sent_keys])
+        already_sent_count = len([r for r in eligible if r.key in sent_keys])
         uncertain = self._send_registry.get_uncertain_attempts(campaign)
         if already_sent_count or uncertain:
             parts = []
             if already_sent_count:
                 parts.append(t("resume_detected", sent=already_sent_count))
             if uncertain:
-                parts.append(t("resume_uncertain") + "\n" + "\n".join(resume_uncertain_lines(uncertain, contacts)))
+                parts.append(t("resume_uncertain") + "\n" + "\n".join(resume_uncertain_lines(uncertain, recipients)))
             parts.append(t("resume_continue_prompt"))
             continue_pending = messagebox.askyesno(t("resume_title"), "\n\n".join(parts))
             if not continue_pending:
@@ -945,11 +951,11 @@ class App(ctk.CTk):
         ])
         self._summary_text.configure(text=lines)
         self._summary_contacts_label.configure(text=t("summary_contacts", count=to_send_count))
-        self._summary_skipped_label.configure(text=t("summary_skipped", count=len(contacts) - len(eligible)))
+        self._summary_skipped_label.configure(text=t("summary_skipped", count=len(recipients) - len(eligible)))
 
         # Without a single contact there is nothing to send nor to explain in a
         # simulation log, so both actions stay disabled
-        if not contacts:
+        if not recipients:
             self._summary_error.configure(text=t("no_eligible_contacts"))
             return
 
@@ -1048,9 +1054,7 @@ class App(ctk.CTk):
         def _run():
             """Background thread: delegate to SendBulkEmailsUseCase and update the UI progressively."""
             try:
-                contact_repo = MensagiaContactRepository(self.client)
-                email_sender_adapter = MensagiaEmailSender(self.client)
-                use_case = SendBulkEmailsUseCase(contact_repo, email_sender_adapter)
+                use_case = SendBulkEmailsUseCase(MensagiaEmailSender(self.client))
                 _dry_run = dry_run
 
                 # Simulations are logged too, in a file named so it is never
@@ -1059,10 +1063,9 @@ class App(ctk.CTk):
 
                 result = use_case.execute(
                     from_email=self.selected_sender.email,
-                    group_id=self.selected_agenda.id,
+                    recipient_source=self._recipient_source(),
                     subject=self._subject_entry.get().strip(),
                     template_id=self.selected_template.id,
-                    extra_field=self.selected_field,
                     certified=self._certified_var.get(),
                     attachment_base_url=self._base_url_entry.get().strip() or None,
                     attachment_checker=HttpAttachmentChecker(),
@@ -1076,7 +1079,7 @@ class App(ctk.CTk):
 
                 # Build the result text, appending per-contact error details if any
                 error_msgs = "\n".join(
-                    t("send_error", email=item["contact"].email, error=item["error"])
+                    t("send_error", email=item["recipient"].email, error=item["error"])
                     for item in result.errors
                 )
                 key = "dry_run_complete" if _dry_run else "send_complete"

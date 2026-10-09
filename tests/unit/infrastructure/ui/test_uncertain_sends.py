@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from src.domain.entities.contact import Contact
+from src.domain.entities.recipient import Recipient
 from src.infrastructure.ui.i18n import get_language, set_language, t
 from src.infrastructure.ui.uncertain_sends import (
     format_slots,
@@ -16,8 +16,8 @@ SLOT_B = datetime(2024, 1, 15, 14, 52, 0)
 
 
 def make_contact(contact_id, email):
-    """Build a Contact for formatting tests."""
-    return Contact(id=contact_id, name=f"Contact {contact_id}", email=email, extra_fields={})
+    """Build the Recipient of an agenda contact with the given ID and email."""
+    return Recipient(key=str(contact_id), email=email, attachment="a.pdf", name=f"Contact {contact_id}")
 
 
 @pytest.fixture(autouse=True)
@@ -61,19 +61,19 @@ class TestResultUncertainLines:
 
     def test_sent_contact_is_reported_as_possible_duplicate(self):
         """A contact finally sent gets the possible-duplicate message with the extra slots."""
-        item = {"contact": make_contact(1, "a@test.com"), "start_dates": [SLOT_A], "sent": True}
+        item = {"recipient": make_contact(1, "a@test.com"), "start_dates": [SLOT_A], "sent": True}
         assert result_uncertain_lines([item]) == [
             t("possible_duplicate", email="a@test.com", slots=format_slots([SLOT_A]))
         ]
 
     def test_unsent_contact_is_reported_as_unconfirmed(self):
         """A contact never confirmed gets the unconfirmed message with every slot."""
-        item = {"contact": make_contact(1, "a@test.com"), "start_dates": [SLOT_A, SLOT_B], "sent": False}
+        item = {"recipient": make_contact(1, "a@test.com"), "start_dates": [SLOT_A, SLOT_B], "sent": False}
         assert result_uncertain_lines([item]) == [
             t("uncertain_unconfirmed", email="a@test.com", slots=format_slots([SLOT_A, SLOT_B]))
         ]
 
     def test_messages_are_translated(self):
         """The messages come from the locale files, not from the raw keys."""
-        item = {"contact": make_contact(1, "a@test.com"), "start_dates": [SLOT_A], "sent": True}
+        item = {"recipient": make_contact(1, "a@test.com"), "start_dates": [SLOT_A], "sent": True}
         assert "possible_duplicate" not in result_uncertain_lines([item])[0]

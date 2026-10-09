@@ -8,6 +8,7 @@ from src.infrastructure.api.mensagia_email_address_repository import MensagiaEma
 from src.infrastructure.api.mensagia_email_template_repository import MensagiaEmailTemplateRepository
 from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtraFieldRepository
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
+from src.infrastructure.recipients.agenda_recipient_source import AgendaRecipientSource
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language
 from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url, load_show_ids
@@ -52,28 +53,23 @@ def _choose_language():
         set_language(detect_system_language())
 
 
-def _resolve_attachment_base_url(eligible: list, extra_field) -> str | None:
+def _resolve_attachment_base_url(eligible: list) -> str | None:
     """Determine the base URL to use for resolving relative attachment paths.
 
-    If all contacts already have absolute attachment URLs no base URL is
-    needed. When at least one contact has a relative value, the function
+    If all recipients already have absolute attachment URLs no base URL is
+    needed. When at least one recipient has a relative value, the function
     tries to load it from the environment; if it is not configured there
     it prompts the user to enter one interactively.
 
     Args:
-        eligible: List of Contact objects that will receive an email.
-        extra_field: The ExtraField whose value contains the attachment path.
+        eligible: List of Recipient objects that will receive an email.
 
     Returns:
         The base URL string, or None if all attachment values are already
         absolute URLs.
     """
-    # Check whether any contact has a relative (non-absolute) attachment value
-    needs_base = any(
-        not v.startswith(("http://", "https://"))
-        for c in eligible
-        if (v := c.extra_fields.get(extra_field.name))
-    )
+    # Check whether any recipient has a relative (non-absolute) attachment value
+    needs_base = any(not r.attachment.startswith(("http://", "https://")) for r in eligible)
 
     if not needs_base:
         # All values are absolute — a base URL is not required
@@ -409,34 +405,32 @@ def run():
     # ── Step 7: Contact summary and confirmation ───────────────────────────────
     print(f"\n--- {t('step_summary')} ---")
     print(f"  {t('loading')}")
+    source = AgendaRecipientSource(MensagiaContactRepository(client), agenda.id, extra_field.name)
     try:
-        contacts = MensagiaContactRepository(client).get_by_group(agenda.id, in_mail_blacklist=False)
+        recipients = source.get_recipients()
     except MensagiaAPIError as e:
         print(f"  {t('error_api', error=str(e))}")
         sys.exit(1)
 
-    # Determine which contacts are eligible (have both email and attachment value)
-    eligible = [
-        c for c in contacts
-        if c.email and c.extra_fields.get(extra_field.name)
-    ]
-    skipped_count = len(contacts) - len(eligible)
+    # The source tells which recipients cannot be sent (no email, no attachment...)
+    eligible = [r for r in recipients if r.skip_reason is None]
+    skipped_count = len(recipients) - len(eligible)
 
     # Detect contacts already sent this exact campaign in a previous,
     # interrupted run, and attempts it left unconfirmed (possible
     # duplicates), and let the user decide whether to skip the sent ones
     # or start the whole campaign over again
     send_registry = JsonSendRegistry()
-    campaign = Campaign(str(agenda.id), template.id, extra_field.name, subject, start_mode)
+    campaign = Campaign(source.identity, template.id, source.attachment_field, subject, start_mode)
     sent_keys = send_registry.get_sent_keys(campaign)
-    already_sent_count = len([c for c in eligible if str(c.id) in sent_keys])
+    already_sent_count = len([r for r in eligible if r.key in sent_keys])
     uncertain = send_registry.get_uncertain_attempts(campaign)
     if already_sent_count or uncertain:
         if already_sent_count:
             print(f"\n  {t('resume_detected', sent=already_sent_count)}")
         if uncertain:
             print(f"\n  {t('resume_uncertain')}")
-            for line in resume_uncertain_lines(uncertain, contacts):
+            for line in resume_uncertain_lines(uncertain, recipients):
                 print(f"    {line}")
         if not _yes_no(f"  {t('resume_continue_prompt')}"):
             send_registry.clear(campaign)
@@ -446,7 +440,7 @@ def run():
     to_send_count = len(eligible) - already_sent_count
 
     # Resolve the base URL for relative attachment paths, prompting if needed
-    attachment_base_url = _resolve_attachment_base_url(eligible, extra_field)
+    attachment_base_url = _resolve_attachment_base_url(eligible)
 
     # Print the summary for the user to review before committing to send
     sender_display = f"{sender.name} <{sender.email}>" if sender.name else sender.email
@@ -463,7 +457,7 @@ def run():
 
     # Without a single contact there is nothing to send nor to explain in a
     # simulation log, so exit cleanly without error
-    if not contacts:
+    if not recipients:
         print(f"\n  {t('no_eligible_contacts')}")
         sys.exit(0)
 
@@ -480,9 +474,7 @@ def run():
 
     # ── Step 8: Bulk send ──────────────────────────────────────────────────────
     dry_run = action == "dry_run"
-    contact_repo = MensagiaContactRepository(client)
-    email_sender = MensagiaEmailSender(client)
-    use_case = SendBulkEmailsUseCase(contact_repo, email_sender)
+    use_case = SendBulkEmailsUseCase(MensagiaEmailSender(client))
 
     # Simulations are logged too, in a file named so it is never mistaken
     # for the log of a real send
@@ -491,10 +483,9 @@ def run():
     print(f"\n  {t('sending')}")
     result = use_case.execute(
         from_email=sender.email,
-        group_id=agenda.id,
+        recipient_source=source,
         subject=subject,
         template_id=template.id,
-        extra_field=extra_field,
         certified=certified,
         attachment_base_url=attachment_base_url,
         attachment_checker=HttpAttachmentChecker(),
@@ -507,7 +498,7 @@ def run():
 
     # Report any per-contact errors to the console
     for error_item in result.errors:
-        print(f"  {t('send_error', email=error_item['contact'].email, error=error_item['error'])}")
+        print(f"  {t('send_error', email=error_item['recipient'].email, error=error_item['error'])}")
 
     # Print the final outcome summary
     key = "dry_run_complete" if dry_run else "send_complete"

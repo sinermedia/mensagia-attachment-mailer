@@ -34,6 +34,25 @@ def _q(value: str) -> str:
     return s
 
 
+def _who(recipient) -> str:
+    """Identify a recipient in a log line, the way the user can find it in its source.
+
+    An agenda contact is identified by its ID and name. A file row has
+    neither, so it is identified by its row number, as a spreadsheet shows
+    it, and its attachment value, which tells apart rows sent to the same
+    address.
+
+    Args:
+        recipient: Recipient the line is about.
+
+    Returns:
+        The 'name=value' pairs identifying the recipient, email included.
+    """
+    if recipient.row is not None:
+        return f"row={recipient.row} to={recipient.email} attachment={_q(recipient.attachment)}"
+    return f"id={recipient.key} name={_q(recipient.name)} to={recipient.email}"
+
+
 class SendLogger:
     """Writes a structured log file for a single bulk-send operation or simulation.
 
@@ -45,8 +64,8 @@ class SendLogger:
       email was sent
     - [SEND_START] — opening summary with all shared send parameters
     - [SEND_OK]    — one entry per successfully dispatched email
-    - [SEND_SKIP]  — one entry per contact excluded before sending
-    - [SEND_ERROR] — one entry per contact whose send attempt failed
+    - [SEND_SKIP]  — one entry per recipient excluded before sending
+    - [SEND_ERROR] — one entry per recipient whose send attempt failed
     - [SEND_UNCERTAIN] — one entry per attempt that may have been scheduled
       although the API gave no reliable answer (possible duplicate)
     - [SEND_DONE]  — closing summary with total counts
@@ -108,7 +127,7 @@ class SendLogger:
         from_email: str,
         subject: str,
         template_id: int,
-        group_id: int,
+        source: str,
         field_name: str,
         certified: int,
         eligible_count: int,
@@ -126,11 +145,12 @@ class SendLogger:
             from_email: Verified sender email address.
             subject: Email subject line.
             template_id: Numeric ID of the selected template.
-            group_id: Numeric ID of the target contact group.
-            field_name: Name of the extra field used as attachment source.
+            source: Label of the recipient source, as given by its
+                log_label (e.g. 'group_id=15').
+            field_name: Name of the extra field or column holding the attachment.
             certified: 1 if sending as certified email, 0 otherwise.
-            eligible_count: Number of contacts that will be sent to.
-            skipped_count: Number of contacts excluded before sending.
+            eligible_count: Number of recipients that will be sent to.
+            skipped_count: Number of recipients excluded before sending.
             start_mode: How the first email is scheduled.
             start_at: Start chosen by the user in the fixed start mode, or
                 None in the "now" mode.
@@ -147,64 +167,59 @@ class SendLogger:
             schedule += f" first_slot={first_slot.isoformat()}"
         self._logger.info(
             f"[SEND_START] from={from_email} subject={_q(subject)} "
-            f"template_id={template_id} group_id={group_id} field={field_name} "
+            f"template_id={template_id} {source} field={field_name} "
             f"certified={certified} eligible={eligible_count} skipped={skipped_count} {schedule}"
         )
 
-    def log_ok(self, contact, attachment_url: str) -> None:
+    def log_ok(self, recipient, attachment_url: str) -> None:
         """Log a successful individual email dispatch.
 
         Args:
-            contact: Contact domain entity that received the email.
-            attachment_url: Fully resolved URL of the sent attachment.
+            recipient: Recipient that received the email.
+            attachment_url: Fully resolved URL of the sent attachment, shown
+                in place of a file row's attachment value.
         """
-        self._logger.info(
-            f"[SEND_OK]    id={contact.id} name={_q(contact.name)} "
-            f"to={contact.email} attachment={_q(attachment_url)}"
-        )
+        # A file row already shows its attachment: replace it with the URL
+        if recipient.row is not None:
+            who = f"row={recipient.row} to={recipient.email}"
+        else:
+            who = _who(recipient)
+        self._logger.info(f"[SEND_OK]    {who} attachment={_q(attachment_url)}")
 
-    def log_skip(self, contact, reason: str) -> None:
-        """Log a contact that was excluded before any send attempt.
+    def log_skip(self, recipient, reason: str) -> None:
+        """Log a recipient that was excluded before any send attempt.
 
         Args:
-            contact: Contact domain entity that was skipped.
-            reason: Machine-readable skip reason: 'no_email' when the
-                contact has no email address, 'no_attachment' when the
-                attachment field is empty.
+            recipient: Recipient that was skipped.
+            reason: Machine-readable skip reason, such as 'no_email',
+                'no_attachment' or 'already_sent'.
         """
-        email = contact.email or ""
-        self._logger.info(
-            f"[SEND_SKIP]  id={contact.id} name={_q(contact.name)} "
-            f"to={email} reason={reason}"
-        )
+        self._logger.info(f"[SEND_SKIP]  {_who(recipient)} reason={reason}")
 
-    def log_error(self, contact, reason: str) -> None:
-        """Log a contact whose send attempt raised an exception.
+    def log_error(self, recipient, reason: str) -> None:
+        """Log a recipient whose send attempt raised an exception.
 
         Args:
-            contact: Contact domain entity whose send failed.
+            recipient: Recipient whose send failed.
             reason: Human-readable error description (typically the
                 exception message).
         """
-        self._logger.info(
-            f"[SEND_ERROR] id={contact.id} name={_q(contact.name)} "
-            f"to={contact.email} reason={_q(reason)}"
-        )
+        self._logger.info(f"[SEND_ERROR] {_who(recipient)} reason={_q(reason)}")
 
-    def log_uncertain(self, contact, start_date: datetime, reason: str) -> None:
+    def log_uncertain(self, recipient, start_date: datetime, reason: str) -> None:
         """Log a send attempt that may have been scheduled although no answer arrived.
 
         The slot is recorded so the user can find the possible duplicate in
         the Mensagia portal later, even after the on-screen summary is gone.
 
         Args:
-            contact: Contact domain entity of the uncertain attempt.
+            recipient: Recipient of the uncertain attempt.
             start_date: Send slot requested in that attempt.
             reason: Human-readable error description.
         """
         self._logger.info(
-            f"[SEND_UNCERTAIN] id={contact.id} name={_q(contact.name)} "
-            f"to={contact.email} start_date={start_date.isoformat()} reason={_q(reason)}"
+            f"[SEND_UNCERTAIN] {_who(recipient)} "
+            f"start_date={start_date.isoformat()} reason={_q(reason)}"
         )
 
     def log_done(self, sent: int, skipped: int, errors: int) -> None:

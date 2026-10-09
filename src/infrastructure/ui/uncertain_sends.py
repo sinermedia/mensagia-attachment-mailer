@@ -20,7 +20,7 @@ def format_slots(dates: list[datetime]) -> str:
     return ", ".join(d.strftime(_SLOT_FORMAT) for d in dates)
 
 
-def resume_uncertain_lines(uncertain: dict[str, list[datetime]], contacts: list) -> list[str]:
+def resume_uncertain_lines(uncertain: dict[str, list[datetime]], recipients: list) -> list[str]:
     """Build the lines listing a previous run's unresolved attempts.
 
     Shown when resuming a campaign, so the user knows which recipients
@@ -29,13 +29,13 @@ def resume_uncertain_lines(uncertain: dict[str, list[datetime]], contacts: list)
     Args:
         uncertain: Mapping of recipient key to unresolved send slots, as
             returned by SendRegistry.get_uncertain_attempts().
-        contacts: Contacts of the group, used to show each email address.
+        recipients: Recipients of the source, used to show each email address.
 
     Returns:
-        One translated line per contact. Contacts no longer in the group
-        are shown by key so the warning is never silently dropped.
+        One translated line per recipient. Recipients no longer in the
+        source are shown by key so the warning is never silently dropped.
     """
-    emails = {str(c.id): c.email for c in contacts}
+    emails = {r.key: r.email for r in recipients}
     return [
         t("uncertain_item", email=emails.get(key, f"#{key}"), slots=format_slots(sorted(dates)))
         for key, dates in uncertain.items()
@@ -46,16 +46,16 @@ def result_uncertain_lines(uncertain: list[dict]) -> list[str]:
     """Build the end-of-run messages about sends that may have been scheduled.
 
     Args:
-        uncertain: SendResult.uncertain entries, each with 'contact',
+        uncertain: SendResult.uncertain entries, each with 'recipient',
             'start_dates' and 'sent' keys.
 
     Returns:
         One translated message per entry: a possible-duplicate warning when
-        the contact also got a confirmed email, or an unconfirmed-send
+        the recipient also got a confirmed email, or an unconfirmed-send
         warning when it did not.
     """
     lines = []
     for item in uncertain:
         key = "possible_duplicate" if item["sent"] else "uncertain_unconfirmed"
-        lines.append(t(key, email=item["contact"].email, slots=format_slots(item["start_dates"])))
+        lines.append(t(key, email=item["recipient"].email, slots=format_slots(item["start_dates"])))
     return lines
