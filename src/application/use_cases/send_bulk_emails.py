@@ -214,14 +214,14 @@ class SendBulkEmailsUseCase:
         # Exclude contacts already sent this exact campaign in a previous,
         # interrupted run so restarting never double-sends. Filtering (but
         # not writing) also applies during dry-run so previews stay accurate.
-        campaign = Campaign(group_id, template_id, extra_field.name, subject, start_mode)
+        campaign = Campaign(str(group_id), template_id, extra_field.name, subject, start_mode)
         already_sent = []
         last_scheduled = None
         uncertain = {}
         if send_registry:
-            sent_ids = send_registry.get_sent_contact_ids(campaign)
-            already_sent = [c for c in eligible if c.id in sent_ids]
-            eligible = [c for c in eligible if c.id not in sent_ids]
+            sent_keys = send_registry.get_sent_keys(campaign)
+            already_sent = [c for c in eligible if str(c.id) in sent_keys]
+            eligible = [c for c in eligible if str(c.id) not in sent_keys]
 
             # The emails of a previous run may still be queued: continue the
             # schedule after its last slot so both runs never overlap
@@ -232,8 +232,8 @@ class SendBulkEmailsUseCase:
             # A dry run never reports them, as it does not contact the API
             if not dry_run:
                 uncertain = {
-                    cid: list(dates)
-                    for cid, dates in send_registry.get_uncertain_attempts(campaign).items()
+                    key: list(dates)
+                    for key, dates in send_registry.get_uncertain_attempts(campaign).items()
                 }
 
         # Compute staggered start dates so emails are not sent all at once
@@ -310,7 +310,7 @@ class SendBulkEmailsUseCase:
             # right after the API accepts it leaves it on record as uncertain.
             # Pause before each API call to stay within the 1 request-per-second limit
             if send_registry:
-                send_registry.mark_attempt(campaign, contact.id, start_date)
+                send_registry.mark_attempt(campaign, str(contact.id), start_date)
             time.sleep(1)
 
             try:
@@ -319,14 +319,14 @@ class SendBulkEmailsUseCase:
                 # Nothing was scheduled, so the attempt is forgotten. Only a
                 # request that was not processed is worth retrying
                 if send_registry:
-                    send_registry.discard_attempt(campaign, contact.id, start_date)
+                    send_registry.discard_attempt(campaign, str(contact.id), start_date)
                 error = exc
                 retry = isinstance(exc, EmailNotSentError) and not final
             except Exception as exc:
                 # Uncertain outcome, or an unexpected error treated as such to
                 # stay on the safe side: the email may exist, so keep the
                 # attempt on record and remember its slot for the warning
-                uncertain.setdefault(contact.id, []).append(start_date)
+                uncertain.setdefault(str(contact.id), []).append(start_date)
                 if logger:
                     logger.log_uncertain(contact, start_date, str(exc))
                 error = exc
@@ -336,7 +336,7 @@ class SendBulkEmailsUseCase:
                 if logger:
                     logger.log_ok(contact, attachment_url)
                 if send_registry:
-                    send_registry.mark_sent(campaign, contact.id, start_date)
+                    send_registry.mark_sent(campaign, str(contact.id), start_date)
                 return False
 
             if not retry:
@@ -364,12 +364,12 @@ class SendBulkEmailsUseCase:
         # Report every uncertain attempt with whether the contact ended up
         # sent, which turns those slots into possible duplicates. Contacts no
         # longer in the group cannot be shown and are left out
-        confirmed_ids = {item["contact"].id for item in result.sent} | {c.id for c in already_sent}
-        contacts_by_id = {c.id: c for c in contacts}
+        confirmed_keys = {str(item["contact"].id) for item in result.sent} | {str(c.id) for c in already_sent}
+        contacts_by_key = {str(c.id): c for c in contacts}
         result.uncertain = [
-            {"contact": contacts_by_id[cid], "start_dates": sorted(dates), "sent": cid in confirmed_ids}
-            for cid, dates in uncertain.items()
-            if cid in contacts_by_id
+            {"contact": contacts_by_key[key], "start_dates": sorted(dates), "sent": key in confirmed_keys}
+            for key, dates in uncertain.items()
+            if key in contacts_by_key
         ]
 
         # Log the closing summary once all contacts have been processed

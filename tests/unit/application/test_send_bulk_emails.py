@@ -665,7 +665,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
     def send_registry(self):
         """Mock SendRegistry with no prior sends recorded by default."""
         registry = MagicMock()
-        registry.get_sent_contact_ids.return_value = set()
+        registry.get_sent_keys.return_value = set()
         registry.get_last_start_date.return_value = None
         registry.get_uncertain_attempts.return_value = {}
         return registry
@@ -676,7 +676,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             make_contact(1, "a@test.com", "https://example.com/a.pdf"),
             make_contact(2, "b@test.com", "https://example.com/b.pdf"),
         ]
-        send_registry.get_sent_contact_ids.return_value = {1}
+        send_registry.get_sent_keys.return_value = {"1"}
         email_sender.send.return_value = {}
 
         result = use_case.execute(
@@ -695,7 +695,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             make_contact(1, "a@test.com", "https://example.com/a.pdf"),
             make_contact(2, "b@test.com", "https://example.com/b.pdf"),
         ]
-        send_registry.get_sent_contact_ids.return_value = {1}
+        send_registry.get_sent_keys.return_value = {"1"}
         email_sender.send.return_value = {}
 
         result = use_case.execute(
@@ -708,7 +708,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
         assert result.skipped == []
 
     def test_registry_is_queried_with_campaign_parameters(self, use_case, contact_repo, email_sender, extra_field, send_registry):
-        """get_sent_contact_ids() is called with the group, template, field name and subject."""
+        """get_sent_keys() is called with the group, template, field name and subject."""
         contact_repo.get_by_group.return_value = []
 
         use_case.execute(
@@ -717,7 +717,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             now=FIXED_NOW, send_registry=send_registry,
         )
 
-        send_registry.get_sent_contact_ids.assert_called_once_with(Campaign(10, 5, "attachment_url", "Test"))
+        send_registry.get_sent_keys.assert_called_once_with(Campaign("10", 5, "attachment_url", "Test"))
 
     def test_mark_sent_called_for_each_successful_send(self, use_case, contact_repo, email_sender, extra_field, send_registry):
         """mark_sent() is called once per contact with its scheduled slot right after a successful send."""
@@ -730,7 +730,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             now=FIXED_NOW, send_registry=send_registry,
         )
 
-        send_registry.mark_sent.assert_called_once_with(Campaign(10, 5, "attachment_url", "Test"), 1, datetime(2024, 1, 15, 14, 40, 0))
+        send_registry.mark_sent.assert_called_once_with(Campaign("10", 5, "attachment_url", "Test"), "1", datetime(2024, 1, 15, 14, 40, 0))
 
     def test_mark_sent_not_called_when_send_fails(self, use_case, contact_repo, email_sender, extra_field, send_registry):
         """mark_sent() is not called for a contact whose send attempt raised an exception."""
@@ -763,7 +763,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             make_contact(1, "a@test.com", "https://example.com/a.pdf"),
             make_contact(2, "b@test.com", "https://example.com/b.pdf"),
         ]
-        send_registry.get_sent_contact_ids.return_value = {1}
+        send_registry.get_sent_keys.return_value = {"1"}
 
         result = use_case.execute(
             from_email="sender@test.com", group_id=10, subject="Test",
@@ -785,7 +785,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
             now=FIXED_NOW, send_registry=send_registry,
         )
 
-        send_registry.clear.assert_called_once_with(Campaign(10, 5, "attachment_url", "Test"))
+        send_registry.clear.assert_called_once_with(Campaign("10", 5, "attachment_url", "Test"))
 
     def test_clear_not_called_when_there_are_errors(self, use_case, contact_repo, email_sender, extra_field, send_registry):
         """clear() is not called if any contact failed, so a retry can pick up where it left off."""
@@ -818,7 +818,7 @@ class TestSendBulkEmailsUseCaseWithSendRegistry:
     def test_log_skip_called_with_already_sent_reason(self, use_case, contact_repo, email_sender, extra_field, send_registry):
         """log_skip() records already-sent contacts with reason='already_sent'."""
         contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
-        send_registry.get_sent_contact_ids.return_value = {1}
+        send_registry.get_sent_keys.return_value = {"1"}
         logger = MagicMock()
 
         use_case.execute(
@@ -871,7 +871,7 @@ def sent_slots(email_sender):
 def send_registry():
     """Mock SendRegistry with no prior state recorded."""
     registry = MagicMock()
-    registry.get_sent_contact_ids.return_value = set()
+    registry.get_sent_keys.return_value = set()
     registry.get_last_start_date.return_value = None
     registry.get_uncertain_attempts.return_value = {}
     return registry
@@ -1044,7 +1044,7 @@ class TestSendBulkEmailsUseCaseUncertainSends:
     def test_uncertain_attempts_from_previous_run_are_reported(self, use_case, email_sender, extra_field, one_contact, send_registry):
         """Unresolved attempts recorded by an interrupted run are included in the result."""
         previous = datetime(2024, 1, 15, 13, 0, 0)
-        send_registry.get_uncertain_attempts.return_value = {1: [previous]}
+        send_registry.get_uncertain_attempts.return_value = {"1": [previous]}
         email_sender.send.return_value = {}
 
         result = run(use_case, extra_field, send_registry=send_registry)
@@ -1054,8 +1054,8 @@ class TestSendBulkEmailsUseCaseUncertainSends:
 
     def test_previous_uncertain_attempt_of_already_sent_contact_is_reported_as_sent(self, use_case, email_sender, extra_field, one_contact, send_registry):
         """A previous unresolved attempt of a contact already sent is reported as a possible duplicate."""
-        send_registry.get_sent_contact_ids.return_value = {1}
-        send_registry.get_uncertain_attempts.return_value = {1: [datetime(2024, 1, 15, 13, 0, 0)]}
+        send_registry.get_sent_keys.return_value = {"1"}
+        send_registry.get_uncertain_attempts.return_value = {"1": [datetime(2024, 1, 15, 13, 0, 0)]}
 
         result = run(use_case, extra_field, send_registry=send_registry)
 
@@ -1063,7 +1063,7 @@ class TestSendBulkEmailsUseCaseUncertainSends:
 
     def test_uncertain_attempts_are_not_reported_in_dry_run(self, use_case, email_sender, extra_field, one_contact, send_registry):
         """A dry run reports nothing as uncertain because it never contacts the API."""
-        send_registry.get_uncertain_attempts.return_value = {1: [datetime(2024, 1, 15, 13, 0, 0)]}
+        send_registry.get_uncertain_attempts.return_value = {"1": [datetime(2024, 1, 15, 13, 0, 0)]}
 
         result = run(use_case, extra_field, send_registry=send_registry, dry_run=True)
 
@@ -1092,7 +1092,7 @@ class TestSendBulkEmailsUseCaseRegistryAttempts:
 
         run(use_case, extra_field, send_registry=send_registry)
 
-        assert order == [("attempt", (Campaign(10, 5, "attachment_url", "Test"), 1, slot(0))), ("send", slot(0))]
+        assert order == [("attempt", (Campaign("10", 5, "attachment_url", "Test"), "1", slot(0))), ("send", slot(0))]
 
     @pytest.mark.parametrize("error", [EmailRejectedError("invalid"), EmailNotSentError("no connection")])
     def test_attempt_is_discarded_when_nothing_was_scheduled(self, use_case, email_sender, extra_field, one_contact, send_registry, error):
@@ -1101,7 +1101,7 @@ class TestSendBulkEmailsUseCaseRegistryAttempts:
 
         run(use_case, extra_field, send_registry=send_registry)
 
-        assert call(Campaign(10, 5, "attachment_url", "Test"), 1, slot(0)) in send_registry.discard_attempt.call_args_list
+        assert call(Campaign("10", 5, "attachment_url", "Test"), "1", slot(0)) in send_registry.discard_attempt.call_args_list
 
     def test_uncertain_attempt_is_left_unresolved(self, use_case, email_sender, extra_field, one_contact, send_registry):
         """An uncertain send keeps its attempt on record so a later run can warn about it."""
@@ -1149,7 +1149,7 @@ class TestSendBulkEmailsUseCaseRegistryAttempts:
 
         result = run(use_case, extra_field, send_registry=send_registry, dry_run=True)
 
-        send_registry.get_last_start_date.assert_called_once_with(Campaign(10, 5, "attachment_url", "Test"))
+        send_registry.get_last_start_date.assert_called_once_with(Campaign("10", 5, "attachment_url", "Test"))
         assert len(result.sent) == 1
 
 
@@ -1189,8 +1189,8 @@ class TestSendBulkEmailsUseCaseFixedStart:
 
         run(use_case, extra_field, start_mode=StartMode.FIXED, start_at=self.START, send_registry=send_registry)
 
-        send_registry.get_sent_contact_ids.assert_called_once_with(
-            Campaign(10, 5, "attachment_url", "Test", StartMode.FIXED)
+        send_registry.get_sent_keys.assert_called_once_with(
+            Campaign("10", 5, "attachment_url", "Test", StartMode.FIXED)
         )
 
     def test_the_log_records_the_start_mode_and_first_slot(self, use_case, email_sender, extra_field, two_contacts):

@@ -20,25 +20,25 @@ def format_slots(dates: list[datetime]) -> str:
     return ", ".join(d.strftime(_SLOT_FORMAT) for d in dates)
 
 
-def resume_uncertain_lines(uncertain: dict[int, list[datetime]], contacts: list) -> list[str]:
+def resume_uncertain_lines(uncertain: dict[str, list[datetime]], contacts: list) -> list[str]:
     """Build the lines listing a previous run's unresolved attempts.
 
     Shown when resuming a campaign, so the user knows which recipients
     may get a duplicate and which slots to check in the Mensagia portal.
 
     Args:
-        uncertain: Mapping of contact ID to unresolved send slots, as
+        uncertain: Mapping of recipient key to unresolved send slots, as
             returned by SendRegistry.get_uncertain_attempts().
         contacts: Contacts of the group, used to show each email address.
 
     Returns:
         One translated line per contact. Contacts no longer in the group
-        are shown by ID so the warning is never silently dropped.
+        are shown by key so the warning is never silently dropped.
     """
-    emails = {c.id: c.email for c in contacts}
+    emails = {str(c.id): c.email for c in contacts}
     return [
-        t("uncertain_item", email=emails.get(cid, f"#{cid}"), slots=format_slots(sorted(dates)))
-        for cid, dates in uncertain.items()
+        t("uncertain_item", email=emails.get(key, f"#{key}"), slots=format_slots(sorted(dates)))
+        for key, dates in uncertain.items()
     ]
 
 

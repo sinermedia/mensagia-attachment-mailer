@@ -427,9 +427,9 @@ def run():
     # duplicates), and let the user decide whether to skip the sent ones
     # or start the whole campaign over again
     send_registry = JsonSendRegistry()
-    campaign = Campaign(agenda.id, template.id, extra_field.name, subject, start_mode)
-    pending_ids = send_registry.get_sent_contact_ids(campaign)
-    already_sent_count = len([c for c in eligible if c.id in pending_ids])
+    campaign = Campaign(str(agenda.id), template.id, extra_field.name, subject, start_mode)
+    sent_keys = send_registry.get_sent_keys(campaign)
+    already_sent_count = len([c for c in eligible if str(c.id) in sent_keys])
     uncertain = send_registry.get_uncertain_attempts(campaign)
     if already_sent_count or uncertain:
         if already_sent_count:

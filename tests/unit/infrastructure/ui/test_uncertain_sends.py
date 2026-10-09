@@ -47,12 +47,12 @@ class TestResumeUncertainLines:
     def test_one_line_per_contact_with_email_and_slots(self):
         """Each uncertain contact gets one line with its email and every slot to check."""
         contacts = [make_contact(1, "a@test.com"), make_contact(2, "b@test.com")]
-        lines = resume_uncertain_lines({2: [SLOT_A, SLOT_B]}, contacts)
+        lines = resume_uncertain_lines({"2": [SLOT_A, SLOT_B]}, contacts)
         assert lines == [t("uncertain_item", email="b@test.com", slots=format_slots([SLOT_A, SLOT_B]))]
 
     def test_unknown_contact_is_shown_by_id(self):
         """A contact no longer in the group is identified by its ID so the warning is not lost."""
-        lines = resume_uncertain_lines({99: [SLOT_A]}, [])
+        lines = resume_uncertain_lines({"99": [SLOT_A]}, [])
         assert lines == [t("uncertain_item", email="#99", slots=format_slots([SLOT_A]))]
 
 

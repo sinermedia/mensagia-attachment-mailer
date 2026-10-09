@@ -913,10 +913,10 @@ class App(ctk.CTk):
         # interrupted run, and attempts it left unconfirmed (possible
         # duplicates), and let the user decide whether to skip the sent
         # ones or start the whole campaign over again
-        campaign = Campaign(self.selected_agenda.id, self.selected_template.id, self.selected_field.name,
+        campaign = Campaign(str(self.selected_agenda.id), self.selected_template.id, self.selected_field.name,
                             subject, self._start_mode)
-        pending_ids = self._send_registry.get_sent_contact_ids(campaign)
-        already_sent_count = len([c for c in eligible if c.id in pending_ids])
+        sent_keys = self._send_registry.get_sent_keys(campaign)
+        already_sent_count = len([c for c in eligible if str(c.id) in sent_keys])
         uncertain = self._send_registry.get_uncertain_attempts(campaign)
         if already_sent_count or uncertain:
             parts = []

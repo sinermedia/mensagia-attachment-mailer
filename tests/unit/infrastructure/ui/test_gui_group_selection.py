@@ -240,7 +240,7 @@ class TestGuiSummaryGuards:
             MagicMock(id=1, email="a@example.com", extra_fields={"attachment": "file.pdf"})
         ]
         app._send_registry = MagicMock()
-        app._send_registry.get_sent_contact_ids.return_value = {1}
+        app._send_registry.get_sent_keys.return_value = {"1"}
         app._send_registry.get_uncertain_attempts.return_value = {}
         with patch("src.infrastructure.ui.gui.gui_app.MensagiaContactRepository", return_value=repo), \
                 patch("src.infrastructure.ui.gui.gui_app.messagebox.askyesno", return_value=True):
@@ -322,16 +322,16 @@ class TestGuiSendFailure:
 class TestGuiResumeDialog:
     """Covers the summary step asking whether to resume an interrupted campaign."""
 
-    def _prepare(self, window, sent_ids: set):
+    def _prepare(self, window, sent_keys: set):
         """Fill in the wizard selections and a registry holding a previous run.
 
         Args:
             window: The App instance to prepare.
-            sent_ids: Contact ids the registry reports as already sent.
+            sent_keys: Recipient keys the registry reports as already sent.
         """
         TestGuiSummaryGuards()._prepare(window)
         window._send_registry = MagicMock()
-        window._send_registry.get_sent_contact_ids.return_value = sent_ids
+        window._send_registry.get_sent_keys.return_value = sent_keys
         window._send_registry.get_uncertain_attempts.return_value = {}
 
     def _load(self, window, answer: bool) -> MagicMock:
@@ -357,21 +357,21 @@ class TestGuiResumeDialog:
 
     def test_asks_whether_to_resume_a_pending_campaign(self, app):
         """Shows the resume dialog when the registry holds contacts already sent."""
-        self._prepare(app, sent_ids={1})
+        self._prepare(app, sent_keys={"1"})
         dialog = self._load(app, answer=True)
 
         dialog.assert_called_once()
 
     def test_counts_only_pending_contacts_when_resuming(self, app):
         """Leaves the contacts already sent out of the count when the user resumes."""
-        self._prepare(app, sent_ids={1})
+        self._prepare(app, sent_keys={"1"})
         self._load(app, answer=True)
 
         assert app._summary_contacts_label.cget("text") == "Eligible contacts: 1"
 
     def test_starts_over_when_the_user_declines(self, app):
         """Clears the campaign record and counts every contact when the user declines."""
-        self._prepare(app, sent_ids={1})
+        self._prepare(app, sent_keys={"1"})
         self._load(app, answer=False)
 
         app._send_registry.clear.assert_called_once()
