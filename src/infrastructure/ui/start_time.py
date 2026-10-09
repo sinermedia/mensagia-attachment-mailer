@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 
 from src.domain.date_input import parse_date, parse_time
 from src.domain.scheduling import (
@@ -63,6 +63,28 @@ def read_fixed_start(date_text: str, time_text: str, now: datetime) -> datetime:
     return start_at
 
 
+def read_contact_start_time(time_text: str) -> time:
+    """Turn the time typed by the user into the time of a send by contact date.
+
+    No limit is checked: the day comes from each contact, and the emails of
+    today fall back to the "now" schedule when the time has passed.
+
+    Args:
+        time_text: Time as typed (hour and minute, tolerant reading).
+
+    Returns:
+        The chosen time, with zero seconds.
+
+    Raises:
+        StartInputError: With a translated message when the time cannot be
+            read.
+    """
+    try:
+        return parse_time(time_text)
+    except ValueError:
+        raise StartInputError(t("start_error_invalid_time"))
+
+
 def default_start_fields(now: datetime, remembered_time: str | None) -> tuple[str, str]:
     """Return the date and time proposed before the user types any.
 
@@ -89,12 +111,14 @@ def default_start_fields(now: datetime, remembered_time: str | None) -> tuple[st
     return start.strftime(DATE_FORMAT), start.strftime(TIME_FORMAT)
 
 
-def summary_start_lines(start_mode: StartMode, start_at: datetime | None) -> list[str]:
+def summary_start_lines(start_mode: StartMode, start_at: datetime | None,
+                        start_time: time | None = None) -> list[str]:
     """Describe the chosen start for the summary shown before sending.
 
     Args:
         start_mode: Start mode chosen by the user.
         start_at: Chosen start in the fixed mode, None otherwise.
+        start_time: Chosen time in the contact date mode, None otherwise.
 
     Returns:
         The line describing the start, followed by a note that the final
@@ -103,6 +127,8 @@ def summary_start_lines(start_mode: StartMode, start_at: datetime | None) -> lis
     """
     if start_mode == StartMode.FIXED:
         line = t("summary_start_fixed", date=start_at.strftime(DATE_FORMAT), time=start_at.strftime(TIME_FORMAT))
+    elif start_mode == StartMode.CONTACT_DATE:
+        line = t("summary_start_contact_date", time=start_time.strftime(TIME_FORMAT))
     else:
         line = t("summary_start_now")
     return [line, t("summary_start_note")]
