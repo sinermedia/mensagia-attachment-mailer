@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, time
 from src.domain.entities.recipient import Recipient
 from src.domain.scheduling import StartMode
 from src.infrastructure.logging.send_logger import SendLogger
@@ -96,6 +96,21 @@ class TestSendLogger:
         assert "John Doe" in content
         assert "john@test.com" in content
         assert "https://example.com/john.pdf" in content
+
+    def test_log_ok_records_the_slot(self, tmp_path):
+        """log_ok() records the date and time the email was scheduled for, after the attachment."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_ok(make_contact(1, "a@test.com", "Ana"), "https://example.com/a.pdf", datetime(2026, 10, 15, 9, 0, 12))
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert "attachment=https://example.com/a.pdf start_date=2026-10-15T09:00:12" in content
+
+    def test_log_start_records_a_contact_date_start(self, tmp_path):
+        """log_start() records the contact date mode with the chosen time."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_start("f@t.com", "Subj", 1, {"group_id": "1"}, "field", 0, 1, 0, start_mode=StartMode.CONTACT_DATE,
+                         start_time=time(9, 0), first_slot=datetime(2026, 10, 15, 9, 0, 0))
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert "start_mode=contact_date start_time=09:00 first_slot=2026-10-15T09:00:00" in content
 
     def test_log_skip_writes_send_skip_keyword(self, tmp_path):
         """log_skip() writes a line containing the [SEND_SKIP] keyword."""
