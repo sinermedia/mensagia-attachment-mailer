@@ -133,3 +133,11 @@ class TestRowsOnSeveralDates:
         """Outside the contact date mode nothing is reported."""
         rows = [make_dated_row(2, "a@x.com", "a.pdf", None), make_dated_row(3, "a@x.com", "b.pdf", None)]
         assert rows_on_several_dates(rows) == []
+
+
+def test_a_duplicate_row_loses_its_subject():
+    """A row skipped as a duplicate keeps no subject, like any other row that is not sent."""
+    from src.domain.entities.recipient import Recipient
+    rows = [Recipient(key="k", email="a@x.com", attachment="a.pdf", row=2, subject="A"),
+            Recipient(key="k", email="a@x.com", attachment="a.pdf", row=3, subject="B")]
+    assert [r.subject for r in skip_duplicate_rows(rows)] == ["A", None]

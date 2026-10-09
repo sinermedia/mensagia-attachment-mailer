@@ -278,3 +278,23 @@ class TestSendLoggerFileRows:
         logger.log_start("f@t.com", "Subj", 1, {"file": "clientes 2026.xlsx", "sheet": "Hoja1"}, "Adjunto", 0, 1, 0)
         content = logger.log_path.read_text(encoding="utf-8")
         assert 'template_id=1 file="clientes 2026.xlsx" sheet=Hoja1 field=Adjunto' in content
+
+
+class TestSendLoggerSubject:
+    """Covers the final subject and the field of a skip reason in the log."""
+
+    def test_log_ok_records_the_final_subject(self, tmp_path):
+        """log_ok() records the subject the recipient was sent, quoted, after the slot."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        logger.log_ok(make_contact(1, "a@test.com", "Ana"), "https://example.com/a.pdf",
+                      datetime(2026, 10, 15, 9, 0, 0), subject="Factura 123")
+        content = logger.log_path.read_text(encoding="utf-8")
+        assert 'start_date=2026-10-15T09:00:00 subject="Factura 123"' in content
+
+    def test_log_skip_names_the_empty_field(self, tmp_path):
+        """log_skip() names the field a skip reason is about."""
+        logger = SendLogger(log_dir=str(tmp_path))
+        recipient = Recipient(key="1", email="a@test.com", attachment="a.pdf", name="Ana",
+                              skip_reason="empty_subject_field", skip_detail="num factura")
+        logger.log_skip(recipient, "empty_subject_field")
+        assert 'reason=empty_subject_field field="num factura"' in logger.log_path.read_text(encoding="utf-8")

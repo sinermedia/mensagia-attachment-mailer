@@ -123,7 +123,11 @@ class SendBulkEmailsUseCase:
             from_email: Verified sender email address to use as the 'from' field.
             recipient_source: Where the recipients come from, and which of
                 their fields holds the attachment URL (or relative filename).
-            subject: Subject line for all outgoing emails.
+            subject: Subject as written by the user. It identifies the
+                campaign and is the subject of every email, unless the
+                source built a subject of its own for each recipient (see
+                Recipient.subject), as it does when the subject takes text
+                from the recipients' fields.
             template_id: ID of the Mensagia template that defines the email body.
             certified: 1 to send as certified email, 0 for standard.
             now: Override for the current datetime, used in tests to make
@@ -314,7 +318,7 @@ class SendBulkEmailsUseCase:
                 message = EmailMessage(
                     from_email=from_email,
                     to_email=recipient.email,
-                    subject=subject,
+                    subject=recipient.subject if recipient.subject is not None else subject,
                     template_id=template_id,
                     start_date=start_date,
                     attachments=[attachment_url],
@@ -329,7 +333,7 @@ class SendBulkEmailsUseCase:
             if dry_run:
                 result.sent.append({"recipient": recipient, "response": {}})
                 if logger:
-                    logger.log_ok(recipient, attachment_url, start_date)
+                    logger.log_ok(recipient, attachment_url, start_date, subject=message.subject)
                 return False
 
             # Record the attempt before calling the API, so an abrupt close
@@ -361,7 +365,7 @@ class SendBulkEmailsUseCase:
             else:
                 result.sent.append({"recipient": recipient, "response": response})
                 if logger:
-                    logger.log_ok(recipient, attachment_url, start_date)
+                    logger.log_ok(recipient, attachment_url, start_date, subject=message.subject)
                 if send_registry:
                     send_registry.mark_sent(campaign, recipient.key, start_date, day)
                 return False

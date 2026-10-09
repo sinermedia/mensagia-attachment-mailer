@@ -507,7 +507,7 @@ class TestSendBulkEmailsUseCaseWithLogger:
         logger.log_start.assert_called_once()
         logger.log_ok.assert_called_once_with(
             make_recipient(1, "a@test.com", "https://example.com/a.pdf"), "https://example.com/a.pdf",
-            datetime(2024, 1, 15, 14, 40, 0),
+            datetime(2024, 1, 15, 14, 40, 0), subject="Test",
         )
         logger.log_skip.assert_called_once_with(
             make_recipient(2, "", "https://example.com/b.pdf", "no_email"), "no_email"
@@ -1407,3 +1407,78 @@ class TestSendBulkEmailsUseCaseByContactDate:
         with pytest.raises(ValueError):
             use_case.execute(from_email="s@test.com", recipient_source=dated, subject="T", template_id=5,
                              certified=0, now=self.NOW, start_mode=StartMode.CONTACT_DATE)
+
+
+from src.domain.subject_fields import SubjectTemplate
+
+
+class TestSendBulkEmailsSubject:
+    """Covers sending each recipient the subject its source built for it."""
+
+    @pytest.fixture(autouse=True)
+    def mock_sleep(self):
+        """Patch time.sleep so tests do not actually pause between sends."""
+        with patch("src.application.use_cases.send_bulk_emails.time.sleep") as m:
+            yield m
+
+    @staticmethod
+    def _source(contact_repo) -> AgendaRecipientSource:
+        """Build an agenda source whose subject takes the 'cliente' field."""
+        template = SubjectTemplate.bind("Factura de #cliente#", ["attachment_url", "cliente"])
+        return AgendaRecipientSource(contact_repo, 10, "attachment_url", subject=template)
+
+    @staticmethod
+    def _contact(contact_id, client):
+        """Build a sendable contact whose 'cliente' field holds *client*."""
+        extra = {"attachment_url": f"https://example.com/{contact_id}.pdf", "cliente": client}
+        return Contact(id=contact_id, name=f"Contact {contact_id}", email=f"c{contact_id}@test.com", extra_fields=extra)
+
+    def _run(self, use_case, contact_repo, **kwargs):
+        """Send the 'Factura de #cliente#' campaign to the contacts in the repository."""
+        return use_case.execute(
+            from_email="sender@test.com", subject="Factura de #cliente#", template_id=5,
+            recipient_source=self._source(contact_repo), certified=0, now=FIXED_NOW, **kwargs,
+        )
+
+    def test_each_email_gets_its_recipient_subject(self, use_case, contact_repo, email_sender):
+        """Sends each recipient the subject filled with its own values."""
+        contact_repo.get_by_group.return_value = [self._contact(1, "ACME"), self._contact(2, "Beta")]
+        email_sender.send.return_value = {}
+        self._run(use_case, contact_repo)
+        subjects = [c[0][0].subject for c in email_sender.send.call_args_list]
+        assert subjects == ["Factura de ACME", "Factura de Beta"]
+
+    def test_an_empty_field_skips_the_recipient(self, use_case, contact_repo, email_sender):
+        """Does not send to a recipient whose subject field is empty, and reports it as skipped."""
+        contact_repo.get_by_group.return_value = [self._contact(1, "ACME"), self._contact(2, "")]
+        email_sender.send.return_value = {}
+        result = self._run(use_case, contact_repo)
+        assert email_sender.send.call_count == 1
+        assert [(r.skip_reason, r.skip_detail) for r in result.skipped] == [("empty_subject_field", "cliente")]
+
+    def test_the_log_shows_the_final_subject(self, use_case, contact_repo, email_sender):
+        """Logs each sent email with its final subject, also in a simulation."""
+        contact_repo.get_by_group.return_value = [self._contact(1, "ACME")]
+        logger = MagicMock()
+        self._run(use_case, contact_repo, dry_run=True, logger=logger)
+        assert logger.log_ok.call_args[1]["subject"] == "Factura de ACME"
+        assert logger.log_start.call_args[0][1] == "Factura de #cliente#"
+
+    def test_the_campaign_is_identified_by_the_subject_as_written(self, use_case, contact_repo, email_sender):
+        """Records the progress under the subject as written, the same for every recipient."""
+        contact_repo.get_by_group.return_value = [self._contact(1, "ACME")]
+        email_sender.send.return_value = {}
+        registry = MagicMock()
+        registry.get_sent_keys.return_value = set()
+        registry.get_last_start_date.return_value = None
+        registry.get_uncertain_attempts.return_value = {}
+        self._run(use_case, contact_repo, send_registry=registry)
+        assert registry.mark_sent.call_args[0][0].subject == "Factura de #cliente#"
+
+    def test_without_a_template_the_subject_is_the_one_given(self, use_case, contact_repo, email_sender, source):
+        """Sends the subject given to the send when the source builds none."""
+        contact_repo.get_by_group.return_value = [make_contact(1, "a@test.com", "https://example.com/a.pdf")]
+        email_sender.send.return_value = {}
+        use_case.execute(from_email="s@test.com", subject="Hola", template_id=5,
+                         recipient_source=source, certified=0, now=FIXED_NOW)
+        assert email_sender.send.call_args[0][0].subject == "Hola"

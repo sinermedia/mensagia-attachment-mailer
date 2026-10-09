@@ -2,15 +2,17 @@ from src.domain.date_input import DateFormat, read_send_date
 from src.domain.entities.recipient import Recipient
 from src.domain.ports.contact_repository import ContactRepository
 from src.domain.ports.recipient_source import RecipientSource
+from src.domain.subject_fields import SubjectTemplate
 
 
 class AgendaRecipientSource(RecipientSource):
     """Reads the contacts of an agenda group as recipients.
 
     Every contact is returned, including those that cannot be sent: a
-    contact needs an email address and a value in the chosen extra field
-    and, in the contact date start mode, a usable send day in the chosen
-    date field. Contacts on the global email blacklist are left out by the
+    contact needs an email address and a value in the chosen extra field,
+    in the contact date start mode, a usable send day in the chosen date
+    field and, when the subject takes text from the custom fields, a value
+    in each of them. Contacts on the global email blacklist are left out by the
     query, as they cannot receive email at all.
 
     Attributes:
@@ -20,10 +22,13 @@ class AgendaRecipientSource(RecipientSource):
         date_field_name: Name of the extra field holding the send day, or
             None outside the contact date start mode.
         date_format: Format of the send days, or None.
+        subject: Subject bound to the account's custom fields, or None to
+            leave the subject to the send.
     """
 
     def __init__(self, contact_repository: ContactRepository, group_id: int, field_name: str,
-                 date_field_name: str | None = None, date_format: DateFormat | None = None):
+                 date_field_name: str | None = None, date_format: DateFormat | None = None,
+                 subject: SubjectTemplate | None = None):
         """Initialise the source for one group and attachment field.
 
         Args:
@@ -33,12 +38,15 @@ class AgendaRecipientSource(RecipientSource):
             date_field_name: Name of the extra field holding the send day,
                 in the contact date start mode.
             date_format: Format of the send days, required with a date field.
+            subject: Subject bound to the account's custom fields; each
+                contact gets it with its own values.
         """
         self.contact_repository = contact_repository
         self.group_id = group_id
         self.field_name = field_name
         self.date_field_name = date_field_name
         self.date_format = date_format
+        self.subject = subject
 
     @property
     def identity(self) -> str:
@@ -86,9 +94,10 @@ class AgendaRecipientSource(RecipientSource):
         """Fetch the group's contacts and turn each one into a recipient.
 
         Returns:
-            One recipient per contact, keyed by the contact ID. Those without
-            an email address, an attachment value or, in the contact date
-            mode, a usable send day carry the reason.
+            One recipient per contact, keyed by the contact ID, with its
+            final subject. Those without an email address, an attachment
+            value, a usable send day (contact date mode) or a value in a
+            subject field carry the reason.
         """
         # The API returns subscribed and unsubscribed contacts alike, as
         # subscription status is not exposed: only the blacklist is excluded
@@ -105,14 +114,26 @@ class AgendaRecipientSource(RecipientSource):
                 value = str(contact.extra_fields.get(self.date_field_name) or "")
                 send_date, date_reason = read_send_date(value, self.date_format)
 
+            # The values are written as text, so a numeric field still fits
+            subject, empty_field = None, None
+            if self.subject is not None:
+                values = {name: "" if value is None else str(value) for name, value in contact.extra_fields.items()}
+                subject, empty_field = self.subject.render(values)
+
             if not contact.email:
                 reason = "no_email"
             elif not attachment:
                 reason = "no_attachment"
-            else:
+            elif date_reason:
                 reason = date_reason
+            elif empty_field:
+                reason = "empty_subject_field"
+            else:
+                reason = None
             recipients.append(Recipient(
                 key=str(contact.id), email=contact.email, attachment=attachment,
                 name=contact.name, skip_reason=reason, send_date=send_date,
+                subject=subject if reason is None else None,
+                skip_detail=empty_field if reason == "empty_subject_field" else None,
             ))
         return recipients
