@@ -248,7 +248,7 @@ class TestGuiFileSummary:
         assert "Email column: Correo" in text
         assert "Attachment column: Adjunto" in text
         assert app._summary_contacts_label.cget("text") == "Eligible rows: 1"
-        assert app._summary_skipped_label.cget("text") == "Discarded rows: 1"
+        assert app._summary_skipped_label.cget("text") == "Discarded rows (invalid email): 1"
         assert str(app._send_btn.cget("state")) == "normal"
 
     def test_file_that_became_unusable_is_reported(self, app, tmp_path, csv_file):
@@ -282,7 +282,7 @@ class TestGuiFileSummary:
         _wait_until(app, lambda: app._summary_contacts_label.cget("text") != "Loading...")
 
         assert app._summary_contacts_label.cget("text") == "Eligible rows: 1"
-        assert app._summary_skipped_label.cget("text") == "Discarded rows: 1"
+        assert app._summary_skipped_label.cget("text") == "Discarded rows (duplicate row): 1"
 
 
 class TestGuiFileSelections:
