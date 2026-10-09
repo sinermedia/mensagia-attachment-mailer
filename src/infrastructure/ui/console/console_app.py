@@ -612,16 +612,15 @@ def run():
     print(f"  {t('summary_rows' if rows else 'summary_contacts', count=to_send_count)}")
     for line in skipped_lines(skipped, rows):
         print(f"  {line}")
-    for line in day_lines(preview):
-        print(f"  {line}")
 
-    # The same address and attachment on several days are all sent: warn,
-    # so the extra ones can be removed in the portal if they are a mistake
+    # The per-day table and the warning about repeated rows are blocks of
+    # their own, each set apart by a blank line so they read separately
     repeated = repeated_lines(rows_on_several_dates(pending)) if rows and by_day else []
-    if repeated:
-        print()
-    for line in repeated:
-        print(f"  {line}")
+    for block in (day_lines(preview), repeated):
+        if block:
+            print()
+        for line in block:
+            print(f"  {line}")
 
     # Without a single recipient there is nothing to send nor to explain in
     # a simulation log, so exit cleanly without error
