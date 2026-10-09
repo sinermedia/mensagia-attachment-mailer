@@ -33,7 +33,8 @@ def _campaign_key(campaign: Campaign) -> str:
     Hashing avoids issues with special characters in the subject and
     keeps the registry file's keys short. The start mode is only added
     when it is not StartMode.NOW, so campaigns recorded by earlier
-    versions, which always started now, keep their key.
+    versions, which always started now, keep their key. The source of an
+    agenda group is its ID, the value earlier versions used in its place.
 
     Args:
         campaign: Campaign the progress belongs to.
@@ -41,7 +42,7 @@ def _campaign_key(campaign: Campaign) -> str:
     Returns:
         A hexadecimal SHA-1 digest identifying this exact campaign.
     """
-    raw = f"{campaign.group_id}|{campaign.template_id}|{campaign.field_name}|{campaign.subject}"
+    raw = f"{campaign.source}|{campaign.template_id}|{campaign.field_name}|{campaign.subject}"
     if campaign.start_mode != StartMode.NOW:
         raw += f"|{campaign.start_mode.value}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
@@ -50,8 +51,8 @@ def _campaign_key(campaign: Campaign) -> str:
 class JsonSendRegistry(SendRegistry):
     """Local JSON file implementation of the SendRegistry port.
 
-    Persists, for each campaign, the contact IDs that already received an
-    email, the latest send slot attempted, and the attempts whose outcome
+    Persists, for each campaign, the keys of the recipients that already
+    received an email, the latest send slot attempted, and the attempts whose outcome
     is still unknown. Every write goes to disk immediately so progress is
     never lost if the application is closed mid-send. Datetimes are stored
     as ISO-8601 strings; records written by earlier versions without the
@@ -120,7 +121,7 @@ class JsonSendRegistry(SendRegistry):
         """
         data = self._load()
         record = data.setdefault(_campaign_key(campaign), {
-            "group_id": campaign.group_id,
+            "source": campaign.source,
             "template_id": campaign.template_id,
             "field": campaign.field_name,
             "subject": campaign.subject,
@@ -128,8 +129,12 @@ class JsonSendRegistry(SendRegistry):
         })
 
         # Fill every key so *change* never deals with missing ones, including
-        # on records written by earlier versions of the application
-        record.setdefault("sent_contact_ids", [])
+        # on records written by earlier versions of the application, whose
+        # numeric contact IDs become the keys of agenda recipients
+        record.setdefault("sent_keys", [])
+        for contact_id in record.pop("sent_contact_ids", []):
+            if str(contact_id) not in record["sent_keys"]:
+                record["sent_keys"].append(str(contact_id))
         record.setdefault("last_start_date", None)
         record.setdefault("uncertain_attempts", {})
 
@@ -149,36 +154,38 @@ class JsonSendRegistry(SendRegistry):
             record["last_start_date"] = start_date.isoformat()
 
     @staticmethod
-    def _remove_attempt(record: dict, contact_id: int, start_date: datetime) -> None:
-        """Remove one attempt from the record, dropping the contact once it has none left.
+    def _remove_attempt(record: dict, key: str, start_date: datetime) -> None:
+        """Remove one attempt from the record, dropping the recipient once it has none left.
 
         Args:
             record: Mutable campaign record.
-            contact_id: ID of the contact whose attempt is resolved.
+            key: Key of the recipient whose attempt is resolved.
             start_date: Slot of the attempt to remove.
         """
-        # JSON object keys are always strings, so contact IDs are stored as such
         attempts = record["uncertain_attempts"]
-        key = str(contact_id)
         slot = start_date.isoformat()
         if slot in attempts.get(key, []):
             attempts[key].remove(slot)
             if not attempts[key]:
                 del attempts[key]
 
-    def get_sent_contact_ids(
+    def get_sent_keys(
         self, campaign: Campaign
-    ) -> set[int]:
-        """Return the IDs of contacts already sent an email in this campaign.
+    ) -> set[str]:
+        """Return the keys of the recipients already sent an email in this campaign.
+
+        Records of earlier versions list numeric contact IDs under another
+        name; they are returned as the keys of those agenda recipients.
 
         Args:
             campaign: Campaign the progress belongs to.
 
         Returns:
-            A set of contact IDs, empty when the campaign has no record.
+            A set of recipient keys, empty when the campaign has no record.
         """
         record = self._get_record(campaign)
-        return set(record.get("sent_contact_ids", []))
+        legacy = (str(contact_id) for contact_id in record.get("sent_contact_ids", []))
+        return set(record.get("sent_keys", [])) | set(legacy)
 
     def get_last_start_date(
         self, campaign: Campaign
@@ -196,69 +203,69 @@ class JsonSendRegistry(SendRegistry):
 
     def get_uncertain_attempts(
         self, campaign: Campaign
-    ) -> dict[int, list[datetime]]:
+    ) -> dict[str, list[datetime]]:
         """Return the attempts of this campaign whose outcome is unknown.
 
         Args:
             campaign: Campaign the progress belongs to.
 
         Returns:
-            A dict mapping contact IDs to their unresolved send slots.
+            A dict mapping recipient keys to their unresolved send slots.
         """
         attempts = self._get_record(campaign).get("uncertain_attempts", {})
-        return {int(cid): [datetime.fromisoformat(s) for s in slots] for cid, slots in attempts.items()}
+        return {key: [datetime.fromisoformat(s) for s in slots] for key, slots in attempts.items()}
 
     def mark_attempt(
         self, campaign: Campaign,
-        contact_id: int, start_date: datetime,
+        key: str, start_date: datetime,
     ) -> None:
-        """Record that an email is about to be sent to a contact for a given slot.
+        """Record that an email is about to be sent to a recipient for a given slot.
 
         Args:
             campaign: Campaign the progress belongs to.
-            contact_id: ID of the contact about to be emailed.
+            key: Key of the recipient about to be emailed.
             start_date: Send slot requested for this email.
         """
         def change(record):
-            record["uncertain_attempts"].setdefault(str(contact_id), []).append(start_date.isoformat())
+            record["uncertain_attempts"].setdefault(key, []).append(start_date.isoformat())
             self._advance_last_start_date(record, start_date)
 
         self._update_record(campaign, change)
 
     def mark_sent(
         self, campaign: Campaign,
-        contact_id: int, start_date: datetime,
+        key: str, start_date: datetime,
     ) -> None:
-        """Record that a contact successfully received an email in this campaign.
+        """Record that a recipient successfully received an email in this campaign.
 
         Args:
             campaign: Campaign the progress belongs to.
-            contact_id: ID of the contact that was successfully emailed.
+            key: Key of the recipient that was successfully emailed.
             start_date: Send slot the email was scheduled for.
         """
         def change(record):
-            # Avoid duplicate entries if the same contact is marked more than once
-            if contact_id not in record["sent_contact_ids"]:
-                record["sent_contact_ids"].append(contact_id)
-            self._remove_attempt(record, contact_id, start_date)
+            # Avoid duplicate entries if the same recipient is marked more than once
+            if key not in record["sent_keys"]:
+                record["sent_keys"].append(key)
+            self._remove_attempt(record, key, start_date)
             self._advance_last_start_date(record, start_date)
 
         self._update_record(campaign, change)
 
     def discard_attempt(
         self, campaign: Campaign,
-        contact_id: int, start_date: datetime,
+        key: str, start_date: datetime,
     ) -> None:
         """Resolve an attempt known not to have scheduled any email.
 
         Args:
             campaign: Campaign the progress belongs to.
-            contact_id: ID of the contact whose attempt failed.
+            key: Key of the recipient whose attempt failed.
             start_date: Send slot of the failed attempt.
         """
         self._update_record(
             campaign,
-            lambda record: self._remove_attempt(record, contact_id, start_date),
+            lambda record: self._remove_attempt(record, key, start_date),
         )
 
     def clear(self, campaign: Campaign) -> None:

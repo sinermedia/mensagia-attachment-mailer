@@ -3,7 +3,8 @@ import queue
 import threading
 from datetime import datetime
 import tkinter as tk
-from tkinter import messagebox, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 import customtkinter as ctk
 
 from src.infrastructure.api.mensagia_client import MensagiaClient, MensagiaAPIError
@@ -13,6 +14,10 @@ from src.infrastructure.api.mensagia_email_address_repository import MensagiaEma
 from src.infrastructure.api.mensagia_email_template_repository import MensagiaEmailTemplateRepository
 from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtraFieldRepository
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
+from src.infrastructure.recipients.agenda_recipient_source import AgendaRecipientSource
+from src.infrastructure.recipients.file_recipient_source import FileRecipientSource
+from src.infrastructure.files.table_file import TableFileError, list_sheets, read_table
+from src.infrastructure.ui.recipient_file import file_error_message, file_summary_lines
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language, get_language
 from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url, load_show_ids
@@ -108,6 +113,15 @@ class App(ctk.CTk):
             only a simulation is possible because nothing can be sent.
         _start_mode: Start mode accepted on the subject step.
         _start_at: Start date and time accepted in the fixed mode, or None.
+        _source_kind: Where the recipients come from, accepted on the
+            subject step: 'agenda' or 'file'.
+        _file_path: File chosen on the file step, or None.
+        _file_sheets: Sheets of the chosen workbook; empty for a CSV file.
+        _file_sheet: Sheet chosen, or None for a CSV file.
+        _file_columns: Column names of the chosen file and sheet; empty
+            while the file cannot be used.
+        _email_column: Column chosen for the email address.
+        _attachment_column: Column chosen for the attachment.
     """
 
     def __init__(self):
@@ -144,6 +158,8 @@ class App(ctk.CTk):
         # Start chosen on the subject step; the fields are only read on Next
         self._start_mode = StartMode.NOW
         self._start_at = None
+        self._source_kind = "agenda"
+        self._reset_file_state()
 
         # Updates handed over by background threads, applied by _pump_ui
         self._ui_queue = queue.Queue()
@@ -216,9 +232,20 @@ class App(ctk.CTk):
         self.selected_field = None
         self._start_mode = StartMode.NOW
         self._start_at = None
+        self._source_kind = "agenda"
+        self._reset_file_state()
 
         self._build_frames()
         self._show_frame("token")
+
+    def _reset_file_state(self):
+        """Forget the file, sheet and columns chosen for a file source."""
+        self._file_path = None
+        self._file_sheets = []
+        self._file_sheet = None
+        self._file_columns = []
+        self._email_column = None
+        self._attachment_column = None
 
     # ── Frame container ────────────────────────────────────────────────────────
 
@@ -235,7 +262,8 @@ class App(ctk.CTk):
         self._frames = {}
 
         # Create an empty frame for each wizard step
-        for name in ("token", "subject", "template", "sender", "group", "field", "certified", "summary", "sending"):
+        for name in ("token", "subject", "template", "sender", "group", "field", "file", "columns",
+                     "certified", "summary", "sending"):
             frame = ctk.CTkFrame(self._container, fg_color="transparent")
             frame.grid(row=0, column=0, sticky="nsew")
             self._frames[name] = frame
@@ -251,6 +279,8 @@ class App(ctk.CTk):
         self._build_sender_frame()
         self._build_group_frame()
         self._build_field_frame()
+        self._build_file_frame()
+        self._build_columns_frame()
         self._build_certified_frame()
         self._build_summary_frame()
         self._build_sending_frame()
@@ -401,6 +431,16 @@ class App(ctk.CTk):
                                          wraplength=460, justify="left")
         self._start_error.pack(anchor="w")
         self._restore_start_selection()
+
+        # Recipient source selector, preset to the one used last time; an
+        # unknown remembered value (e.g. from a newer version) is ignored
+        ctk.CTkLabel(f, text=t("source_label"), font=ctk.CTkFont(size=13)).pack(anchor="w", pady=(8, 4))
+        saved_source = self._last_sel.get("source")
+        self._source_var = tk.StringVar(value=saved_source if saved_source in ("agenda", "file") else "agenda")
+        for value, key in (("agenda", "source_agenda"), ("file", "source_file")):
+            ctk.CTkRadioButton(f, text=t(key), variable=self._source_var, value=value,
+                               font=ctk.CTkFont(size=13)).pack(anchor="w", pady=2)
+
         self._nav_buttons(f, back="token", next_cmd=self._subject_next)
 
     def _restore_start_selection(self):
@@ -498,6 +538,7 @@ class App(ctk.CTk):
                 return
         self._start_error.configure(text="")
         self._start_mode, self._start_at = mode, start_at
+        self._source_kind = self._source_var.get()
         self._load_templates()
 
     # ── Step 2: Template ───────────────────────────────────────────────────────
@@ -607,14 +648,17 @@ class App(ctk.CTk):
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _sender_next(self):
-        """Validate that a sender is selected and advance to the group step."""
+        """Validate that a sender is selected and advance to the group or file step."""
         val = self._sender_var.get()
         if not val:
             self._sender_error.configure(text="  ⚠")
             return
         self.selected_sender = next(s for s in self.senders if str(s.id) == val)
         self._sender_error.configure(text="")
-        self._load_groups()
+        if self._source_kind == "file":
+            self._show_file_step()
+        else:
+            self._load_groups()
 
     # ── Step 4: Group ──────────────────────────────────────────────────────────
 
@@ -787,7 +831,175 @@ class App(ctk.CTk):
         self._field_error.configure(text="")
         self._show_frame("certified")
 
+    # ── Step 4 (file): File and sheet ──────────────────────────────────────────
+
+    def _build_file_frame(self):
+        """Build the step that chooses the recipients file and its sheet.
+
+        The sheet selector is only shown for a workbook with more than one
+        sheet. Problems that make the file unusable are shown on this step,
+        so they can be fixed before choosing the columns.
+        """
+        f = self._frames["file"]
+        ctk.CTkLabel(f, text=t("step_file"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
+        ctk.CTkLabel(f, text=t("file_label"), font=ctk.CTkFont(size=13),
+                     wraplength=560, justify="left").pack(anchor="w")
+
+        # Browse button with the chosen file's name next to it
+        file_row = ctk.CTkFrame(f, fg_color="transparent")
+        file_row.pack(anchor="w", fill="x", pady=(8, 0))
+        ctk.CTkButton(file_row, text=t("btn_browse"), width=110, command=self._browse_file).pack(side="left")
+        self._file_name_label = ctk.CTkLabel(file_row, text=t("file_none"), font=ctk.CTkFont(size=13),
+                                             wraplength=420, justify="left")
+        self._file_name_label.pack(side="left", padx=(10, 0))
+
+        # Sheet selector, packed into its slot only when there is a choice
+        self._sheet_slot = ctk.CTkFrame(f, fg_color="transparent")
+        self._sheet_slot.pack(anchor="w", fill="x")
+        self._sheet_row = ctk.CTkFrame(self._sheet_slot, fg_color="transparent")
+        ctk.CTkLabel(self._sheet_row, text=t("sheet_label"), font=ctk.CTkFont(size=13)).pack(side="left", padx=(0, 8))
+        self._sheet_menu = ctk.CTkOptionMenu(self._sheet_row, values=[""], width=220,
+                                             command=self._on_sheet_change)
+        self._sheet_menu.pack(side="left")
+
+        self._file_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12),
+                                        wraplength=560, justify="left")
+        self._file_error.pack(anchor="w", pady=(8, 0))
+        self._nav_buttons(f, back="sender", next_cmd=self._file_next)
+
+    def _show_file_step(self):
+        """Show the file step, keeping the file chosen earlier in this session."""
+        self._show_frame("file")
+
+    def _browse_file(self):
+        """Open the system file dialog and load the file the user picks.
+
+        The dialog starts in the folder of the last file used, since the
+        files of a client are usually kept together. Closing the dialog
+        without choosing keeps the current file.
+        """
+        path = filedialog.askopenfilename(
+            parent=self,
+            title=t("file_dialog_title"),
+            initialdir=self._last_sel.get("file_dir") or None,
+            filetypes=[(t("file_types"), "*.xlsx *.csv")],
+        )
+        if path:
+            self._load_file(path)
+
+    def _load_file(self, path: str):
+        """Read a chosen file: its sheets, then the columns of the first one.
+
+        Args:
+            path: Path of the file picked by the user.
+        """
+        self._reset_file_state()
+        self._file_path = path
+        self._file_name_label.configure(text=Path(path).name)
+        self._sheet_row.pack_forget()
+        try:
+            self._file_sheets = list_sheets(path)
+        except TableFileError as e:
+            self._file_error.configure(text=file_error_message(e))
+            return
+
+        # Only a choice between several sheets is worth showing
+        if len(self._file_sheets) > 1:
+            self._sheet_menu.configure(values=self._file_sheets)
+            self._sheet_row.pack(anchor="w", pady=(8, 0))
+        self._read_columns(self._file_sheets[0] if self._file_sheets else None)
+
+    def _on_sheet_change(self, sheet: str):
+        """Read the columns of the sheet just chosen.
+
+        Args:
+            sheet: Name of the chosen sheet.
+        """
+        self._read_columns(sheet)
+
+    def _read_columns(self, sheet: str | None):
+        """Read the columns of a sheet of the chosen file, reporting any problem.
+
+        Args:
+            sheet: Sheet to read, or None for a CSV file.
+        """
+        self._file_sheet = sheet
+        if sheet is not None:
+            self._sheet_menu.set(sheet)
+        try:
+            self._file_columns = read_table(self._file_path, sheet).columns
+        except TableFileError as e:
+            self._file_columns = []
+            self._file_error.configure(text=file_error_message(e))
+            return
+        self._file_error.configure(text="")
+
+    def _file_next(self):
+        """Advance to the column step once a usable file is chosen."""
+        if not self._file_path:
+            self._file_error.configure(text="  ⚠")
+            return
+        if not self._file_columns:
+            return
+        self._show_columns_step()
+
+    # ── Step 5 (file): Columns ─────────────────────────────────────────────────
+
+    def _build_columns_frame(self):
+        """Build the step that chooses the email and attachment columns."""
+        f = self._frames["columns"]
+        ctk.CTkLabel(f, text=t("step_columns"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
+        self._email_column_var = tk.StringVar(value="")
+        self._attachment_column_var = tk.StringVar(value="")
+        menus = []
+        for key, variable in (("email_column_label", self._email_column_var),
+                              ("attachment_column_label", self._attachment_column_var)):
+            ctk.CTkLabel(f, text=t(key), font=ctk.CTkFont(size=13)).pack(anchor="w", pady=(8, 4))
+            menu = ctk.CTkOptionMenu(f, values=[""], variable=variable, width=300)
+            menu.pack(anchor="w")
+            menus.append(menu)
+        self._email_column_menu, self._attachment_column_menu = menus
+        self._columns_error = ctk.CTkLabel(f, text="", text_color="red", font=ctk.CTkFont(size=12),
+                                           wraplength=560, justify="left")
+        self._columns_error.pack(anchor="w", pady=(8, 0))
+        self._nav_buttons(f, back="file", next_cmd=self._columns_next)
+
+    def _show_columns_step(self):
+        """Offer the file's columns, preselecting the ones used last time.
+
+        A remembered column is only preselected when the file has it, and
+        nothing is preselected otherwise: guessing could send the wrong
+        column without the user noticing.
+        """
+        for menu, variable, key in (
+            (self._email_column_menu, self._email_column_var, "email_column"),
+            (self._attachment_column_menu, self._attachment_column_var, "attachment_column"),
+        ):
+            menu.configure(values=self._file_columns)
+            remembered = self._last_sel.get(key)
+            variable.set(remembered if remembered in self._file_columns else "")
+        self._columns_error.configure(text="")
+        self._show_frame("columns")
+
+    def _columns_next(self):
+        """Validate the chosen columns and advance to the certified step."""
+        email_column = self._email_column_var.get()
+        attachment_column = self._attachment_column_var.get()
+        if not email_column or not attachment_column:
+            self._columns_error.configure(text="  ⚠")
+            return
+        if email_column == attachment_column:
+            self._columns_error.configure(text=t("columns_error_same"))
+            return
+        self._columns_error.configure(text="")
+        self._email_column, self._attachment_column = email_column, attachment_column
+        self._show_frame("certified")
+
     # ── Step 6: Certified ──────────────────────────────────────────────────────
+
+    def _certified_back(self):
+        """Go back from the certified step to the last step of the chosen source."""
+        self._show_frame("columns" if self._source_kind == "file" else "field")
 
     def _build_certified_frame(self):
         """Build the certified email option step (step 6).
@@ -804,7 +1016,7 @@ class App(ctk.CTk):
                            font=ctk.CTkFont(size=13)).pack(anchor="w", pady=2)
         ctk.CTkRadioButton(f, text=t("certified_yes"), variable=self._certified_var, value=1,
                            font=ctk.CTkFont(size=13)).pack(anchor="w", pady=2)
-        self._nav_buttons(f, back="field", next_cmd=self._certified_next)
+        self._nav_buttons(f, back=self._certified_back, next_cmd=self._certified_next)
 
     def _certified_next(self):
         """Advance to the summary step and fill it in the background."""
@@ -830,7 +1042,10 @@ class App(ctk.CTk):
         self._send_btn.configure(state="disabled")
         self._can_send = False
 
-        threading.Thread(target=self._fetch_summary, daemon=True).start()
+        # The source reads widgets (the base URL), so it is built here, on the
+        # main thread, and only read from the background thread
+        source = self._recipient_source()
+        threading.Thread(target=self._fetch_summary, args=(source,), daemon=True).start()
 
     # ── Step 7: Summary ────────────────────────────────────────────────────────
 
@@ -868,21 +1083,56 @@ class App(ctk.CTk):
                                        fg_color="#e05", hover_color="#c03")
         self._send_btn.pack(side="left")
 
-    def _fetch_summary(self):
-        """Background thread: query the selected group's contacts for the summary.
+    def _recipient_source(self):
+        """Build the source of the recipients chosen in the wizard.
+
+        Returns:
+            The RecipientSource of the chosen file, sheet and columns, or of
+            the selected group and attachment field.
+        """
+        # The base URL lets a file tell a relative path and the full URL it
+        # resolves to apart from different files when looking for duplicates
+        if self._source_kind == "file":
+            return FileRecipientSource(self._file_path, self._file_sheet,
+                                       self._email_column, self._attachment_column,
+                                       self._base_url_entry.get().strip() or None)
+        return AgendaRecipientSource(MensagiaContactRepository(self.client),
+                                     self.selected_agenda.id, self.selected_field.name)
+
+    def _source_summary_lines(self) -> list[str]:
+        """Describe the chosen recipient source in the summary.
+
+        Returns:
+            The file, sheet and columns for a file; the group and the
+            extra field for an agenda group.
+        """
+        if self._source_kind == "file":
+            return file_summary_lines(self._file_path, self._file_sheet,
+                                      self._email_column, self._attachment_column)
+        return [t("summary_group", value=self.selected_agenda.name),
+                t("summary_field", value=self.selected_field.name)]
+
+    def _fetch_summary(self, source):
+        """Background thread: read the chosen recipients for the summary.
 
         Errors are reported inline rather than in a modal dialog so the user
-        can simply go back and pick another group.
+        can simply go back and pick another group, or fix the file, which
+        is read again here and may have changed since it was chosen.
+
+        Args:
+            source: RecipientSource built on the main thread.
         """
         try:
-            contacts = MensagiaContactRepository(self.client).get_by_group(
-                self.selected_agenda.id, in_mail_blacklist=False
-            )
+            recipients = source.get_recipients()
         except MensagiaAPIError as e:
             message = t("error_api", error=str(e))
             self._ui_queue.put(lambda: self._show_summary_error(message))
             return
-        self._ui_queue.put(lambda: self._build_summary(contacts))
+        except TableFileError as e:
+            message = file_error_message(e)
+            self._ui_queue.put(lambda: self._show_summary_error(message))
+            return
+        self._ui_queue.put(lambda: self._build_summary(recipients))
 
     def _show_summary_error(self, message: str):
         """Report a summary failure, leaving the send actions disabled.
@@ -893,44 +1143,45 @@ class App(ctk.CTk):
         self._summary_contacts_label.configure(text="")
         self._summary_error.configure(text=message)
 
-    def _build_summary(self, contacts: list):
-        """Populate the summary step widgets from the group's contacts.
+    def _build_summary(self, recipients: list):
+        """Populate the summary step widgets from the chosen recipients.
 
         Always invoked on the main thread through after(), because tkinter
         widgets may only be touched from the thread running the event loop.
 
         Args:
-            contacts: Every contact of the selected group, eligible or not.
+            recipients: Every recipient of the chosen source, sendable or not.
         """
-        # Replicate the same eligibility filter as the use case
-        eligible = [
-            c for c in contacts
-            if c.email and c.extra_fields.get(self.selected_field.name)
-        ]
+        # The source tells which recipients cannot be sent (no email, no attachment...)
+        eligible = [r for r in recipients if r.skip_reason is None]
+        source = self._recipient_source()
         subject = self._subject_entry.get().strip()
 
-        # Detect contacts already sent this exact campaign in a previous,
+        # Texts that count contacts of a group, or rows of a file
+        rows = self._source_kind == "file"
+
+        # Detect recipients already sent this exact campaign in a previous,
         # interrupted run, and attempts it left unconfirmed (possible
         # duplicates), and let the user decide whether to skip the sent
         # ones or start the whole campaign over again
-        campaign = Campaign(self.selected_agenda.id, self.selected_template.id, self.selected_field.name,
+        campaign = Campaign(source.identity, self.selected_template.id, source.attachment_field,
                             subject, self._start_mode)
-        pending_ids = self._send_registry.get_sent_contact_ids(campaign)
-        already_sent_count = len([c for c in eligible if c.id in pending_ids])
+        sent_keys = self._send_registry.get_sent_keys(campaign)
+        already_sent_count = len([r for r in eligible if r.key in sent_keys])
         uncertain = self._send_registry.get_uncertain_attempts(campaign)
         if already_sent_count or uncertain:
             parts = []
             if already_sent_count:
-                parts.append(t("resume_detected", sent=already_sent_count))
+                parts.append(t("resume_detected_rows" if rows else "resume_detected", sent=already_sent_count))
             if uncertain:
-                parts.append(t("resume_uncertain") + "\n" + "\n".join(resume_uncertain_lines(uncertain, contacts)))
-            parts.append(t("resume_continue_prompt"))
+                parts.append(t("resume_uncertain") + "\n" + "\n".join(resume_uncertain_lines(uncertain, recipients)))
+            parts.append(t("resume_continue_prompt_rows" if rows else "resume_continue_prompt"))
             continue_pending = messagebox.askyesno(t("resume_title"), "\n\n".join(parts))
             if not continue_pending:
                 self._send_registry.clear(campaign)
                 already_sent_count = 0
 
-        # Number of contacts that will actually be sent to in this run
+        # Number of recipients that will actually be sent to in this run
         to_send_count = len(eligible) - already_sent_count
 
         # Build the multi-line summary text with all selected options
@@ -938,30 +1189,31 @@ class App(ctk.CTk):
             t("summary_from", value=f"{self.selected_sender.name} <{self.selected_sender.email}>" if self.selected_sender.name else self.selected_sender.email),
             t("summary_subject", value=subject),
             t("summary_template", value=self.selected_template.name),
-            t("summary_group", value=self.selected_agenda.name),
-            t("summary_field", value=self.selected_field.name),
+            *self._source_summary_lines(),
             t("summary_certified", value=t("yes") if self._certified_var.get() else t("no")),
             *summary_start_lines(self._start_mode, self._start_at),
         ])
         self._summary_text.configure(text=lines)
-        self._summary_contacts_label.configure(text=t("summary_contacts", count=to_send_count))
-        self._summary_skipped_label.configure(text=t("summary_skipped", count=len(contacts) - len(eligible)))
+        count_key, skipped_key = ("summary_rows", "summary_skipped_rows") if rows else ("summary_contacts", "summary_skipped")
+        self._summary_contacts_label.configure(text=t(count_key, count=to_send_count))
+        self._summary_skipped_label.configure(text=t(skipped_key, count=len(recipients) - len(eligible)))
+        no_eligible = t("no_eligible_rows" if rows else "no_eligible_contacts")
 
-        # Without a single contact there is nothing to send nor to explain in a
-        # simulation log, so both actions stay disabled
-        if not contacts:
-            self._summary_error.configure(text=t("no_eligible_contacts"))
+        # Without a single recipient there is nothing to send nor to explain
+        # in a simulation log, so both actions stay disabled
+        if not recipients:
+            self._summary_error.configure(text=no_eligible)
             return
 
-        # A group can hold contacts and still have none that can be written to,
-        # when they lack an email address or the selected extra field. Say so,
-        # and point to the simulation: its log gives the reason for each one
+        # A source can hold recipients and still have none that can be written
+        # to, when they lack a valid address or an attachment. Say so, and
+        # point to the simulation: its log gives the reason for each one
         if not eligible:
-            self._summary_error.configure(text=t("no_eligible_contacts") + "\n" + t("no_eligible_simulate_hint"))
+            self._summary_error.configure(text=no_eligible + "\n" + t("no_eligible_simulate_hint"))
 
         # Simulating is always possible from here on, but a real send only
         # when this run has an email to send (not the case either when every
-        # eligible contact already received this campaign in a previous run)
+        # eligible recipient already received this campaign in a previous run)
         self._can_send = to_send_count > 0
         self._dry_run_btn.configure(state="normal")
         if self._can_send:
@@ -991,6 +1243,39 @@ class App(ctk.CTk):
         self._sending_actions = ctk.CTkFrame(f, fg_color="transparent")
         self._sending_actions.pack(anchor="w", pady=(PAD, 0))
 
+    def _selections(self) -> dict:
+        """Return the choices to remember for the next session.
+
+        The choices of the source not used in this send are kept from the
+        previous ones, so switching between a group and a file does not
+        forget the other. For a file, its folder and column names are
+        remembered, but not the file nor the sheet, which change from one
+        send to the next.
+
+        Returns:
+            The previous selections updated with the ones of this send.
+        """
+        selections = dict(self._last_sel)
+        selections.update({
+            "source": self._source_kind,
+            "template_id": str(self.selected_template.id),
+            "sender_id": str(self.selected_sender.id),
+            "certified": self._certified_var.get(),
+            **self._start_selections(),
+        })
+        if self._source_kind == "file":
+            selections.update({
+                "file_dir": str(Path(self._file_path).parent),
+                "email_column": self._email_column,
+                "attachment_column": self._attachment_column,
+            })
+        else:
+            selections.update({
+                "agenda_id": str(self.selected_agenda.id),
+                "field_id": str(self.selected_field.id),
+            })
+        return selections
+
     def _reset_for_new_send(self):
         """Clear all selections and go back to the subject step for a new campaign.
 
@@ -1010,6 +1295,12 @@ class App(ctk.CTk):
         self._sender_var.set("")
         self._group_var.set("")
         self._field_var.set("")
+
+        # Forget the file: the next send is usually made with a new one
+        self._reset_file_state()
+        self._file_name_label.configure(text=t("file_none"))
+        self._sheet_row.pack_forget()
+        self._file_error.configure(text="")
 
         # Propose a fresh date and time: the previous ones may have passed
         self._restore_start_selection()
@@ -1045,12 +1336,13 @@ class App(ctk.CTk):
             # Force a UI redraw so the progress is visible immediately
             self.update_idletasks()
 
+        # Widgets may only be read on the main thread, so the source is built here
+        source = self._recipient_source()
+
         def _run():
             """Background thread: delegate to SendBulkEmailsUseCase and update the UI progressively."""
             try:
-                contact_repo = MensagiaContactRepository(self.client)
-                email_sender_adapter = MensagiaEmailSender(self.client)
-                use_case = SendBulkEmailsUseCase(contact_repo, email_sender_adapter)
+                use_case = SendBulkEmailsUseCase(MensagiaEmailSender(self.client))
                 _dry_run = dry_run
 
                 # Simulations are logged too, in a file named so it is never
@@ -1059,10 +1351,9 @@ class App(ctk.CTk):
 
                 result = use_case.execute(
                     from_email=self.selected_sender.email,
-                    group_id=self.selected_agenda.id,
+                    recipient_source=source,
                     subject=self._subject_entry.get().strip(),
                     template_id=self.selected_template.id,
-                    extra_field=self.selected_field,
                     certified=self._certified_var.get(),
                     attachment_base_url=self._base_url_entry.get().strip() or None,
                     attachment_checker=HttpAttachmentChecker(),
@@ -1076,7 +1367,7 @@ class App(ctk.CTk):
 
                 # Build the result text, appending per-contact error details if any
                 error_msgs = "\n".join(
-                    t("send_error", email=item["contact"].email, error=item["error"])
+                    t("send_error", email=item["recipient"].email, error=item["error"])
                     for item in result.errors
                 )
                 key = "dry_run_complete" if _dry_run else "send_complete"
@@ -1096,14 +1387,7 @@ class App(ctk.CTk):
 
                 # Persist the selections so they are pre-selected on the next run,
                 # and keep them for a new send in this same session
-                selections = {
-                    "template_id": str(self.selected_template.id),
-                    "sender_id": str(self.selected_sender.id),
-                    "agenda_id": str(self.selected_agenda.id),
-                    "field_id": str(self.selected_field.id),
-                    "certified": self._certified_var.get(),
-                    **self._start_selections(),
-                }
+                selections = self._selections()
                 save_last_selections(selections)
                 self._last_sel = selections
 
@@ -1111,6 +1395,10 @@ class App(ctk.CTk):
 
             except MensagiaAPIError as e:
                 message = t("error_api", error=str(e))
+                self._ui_queue.put(lambda: self._fail_send(message))
+            except TableFileError as e:
+                # The file is read again for the send and may have changed
+                message = file_error_message(e)
                 self._ui_queue.put(lambda: self._fail_send(message))
             except Exception as e:
                 # Any other failure would otherwise kill the thread silently and
@@ -1178,19 +1466,22 @@ class App(ctk.CTk):
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
-    def _nav_buttons(self, frame, back: str, next_cmd):
+    def _nav_buttons(self, frame, back, next_cmd):
         """Add Back and Next navigation buttons to the bottom of a wizard step.
 
         Args:
             frame: The CTkFrame to attach the buttons to.
-            back: Name of the frame to navigate to when Back is clicked.
-                Pass an empty string to omit the Back button.
+            back: Name of the frame to navigate to when Back is clicked, or
+                a callable that decides it when the previous step depends
+                on earlier choices. Pass an empty string to omit the Back
+                button.
             next_cmd: Callable invoked when the Next button is clicked.
         """
         btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
         btn_frame.pack(anchor="w", pady=(PAD, 0))
         if back:
-            ctk.CTkButton(btn_frame, text=t("btn_back"), command=lambda: self._show_frame(back),
+            command = back if callable(back) else (lambda: self._show_frame(back))
+            ctk.CTkButton(btn_frame, text=t("btn_back"), command=command,
                           fg_color="gray", hover_color="#555").pack(side="left", padx=(0, 8))
         ctk.CTkButton(btn_frame, text=t("btn_next"), command=next_cmd).pack(side="left")
 

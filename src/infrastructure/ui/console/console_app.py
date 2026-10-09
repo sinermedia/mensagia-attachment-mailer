@@ -8,6 +8,10 @@ from src.infrastructure.api.mensagia_email_address_repository import MensagiaEma
 from src.infrastructure.api.mensagia_email_template_repository import MensagiaEmailTemplateRepository
 from src.infrastructure.api.mensagia_extra_field_repository import MensagiaExtraFieldRepository
 from src.infrastructure.api.mensagia_email_sender import MensagiaEmailSender
+from src.infrastructure.recipients.agenda_recipient_source import AgendaRecipientSource
+from src.infrastructure.recipients.file_recipient_source import FileRecipientSource
+from src.infrastructure.files.table_file import TableFileError, list_sheets, read_table
+from src.infrastructure.ui.recipient_file import clean_path, file_error_message, file_summary_lines
 from src.application.use_cases.send_bulk_emails import SendBulkEmailsUseCase
 from src.infrastructure.ui.i18n import t, set_language, language_names, detect_system_language
 from src.infrastructure.config.settings import load_api_token, load_language, load_attachment_base_url, load_show_ids
@@ -52,28 +56,23 @@ def _choose_language():
         set_language(detect_system_language())
 
 
-def _resolve_attachment_base_url(eligible: list, extra_field) -> str | None:
+def _resolve_attachment_base_url(eligible: list) -> str | None:
     """Determine the base URL to use for resolving relative attachment paths.
 
-    If all contacts already have absolute attachment URLs no base URL is
-    needed. When at least one contact has a relative value, the function
+    If all recipients already have absolute attachment URLs no base URL is
+    needed. When at least one recipient has a relative value, the function
     tries to load it from the environment; if it is not configured there
     it prompts the user to enter one interactively.
 
     Args:
-        eligible: List of Contact objects that will receive an email.
-        extra_field: The ExtraField whose value contains the attachment path.
+        eligible: List of Recipient objects that will receive an email.
 
     Returns:
         The base URL string, or None if all attachment values are already
         absolute URLs.
     """
-    # Check whether any contact has a relative (non-absolute) attachment value
-    needs_base = any(
-        not v.startswith(("http://", "https://"))
-        for c in eligible
-        if (v := c.extra_fields.get(extra_field.name))
-    )
+    # Check whether any recipient has a relative (non-absolute) attachment value
+    needs_base = any(not r.attachment.startswith(("http://", "https://")) for r in eligible)
 
     if not needs_base:
         # All values are absolute — a base URL is not required
@@ -229,6 +228,49 @@ def _select_agenda(client, show_ids: bool):
         page = repository.search(name=choice)
 
 
+def _choose_source() -> str:
+    """Ask where the recipients come from.
+
+    Returns:
+        'agenda' for a group of the Mensagia agenda, 'file' for an Excel or
+        CSV file.
+    """
+    labels = {"agenda": t("source_agenda"), "file": t("source_file")}
+    return _select_from_list(t("source_label"), ["agenda", "file"], labels.get)
+
+
+def _select_file() -> FileRecipientSource:
+    """Let the user pick the recipients file, its sheet and its columns.
+
+    The path is typed or pasted; the quotes added by Windows' "Copy as
+    path" are removed. The sheet is only asked for when the workbook has
+    more than one. Whenever the file cannot be used, the reason is shown
+    and a path is asked for again, since the fix is usually in the file.
+
+    Returns:
+        The source reading the chosen file, sheet and columns.
+    """
+    while True:
+        path = clean_path(input(f"  {t('file_prompt')} "))
+        if not path:
+            continue
+        try:
+            sheets = list_sheets(path)
+            sheet = _select_from_list(t("sheet_label"), sheets, str) if len(sheets) > 1 else (sheets or [None])[0]
+            table = read_table(path, sheet)
+        except TableFileError as e:
+            print(f"  {file_error_message(e)}")
+            continue
+        break
+
+    # The same column cannot hold the address and the attachment, so the
+    # one chosen for the address is not offered again
+    email_column = _select_from_list(t("email_column_label"), table.columns, str)
+    others = [c for c in table.columns if c != email_column]
+    attachment_column = _select_from_list(t("attachment_column_label"), others, str)
+    return FileRecipientSource(path, sheet, email_column, attachment_column)
+
+
 def _confirm_action() -> str | None:
     """Ask the user whether to send, simulate, or cancel the operation.
 
@@ -299,18 +341,19 @@ def run():
 
     Guides the user through a sequential wizard:
     Step 0 — Language selection and API token validation.
-    Step 1 — Email subject input and start time (now or a fixed date).
+    Step 1 — Email subject input, start time (now or a fixed date) and
+             recipient source (agenda group or file).
     Step 2 — Email template selection.
     Step 3 — Sender address selection.
-    Step 4 — Agenda group selection.
-    Step 5 — Extra field (attachment URL field) selection.
+    Step 4 — Agenda group selection, or file, sheet and columns selection.
+    Step 5 — Extra field (attachment URL field) selection, for a group.
     Step 6 — Certified email option.
-    Step 7 — Contact count summary and confirmation (simulation only when
+    Step 7 — Recipient count summary and confirmation (simulation only when
              there is nothing to send).
     Step 8 — Bulk send (real or dry-run), both logged to a file.
 
-    Exits with sys.exit(1) on unrecoverable API errors and sys.exit(0)
-    when the user cancels or the group yields no contacts.
+    Exits with sys.exit(1) on unrecoverable API or file errors and
+    sys.exit(0) when the user cancels or the source yields no recipients.
     """
     print("=" * 60)
     print("  MENSAGIA ATTACHMENT MAILER")
@@ -354,6 +397,9 @@ def run():
     print(f"\n--- {t('step_start')} ---")
     start_mode, start_at = _choose_start(datetime.now())
 
+    # ── Step 1c: Recipient source ─────────────────────────────────────────────
+    source_kind = _choose_source()
+
     # ── Step 2: Template selection ─────────────────────────────────────────────
     print(f"\n--- {t('step_template')} ---")
     print(f"  {t('loading')}")
@@ -380,27 +426,38 @@ def run():
         sys.exit(1)
     sender = _select_from_list(t("sender_label"), senders, lambda x: f"{x.email}" + (f" ({x.name})" if x.name else ""))
 
-    # ── Step 4: Agenda group selection ────────────────────────────────────────
-    print(f"\n--- {t('step_group')} ---")
-    print(f"  {t('loading')}")
-    try:
-        agenda = _select_agenda(client, show_ids)
-    except MensagiaAPIError as e:
-        print(f"  {t('error_api', error=str(e))}")
-        sys.exit(1)
+    if source_kind == "agenda":
+        # ── Step 4: Agenda group selection ────────────────────────────────────
+        print(f"\n--- {t('step_group')} ---")
+        print(f"  {t('loading')}")
+        try:
+            agenda = _select_agenda(client, show_ids)
+        except MensagiaAPIError as e:
+            print(f"  {t('error_api', error=str(e))}")
+            sys.exit(1)
 
-    # ── Step 5: Extra field selection ─────────────────────────────────────────
-    print(f"\n--- {t('step_field')} ---")
-    print(f"  {t('loading')}")
-    try:
-        extra_fields = MensagiaExtraFieldRepository(client).get_all()
-    except MensagiaAPIError as e:
-        print(f"  {t('error_api', error=str(e))}")
-        sys.exit(1)
-    if not extra_fields:
-        print(f"  {t('error_no_fields')}")
-        sys.exit(1)
-    extra_field = _select_from_list(t("field_label"), extra_fields, lambda x: f"[{x.id}] {x.name}" if show_ids else x.name)
+        # ── Step 5: Extra field selection ─────────────────────────────────────
+        print(f"\n--- {t('step_field')} ---")
+        print(f"  {t('loading')}")
+        try:
+            extra_fields = MensagiaExtraFieldRepository(client).get_all()
+        except MensagiaAPIError as e:
+            print(f"  {t('error_api', error=str(e))}")
+            sys.exit(1)
+        if not extra_fields:
+            print(f"  {t('error_no_fields')}")
+            sys.exit(1)
+        extra_field = _select_from_list(t("field_label"), extra_fields, lambda x: f"[{x.id}] {x.name}" if show_ids else x.name)
+        source = AgendaRecipientSource(MensagiaContactRepository(client), agenda.id, extra_field.name)
+        source_lines = [t("summary_group", value=agenda.name), t("summary_field", value=extra_field.name)]
+    else:
+        # ── Step 4: File, sheet and columns selection ─────────────────────────
+        print(f"\n--- {t('step_file')} ---")
+        source = _select_file()
+        source_lines = file_summary_lines(source.path, source.sheet, source.email_column, source.attachment_column)
+
+    # Texts that count contacts of a group, or rows of a file
+    rows = source_kind == "file"
 
     # ── Step 6: Certified email option ────────────────────────────────────────
     print(f"\n--- {t('step_certified')} ---")
@@ -410,104 +467,118 @@ def run():
     print(f"\n--- {t('step_summary')} ---")
     print(f"  {t('loading')}")
     try:
-        contacts = MensagiaContactRepository(client).get_by_group(agenda.id, in_mail_blacklist=False)
+        recipients = source.get_recipients()
     except MensagiaAPIError as e:
         print(f"  {t('error_api', error=str(e))}")
         sys.exit(1)
+    except TableFileError as e:
+        print(f"  {file_error_message(e)}")
+        sys.exit(1)
 
-    # Determine which contacts are eligible (have both email and attachment value)
-    eligible = [
-        c for c in contacts
-        if c.email and c.extra_fields.get(extra_field.name)
-    ]
-    skipped_count = len(contacts) - len(eligible)
+    # The source tells which recipients cannot be sent (no email, no attachment...)
+    eligible = [r for r in recipients if r.skip_reason is None]
+
+    # Resolve the base URL for relative attachment paths, prompting if needed.
+    # A file is then read again with it: a relative path and the full URL it
+    # resolves to are the same file, which changes the duplicate rows and
+    # the keys the progress is recorded with
+    attachment_base_url = _resolve_attachment_base_url(eligible)
+    if rows and attachment_base_url:
+        source.attachment_base_url = attachment_base_url
+        try:
+            recipients = source.get_recipients()
+        except TableFileError as e:
+            print(f"  {file_error_message(e)}")
+            sys.exit(1)
+        eligible = [r for r in recipients if r.skip_reason is None]
+    skipped_count = len(recipients) - len(eligible)
 
     # Detect contacts already sent this exact campaign in a previous,
     # interrupted run, and attempts it left unconfirmed (possible
     # duplicates), and let the user decide whether to skip the sent ones
     # or start the whole campaign over again
     send_registry = JsonSendRegistry()
-    campaign = Campaign(agenda.id, template.id, extra_field.name, subject, start_mode)
-    pending_ids = send_registry.get_sent_contact_ids(campaign)
-    already_sent_count = len([c for c in eligible if c.id in pending_ids])
+    campaign = Campaign(source.identity, template.id, source.attachment_field, subject, start_mode)
+    sent_keys = send_registry.get_sent_keys(campaign)
+    already_sent_count = len([r for r in eligible if r.key in sent_keys])
     uncertain = send_registry.get_uncertain_attempts(campaign)
     if already_sent_count or uncertain:
         if already_sent_count:
-            print(f"\n  {t('resume_detected', sent=already_sent_count)}")
+            print(f"\n  {t('resume_detected_rows' if rows else 'resume_detected', sent=already_sent_count)}")
         if uncertain:
             print(f"\n  {t('resume_uncertain')}")
-            for line in resume_uncertain_lines(uncertain, contacts):
+            for line in resume_uncertain_lines(uncertain, recipients):
                 print(f"    {line}")
-        if not _yes_no(f"  {t('resume_continue_prompt')}"):
+        if not _yes_no(f"  {t('resume_continue_prompt_rows' if rows else 'resume_continue_prompt')}"):
             send_registry.clear(campaign)
             already_sent_count = 0
 
     # Number of contacts that will actually be sent to in this run
     to_send_count = len(eligible) - already_sent_count
 
-    # Resolve the base URL for relative attachment paths, prompting if needed
-    attachment_base_url = _resolve_attachment_base_url(eligible, extra_field)
-
     # Print the summary for the user to review before committing to send
     sender_display = f"{sender.name} <{sender.email}>" if sender.name else sender.email
     print(f"\n  {t('summary_from', value=sender_display)}")
     print(f"  {t('summary_subject', value=subject)}")
     print(f"  {t('summary_template', value=template.name)}")
-    print(f"  {t('summary_group', value=agenda.name)}")
-    print(f"  {t('summary_field', value=extra_field.name)}")
+    for line in source_lines:
+        print(f"  {line}")
     print(f"  {t('summary_certified', value=t('yes') if certified else t('no'))}")
     for line in summary_start_lines(start_mode, start_at):
         print(f"  {line}")
-    print(f"  {t('summary_contacts', count=to_send_count)}")
-    print(f"  {t('summary_skipped', count=skipped_count)}")
+    print(f"  {t('summary_rows' if rows else 'summary_contacts', count=to_send_count)}")
+    print(f"  {t('summary_skipped_rows' if rows else 'summary_skipped', count=skipped_count)}")
 
-    # Without a single contact there is nothing to send nor to explain in a
-    # simulation log, so exit cleanly without error
-    if not contacts:
-        print(f"\n  {t('no_eligible_contacts')}")
+    # Without a single recipient there is nothing to send nor to explain in
+    # a simulation log, so exit cleanly without error
+    if not recipients:
+        print(f"\n  {t('no_eligible_rows' if rows else 'no_eligible_contacts')}")
         sys.exit(0)
 
-    # The group may hold contacts and still have none that can be written to,
-    # when they all lack an email address or the extra field: say why. In
-    # that case, or when every eligible contact already received this
+    # The source may hold recipients and still have none that can be written
+    # to, when they all lack a valid address or an attachment: say why. In
+    # that case, or when every eligible recipient already received this
     # campaign in a previous run, only a simulation is offered, since its
-    # log is the way to find out why each contact was left out
+    # log is the way to find out why each one was left out
     if not eligible:
-        print(f"\n  {t('no_eligible_contacts')}")
+        print(f"\n  {t('no_eligible_rows' if rows else 'no_eligible_contacts')}")
     action = _choose_action(can_send=to_send_count > 0)
     if action is None:
         sys.exit(0)
 
     # ── Step 8: Bulk send ──────────────────────────────────────────────────────
     dry_run = action == "dry_run"
-    contact_repo = MensagiaContactRepository(client)
-    email_sender = MensagiaEmailSender(client)
-    use_case = SendBulkEmailsUseCase(contact_repo, email_sender)
+    use_case = SendBulkEmailsUseCase(MensagiaEmailSender(client))
 
     # Simulations are logged too, in a file named so it is never mistaken
     # for the log of a real send
     send_logger = SendLogger(simulation=dry_run)
 
+    # The file is read again for the send, so it may have become unusable
+    # since the summary (renamed column, file saved while being edited...)
     print(f"\n  {t('sending')}")
-    result = use_case.execute(
-        from_email=sender.email,
-        group_id=agenda.id,
-        subject=subject,
-        template_id=template.id,
-        extra_field=extra_field,
-        certified=certified,
-        attachment_base_url=attachment_base_url,
-        attachment_checker=HttpAttachmentChecker(),
-        dry_run=dry_run,
-        logger=send_logger,
-        send_registry=send_registry,
-        start_mode=start_mode,
-        start_at=start_at,
-    )
+    try:
+        result = use_case.execute(
+            from_email=sender.email,
+            recipient_source=source,
+            subject=subject,
+            template_id=template.id,
+            certified=certified,
+            attachment_base_url=attachment_base_url,
+            attachment_checker=HttpAttachmentChecker(),
+            dry_run=dry_run,
+            logger=send_logger,
+            send_registry=send_registry,
+            start_mode=start_mode,
+            start_at=start_at,
+        )
+    except TableFileError as e:
+        print(f"  {file_error_message(e)}")
+        sys.exit(1)
 
-    # Report any per-contact errors to the console
+    # Report any per-recipient errors to the console
     for error_item in result.errors:
-        print(f"  {t('send_error', email=error_item['contact'].email, error=error_item['error'])}")
+        print(f"  {t('send_error', email=error_item['recipient'].email, error=error_item['error'])}")
 
     # Print the final outcome summary
     key = "dry_run_complete" if dry_run else "send_complete"

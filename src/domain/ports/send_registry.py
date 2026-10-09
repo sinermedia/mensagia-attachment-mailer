@@ -9,10 +9,11 @@ class SendRegistry(ABC):
 
     A campaign is identified by a Campaign value (see its attributes): the
     same choices a user would make again when restarting an interrupted
-    bulk send. Implementations persist this state locally so that resuming
-    the same campaign:
+    bulk send. Each recipient is identified by its key (see Recipient).
+    Implementations persist this state locally so that resuming the same
+    campaign:
 
-    - does not re-send emails to contacts already reached,
+    - does not re-send emails to recipients already reached,
     - continues the schedule right after the last slot already queued,
     - can warn about attempts whose outcome is unknown (possible duplicates).
 
@@ -22,17 +23,17 @@ class SendRegistry(ABC):
     """
 
     @abstractmethod
-    def get_sent_contact_ids(
+    def get_sent_keys(
         self, campaign: Campaign
-    ) -> set[int]:
-        """Return the IDs of contacts already sent an email in this campaign.
+    ) -> set[str]:
+        """Return the keys of the recipients already sent an email in this campaign.
 
         Args:
             campaign: Campaign the progress belongs to.
 
         Returns:
-            A set of contact IDs. Empty when the campaign has no recorded
-            sends yet.
+            A set of recipient keys. Empty when the campaign has no
+            recorded sends yet.
         """
         pass
 
@@ -54,24 +55,25 @@ class SendRegistry(ABC):
     @abstractmethod
     def get_uncertain_attempts(
         self, campaign: Campaign
-    ) -> dict[int, list[datetime]]:
+    ) -> dict[str, list[datetime]]:
         """Return the attempts of this campaign whose outcome is unknown.
 
         Args:
             campaign: Campaign the progress belongs to.
 
         Returns:
-            A dict mapping each contact ID to the list of send slots that
-            were attempted but never resolved. Empty when there are none.
+            A dict mapping each recipient key to the list of send slots
+            that were attempted but never resolved. Empty when there are
+            none.
         """
         pass
 
     @abstractmethod
     def mark_attempt(
         self, campaign: Campaign,
-        contact_id: int, start_date: datetime,
+        key: str, start_date: datetime,
     ) -> None:
-        """Record that an email is about to be sent to a contact for a given slot.
+        """Record that an email is about to be sent to a recipient for a given slot.
 
         Must be called right before calling the delivery service and be
         persisted immediately, so an abrupt close leaves the attempt on
@@ -79,7 +81,7 @@ class SendRegistry(ABC):
 
         Args:
             campaign: Campaign the progress belongs to.
-            contact_id: ID of the contact about to be emailed.
+            key: Key of the recipient about to be emailed.
             start_date: Send slot requested for this email.
         """
         pass
@@ -87,18 +89,18 @@ class SendRegistry(ABC):
     @abstractmethod
     def mark_sent(
         self, campaign: Campaign,
-        contact_id: int, start_date: datetime,
+        key: str, start_date: datetime,
     ) -> None:
-        """Record that a contact successfully received an email in this campaign.
+        """Record that a recipient successfully received an email in this campaign.
 
         Resolves the attempt for the same slot, if any, and advances the
         campaign's last start date. Earlier unresolved attempts of the same
-        contact are kept, since they may be duplicates. Implementations
+        recipient are kept, since they may be duplicates. Implementations
         must persist this immediately so progress survives an interruption.
 
         Args:
             campaign: Campaign the progress belongs to.
-            contact_id: ID of the contact that was successfully emailed.
+            key: Key of the recipient that was successfully emailed.
             start_date: Send slot the email was scheduled for.
         """
         pass
@@ -106,7 +108,7 @@ class SendRegistry(ABC):
     @abstractmethod
     def discard_attempt(
         self, campaign: Campaign,
-        contact_id: int, start_date: datetime,
+        key: str, start_date: datetime,
     ) -> None:
         """Resolve an attempt known not to have scheduled any email.
 
@@ -115,7 +117,7 @@ class SendRegistry(ABC):
 
         Args:
             campaign: Campaign the progress belongs to.
-            contact_id: ID of the contact whose attempt failed.
+            key: Key of the recipient whose attempt failed.
             start_date: Send slot of the failed attempt.
         """
         pass
@@ -125,8 +127,8 @@ class SendRegistry(ABC):
         """Forget everything recorded for this campaign.
 
         Called once a campaign completes with no pending or errored
-        contacts, so a legitimate future re-send to the same group,
-        template and field is not blocked.
+        recipients, so a legitimate future re-send of the same campaign is
+        not blocked.
 
         Args:
             campaign: Campaign the progress belongs to.

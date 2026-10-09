@@ -134,24 +134,28 @@ python main.py
 ## Sending flow
 
 1. **API token** — Read from `.env` or prompted from the user.
-2. **Subject and start time** — The user enters the email subject and chooses when the first email goes out (see [Scheduling the start time](#scheduling-the-start-time)).
+2. **Subject, start time and source** — The user enters the email subject, chooses when the first email goes out (see [Scheduling the start time](#scheduling-the-start-time)) and where the recipients come from: an **agenda group** or a **file** (see [Sending to the recipients of a file](#sending-to-the-recipients-of-a-file)).
 3. **Template** — The list of available email templates is shown.
 4. **Sender** — The list of verified sender addresses is shown.
-5. **Group** — A first page of contact groups is shown. If the group you need is not there, you can filter by name. Groups without contacts are shown but cannot be selected.
-6. **Attachment field** — Choose which custom field contains the attachment URL.
+5. **Group or file**:
+   - With the agenda, a first page of contact groups is shown. If the group you need is not there, you can filter by name. Groups without contacts are shown but cannot be selected.
+   - With a file, choose the file and, if it is an Excel file with several sheets, the sheet.
+6. **Attachment field or columns**:
+   - With the agenda, choose which custom field contains the attachment URL.
+   - With a file, choose which column contains the email and which one the attachment.
 7. **Certified** — The user decides whether to certify the sends.
-8. **Send** — Contacts with a valid email and attachment URL are filtered, and one email is sent per contact at a rate of 5/minute.
+8. **Send** — Recipients without a valid email or without an attachment are left out, and one email is sent to each of the others at a rate of 5/minute.
 
 ---
 
 ## Attachment path in the custom field
 
-The custom field chosen in step 6 can specify each contact's attachment in two ways:
+The custom field chosen in step 6 (or the attachment column, if the recipients come from a file) can specify each contact's attachment in two ways:
 
 - **Full URL**, starting with `http://` or `https://` (for example, `https://cdn.example.com/docs/invoice_42.pdf`). It is used as is.
 - **File name or relative path** (for example, `invoice_42.pdf` or `2026/invoice_42.pdf`). The app prepends a **base URL** to it: with the base `https://cdn.example.com/docs/`, the value `invoice_42.pdf` becomes `https://cdn.example.com/docs/invoice_42.pdf`.
 
-Both forms can be mixed within the same group.
+Both forms can be mixed within the same group or file.
 
 The base URL can be provided in several ways:
 
@@ -163,6 +167,63 @@ The base URL can be provided in several ways:
 - In **console mode**, the app asks for it only if some contact has a relative path and the variable is not set in `.env`.
 
 > The base URL must always be a **public web address**, never a folder on your computer: Mensagia is the one that downloads the file to attach it to the email. It may end in `/` or not; the app handles both.
+
+---
+
+## Sending to the recipients of a file
+
+Besides an agenda group, the recipients can come from an **Excel (`.xlsx`)** or **CSV (`.csv`)** file. Each row of the file is one email, so the same address can receive several emails with different attachments in the same send (for example, an agency that receives the documents of several of its clients). Recipients do not need to be in the Mensagia agenda.
+
+### What the file must look like
+
+- **The first row is the header** and it is required: it holds the name of each column.
+- Column names, order and number are free. When preparing the send you choose which column holds the email and which one the attachment; the others are ignored.
+- Completely empty rows and columns are ignored.
+- If the Excel file has several sheets, you choose which one to use. If it has only one, you are not asked.
+- In CSV files, the separator (`;` or `,`) and the encoding (UTF-8 or the Windows one) are detected automatically.
+
+Example:
+
+| Client | Email | Attachment |
+|---|---|---|
+| Client A | agency@example.com | invoices/client_a.pdf |
+| Client B | agency@example.com | invoices/client_b.pdf |
+| Client C | info@clientc.com | https://cdn.company.com/docs/c.pdf |
+
+The app does not let you continue if:
+
+- the file is empty or only has the header;
+- a column has data but no name in the header;
+- two columns have the same name (ignoring case);
+- a cell of the first row contains `@`: the file probably has no header.
+
+### Email and attachment of each row
+
+- **Email**: spaces at the start and end are removed. It must hold a single address: a single `@`; before the `@`, only unaccented letters, digits and `. _ % + -`; after it, unaccented letters, digits, `-` and at least one dot. A cell with several addresses is not valid.
+- **Attachment**: as in the custom field, a full URL or a path relative to the base URL (see [Attachment path](#attachment-path-in-the-custom-field)). Numbers are read without decimals (`1234`, not `1234.0`).
+
+These rows are left out, and the [log](#simulating-a-send) gives the reason:
+
+- without an email (`no_email`) or with an invalid one (`invalid_email`);
+- without an attachment (`no_attachment`);
+- with the same email (ignoring case) and the same attachment as an earlier row (`duplicate_row`): only the first one is sent. A file name and the full URL it becomes with the base URL count as the same attachment.
+
+In the log, each row is identified by its number as Excel shows it (the header is row 1), its email and its attachment. For example:
+
+```
+[SEND_SKIP]  row=14 to=agency@example.com attachment=invoices/client_a.pdf reason=duplicate_row
+```
+
+### Changes to the file
+
+The file is read again when reaching the summary and when the send starts, so changes saved in the meantime are used. If the file can no longer be used (for example, because a chosen column was renamed), the app says so and sends nothing.
+
+To [resume an interrupted send](#resuming-an-interrupted-send), a send from a file is identified by the **file name** (without its folder), the sheet, the chosen columns, the template, the subject and the start mode. Therefore:
+
+- You can move the file to another folder, fix rows, add new rows or change their order. When resuming, only the missing rows are sent, because each row is recognised by its email and its attachment.
+- If you rename the file, or change the sheet or any of the columns, it is treated as a new send.
+
+> In console mode, the file path is typed or pasted. The quotes added by Windows' "Copy as path" option are accepted.
 
 ---
 
@@ -223,13 +284,15 @@ Each simulation writes a log with the same content as a real send: the contacts 
 
 Skip reasons (`reason=` in the `[SEND_SKIP]` lines):
 
-- `no_email`: the contact has no email address.
-- `no_attachment`: the attachment custom field is empty.
-- `already_sent`: the contact already received the email in a previous, interrupted send of the same campaign.
+- `no_email`: the contact or row has no email address.
+- `invalid_email`: the email address of the row is not valid (only with a file).
+- `no_attachment`: the attachment custom field or column is empty.
+- `duplicate_row`: the row repeats the email and the attachment of an earlier row (only with a file).
+- `already_sent`: the recipient already received the email in a previous, interrupted send of the same campaign.
 
 The `[SEND_ERROR]` lines are eligible contacts whose attachment could not be prepared (for example, a relative path without a base URL, or a file that cannot be downloaded).
 
-When **no contact in the group is eligible** (or all of them already received the email in a previous send), sending is not possible but simulating is: the log shows why each contact was left out. In GUI mode the **Send** button stays disabled; in console mode the app only offers the simulation. Also, after a simulation, GUI mode only offers the **Send** button if some email would be sent (for example, it is not offered when no attachment can be downloaded).
+When **no contact in the group or row of the file is eligible** (or all of them already received the email in a previous send), sending is not possible but simulating is: the log shows why each one was left out. In GUI mode the **Send** button stays disabled; in console mode the app only offers the simulation. Also, after a simulation, GUI mode only offers the **Send** button if some email would be sent (for example, it is not offered when no attachment can be downloaded).
 
 ---
 
@@ -237,7 +300,7 @@ When **no contact in the group is eligible** (or all of them already received th
 
 If a send is interrupted halfway (the app is closed, the connection drops, the computer shuts down…), the app remembers which contacts have already had their email scheduled.
 
-When you prepare **the same campaign** again (same group, template, attachment field and start mode, and **exactly the same subject**), on reaching the summary the app warns that there is an incomplete previous send and asks what to do:
+When you prepare **the same campaign** again (same group —or same file, sheet and email column—, template, attachment field or column and start mode, and **exactly the same subject**), on reaching the summary the app warns that there is an incomplete previous send and asks what to do:
 
 - **Continue**: only the pending contacts are sent to. Their emails are scheduled after those of the previous send, without overlapping them.
 - **Don't continue**: the previous send is discarded and the email is sent again to all contacts, including those who already received it.
@@ -258,10 +321,13 @@ The Mensagia API does not allow querying scheduled sends, so this check must be 
 ## Selection memory (GUI mode)
 
 After each send or simulation, the app saves the chosen parameters
-(template, sender, group, attachment field, certified, and the start mode and time) to a file
+(recipient source, template, sender, group, attachment field, folder of the last file,
+email and attachment columns, certified, and the start mode and time) to a file
 `last_selections.json`, in the [app data folder](#app-files).
 
-On the next run, those options will be pre-selected by default.
+On the next run, those options will be pre-selected by default. The columns are only selected if
+the new file has columns with those names. The file and the sheet are not remembered: the file
+picker opens in the folder of the last one used.
 
 > To clear this memory, delete the `last_selections.json` file.
 > The app works normally if the file does not exist.
@@ -309,8 +375,10 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Mensagia API client and adapters
 │       ├── config/          # Configuration loading (.env)
+│       ├── files/           # Reading of Excel and CSV files
 │       ├── logging/         # Writing of send logs
 │       ├── persistence/     # Saving of send progress
+│       ├── recipients/      # Recipient sources (agenda or file)
 │       └── ui/
 │           ├── console/     # Console interface
 │           ├── gui/         # Graphical interface (customtkinter)

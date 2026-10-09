@@ -134,24 +134,28 @@ python main.py
 ## Flux d'enviament
 
 1. **Token API** — Es llegeix del `.env` o es demana a l'usuari.
-2. **Assumpte i hora d'inici** — L'usuari introdueix l'assumpte del correu i tria quan surt el primer correu (vegeu [Programar l'hora d'inici](#programar-lhora-dinici)).
+2. **Assumpte, hora d'inici i origen** — L'usuari introdueix l'assumpte del correu, tria quan surt el primer correu (vegeu [Programar l'hora d'inici](#programar-lhora-dinici)) i d'on surten els destinataris: un **grup de l'agenda** o un **fitxer** (vegeu [Enviar als destinataris d'un fitxer](#enviar-als-destinataris-dun-fitxer)).
 3. **Plantilla** — Es mostra la llista de plantilles d'email disponibles.
 4. **Remitent** — Es mostra la llista d'adreces d'enviament verificades.
-5. **Grup** — Es mostra una primera pàgina de grups de l'agenda. Si el grup buscat no hi apareix, es pot filtrar pel nom. Els grups sense contactes es mostren, però no es poden seleccionar.
-6. **Camp adjunt** — Es tria quin camp personalitzat conté la URL de l'adjunt.
+5. **Grup o fitxer**:
+   - Amb l'agenda, es mostra una primera pàgina de grups. Si el grup buscat no hi apareix, es pot filtrar pel nom. Els grups sense contactes es mostren, però no es poden seleccionar.
+   - Amb un fitxer, es tria el fitxer i, si és un Excel amb diversos fulls, el full.
+6. **Camp adjunt o columnes**:
+   - Amb l'agenda, es tria quin camp personalitzat conté la URL de l'adjunt.
+   - Amb un fitxer, es tria quina columna conté el correu i quina l'adjunt.
 7. **Certificat** — L'usuari decideix si certificar els enviaments.
-8. **Enviament** — Es filtren els contactes amb email i URL d'adjunt vàlids, i s'envia un correu per cada un a raó de 5/minut.
+8. **Enviament** — Es descarten els destinataris sense un correu vàlid o sense adjunt, i s'envia un correu per cada un a raó de 5/minut.
 
 ---
 
 ## Ruta de l'adjunt al camp personalitzat
 
-El camp personalitzat triat al pas 6 pot indicar l'adjunt de cada contacte de dues maneres:
+El camp personalitzat triat al pas 6 (o la columna de l'adjunt, si els destinataris surten d'un fitxer) pot indicar l'adjunt de cada contacte de dues maneres:
 
 - **URL completa**, que comença per `http://` o `https://` (per exemple, `https://cdn.empresa.com/docs/factura_42.pdf`). Es fa servir tal qual.
 - **Nom de fitxer o ruta relativa** (per exemple, `factura_42.pdf` o `2026/factura_42.pdf`). L'aplicació hi afegeix al davant una **URL base**: amb la base `https://cdn.empresa.com/docs/`, el valor `factura_42.pdf` es converteix en `https://cdn.empresa.com/docs/factura_42.pdf`.
 
-Les dues formes es poden combinar dins del mateix grup.
+Les dues formes es poden combinar dins del mateix grup o fitxer.
 
 La URL base es pot indicar de diverses maneres:
 
@@ -163,6 +167,63 @@ La URL base es pot indicar de diverses maneres:
 - En el **mode consola**, l'aplicació la demana només si algun contacte té una ruta relativa i la variable no és al `.env`.
 
 > La URL base ha de ser sempre una **adreça web pública**, mai una carpeta de l'ordinador: és Mensagia qui descarrega el fitxer per adjuntar-lo al correu. Pot acabar en `/` o no; l'aplicació ho té en compte.
+
+---
+
+## Enviar als destinataris d'un fitxer
+
+A més d'un grup de l'agenda, els destinataris poden sortir d'un fitxer **Excel (`.xlsx`)** o **CSV (`.csv`)**. Cada fila del fitxer és un correu, de manera que una mateixa adreça pot rebre diversos correus amb adjunts diferents en el mateix enviament (per exemple, una agència que rep la documentació de diversos clients seus). Els destinataris no han de ser a l'agenda de Mensagia.
+
+### Com ha de ser el fitxer
+
+- **La primera fila és la capçalera** i és obligatòria: conté el nom de cada columna.
+- Els noms, l'ordre i el nombre de columnes són lliures. En preparar l'enviament es tria quina columna conté el correu i quina l'adjunt; les altres s'ignoren.
+- Les files i les columnes completament buides s'ignoren.
+- Si l'Excel té diversos fulls, es tria quin s'ha de fer servir. Si només en té un, no es pregunta.
+- En els CSV, el separador (`;` o `,`) i la codificació (UTF-8 o la de Windows) es detecten automàticament.
+
+Exemple:
+
+| Client | Correu | Adjunt |
+|---|---|---|
+| Client A | agencia@exemple.com | factures/client_a.pdf |
+| Client B | agencia@exemple.com | factures/client_b.pdf |
+| Client C | info@clientc.com | https://cdn.empresa.com/docs/c.pdf |
+
+L'aplicació no deixa continuar si:
+
+- el fitxer és buit o només té la capçalera;
+- alguna columna té dades però no té nom a la capçalera;
+- hi ha dues columnes amb el mateix nom (sense distingir majúscules);
+- alguna cel·la de la primera fila conté `@`: probablement el fitxer no té capçalera.
+
+### Correu i adjunt de cada fila
+
+- **Correu**: es treuen els espais del principi i del final. Ha de contenir una sola adreça: una sola `@`; abans de la `@`, només lletres sense accents, números i `. _ % + -`; després, lletres sense accents, números, `-` i com a mínim un punt. Una cel·la amb diverses adreces no és vàlida.
+- **Adjunt**: com al camp personalitzat, una URL completa o una ruta relativa a la URL base (vegeu [Ruta de l'adjunt](#ruta-de-ladjunt-al-camp-personalitzat)). Els números es llegeixen sense decimals (`1234`, no `1234.0`).
+
+Es descarten aquestes files, i el [log](#simular-un-enviament) n'indica el motiu:
+
+- sense correu (`no_email`) o amb un correu no vàlid (`invalid_email`);
+- sense adjunt (`no_attachment`);
+- amb el mateix correu (sense distingir majúscules) i el mateix adjunt que una fila anterior (`duplicate_row`): només s'envia la primera. Un nom de fitxer i la URL completa que s'obté amb la URL base compten com el mateix adjunt.
+
+Al log, cada fila s'identifica pel seu número tal com el mostra Excel (la capçalera és la fila 1), el correu i l'adjunt. Per exemple:
+
+```
+[SEND_SKIP]  row=14 to=agencia@exemple.com attachment=factures/client_a.pdf reason=duplicate_row
+```
+
+### Canvis al fitxer
+
+El fitxer es torna a llegir en arribar al resum i en començar l'enviament, així que es fan servir els canvis desats mentrestant. Si el fitxer ja no es pot fer servir (per exemple, perquè s'ha canviat el nom d'una columna triada), l'aplicació ho indica i no envia res.
+
+Per [reprendre un enviament interromput](#reprendre-un-enviament-interromput), un enviament amb fitxer s'identifica pel **nom del fitxer** (sense la carpeta), el full, les columnes triades, la plantilla, l'assumpte i el mode d'hora d'inici. Per això:
+
+- Es pot moure el fitxer a una altra carpeta, corregir files, afegir-ne de noves o canviar-ne l'ordre. En reprendre l'enviament, només s'envien les files que faltaven, perquè cada fila es reconeix pel seu correu i el seu adjunt.
+- Si es canvia el nom del fitxer, el full o alguna de les columnes, es tracta com un enviament nou.
+
+> En el mode consola, la ruta del fitxer s'escriu o s'enganxa. S'accepten les cometes que afegeix l'opció «Copia com a camí» de Windows.
 
 ---
 
@@ -223,13 +284,15 @@ Cada simulació genera un log amb el mateix contingut que el d'un enviament real
 
 Motius de descart (`reason=` a les línies `[SEND_SKIP]`):
 
-- `no_email`: el contacte no té adreça de correu.
-- `no_attachment`: el camp personalitzat de l'adjunt és buit.
-- `already_sent`: el contacte ja va rebre el correu en un enviament anterior interromput de la mateixa campanya.
+- `no_email`: el contacte o la fila no té adreça de correu.
+- `invalid_email`: l'adreça de correu de la fila no és vàlida (només amb un fitxer).
+- `no_attachment`: el camp personalitzat o la columna de l'adjunt és buit.
+- `duplicate_row`: la fila repeteix el correu i l'adjunt d'una fila anterior (només amb un fitxer).
+- `already_sent`: el destinatari ja va rebre el correu en un enviament anterior interromput de la mateixa campanya.
 
 Les línies `[SEND_ERROR]` corresponen a contactes aptes l'adjunt dels quals no s'ha pogut preparar (per exemple, una ruta relativa sense URL base o un fitxer que no es pot descarregar).
 
-Quan **cap contacte del grup és apte** (o tots ja han rebut el correu en un enviament anterior), no es pot enviar, però sí simular: el log permet esbrinar per què s'ha descartat cada contacte. En el mode gràfic, el botó **Enviar** queda desactivat; en el mode consola, l'aplicació només ofereix la simulació. A més, després d'una simulació, el mode gràfic només ofereix el botó **Enviar** si s'enviaria algun correu (per exemple, no l'ofereix si cap adjunt no es pot descarregar).
+Quan **cap contacte del grup ni cap fila del fitxer és apte** (o tots ja han rebut el correu en un enviament anterior), no es pot enviar, però sí simular: el log permet esbrinar per què s'ha descartat cadascun. En el mode gràfic, el botó **Enviar** queda desactivat; en el mode consola, l'aplicació només ofereix la simulació. A més, després d'una simulació, el mode gràfic només ofereix el botó **Enviar** si s'enviaria algun correu (per exemple, no l'ofereix si cap adjunt no es pot descarregar).
 
 ---
 
@@ -237,7 +300,7 @@ Quan **cap contacte del grup és apte** (o tots ja han rebut el correu en un env
 
 Si un enviament s'interromp a mitges (es tanca l'aplicació, es talla la connexió, s'apaga l'ordinador…), l'aplicació recorda a quins contactes ja se'ls ha programat el correu.
 
-En tornar a preparar **la mateixa campanya** (mateix grup, plantilla, camp adjunt i mode d'hora d'inici, i **exactament el mateix assumpte**), en arribar al resum l'aplicació avisa que hi ha un enviament anterior incomplet i pregunta què cal fer:
+En tornar a preparar **la mateixa campanya** (mateix grup —o mateix fitxer, full i columna del correu—, plantilla, camp o columna de l'adjunt i mode d'hora d'inici, i **exactament el mateix assumpte**), en arribar al resum l'aplicació avisa que hi ha un enviament anterior incomplet i pregunta què cal fer:
 
 - **Continuar**: només s'envia als contactes pendents. Els seus correus es programen a continuació dels de l'enviament anterior, sense solapar-s'hi.
 - **No continuar**: es descarta l'enviament anterior i es torna a enviar a tots els contactes, inclosos els que ja l'han rebut.
@@ -258,10 +321,13 @@ L'API de Mensagia no permet consultar els enviaments programats, així que aques
 ## Memòria de seleccions (mode gràfic)
 
 Després de cada enviament o simulació, l'aplicació desa els paràmetres escollits
-(plantilla, remitent, grup, camp adjunt, certificat, i el mode i l'hora d'inici) en un fitxer
+(origen dels destinataris, plantilla, remitent, grup, camp adjunt, carpeta de l'últim fitxer,
+columnes del correu i de l'adjunt, certificat, i el mode i l'hora d'inici) en un fitxer
 `last_selections.json`, a la [carpeta de dades de l'aplicació](#fitxers-de-laplicació).
 
-En la propera execució, aquestes opcions quedaran marcades per defecte.
+En la propera execució, aquestes opcions quedaran marcades per defecte. Les columnes només es marquen si
+el fitxer nou té columnes amb aquests noms. El fitxer i el full no es recorden: el selector de
+fitxer s'obre a la carpeta de l'últim que s'ha fet servir.
 
 > Per esborrar aquesta memòria, elimina el fitxer `last_selections.json`.
 > L'aplicació funciona amb normalitat si el fitxer no existeix.
@@ -309,8 +375,10 @@ mensagia-attachment-mailer/
 │   └── infrastructure/
 │       ├── api/             # Client i adaptadors de la API Mensagia
 │       ├── config/          # Càrrega de configuració (.env)
+│       ├── files/           # Lectura de fitxers Excel i CSV
 │       ├── logging/         # Escriptura dels logs d'enviament
 │       ├── persistence/     # Desament del progrés dels enviaments
+│       ├── recipients/      # Orígens dels destinataris (agenda o fitxer)
 │       └── ui/
 │           ├── console/     # Interfície de consola
 │           ├── gui/         # Interfície gràfica (customtkinter)
