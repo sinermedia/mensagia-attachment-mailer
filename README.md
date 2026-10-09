@@ -263,6 +263,7 @@ Un asunto sin campos funciona como siempre: es el mismo para todos.
 
 - Un campo es todo lo que hay entre dos `#`, **sin espacios**. En `Pedido #12 y #34` no hay ningún campo, porque entre las dos almohadillas hay espacios.
 - El nombre se relaciona con el campo o la columna **sin distinguir mayúsculas**, y un espacio en el nombre del campo o de la columna se escribe `_`. Por ejemplo, `#num_factura#` corresponde a una columna llamada `num factura`, `Num Factura` o `NUM_FACTURA`.
+- Con la agenda, además de los campos personalizados se pueden usar tres campos básicos del contacto: `#email#` (la dirección de correo), `#name#` (el nombre) y `#number#` (el número de teléfono).
 - La página del campo del adjunto (con la agenda) o de las columnas (con un fichero) muestra cómo se escribe cada uno, por ejemplo `num factura → #num_factura#`. En el modo consola, la lista aparece si el asunto tiene algún error.
 
 ### Errores y destinatarios descartados

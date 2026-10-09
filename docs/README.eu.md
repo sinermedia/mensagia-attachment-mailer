@@ -265,6 +265,7 @@ Eremurik gabeko gaiak beti bezala funtzionatzen du: berdina da guztientzat.
 
 - Eremu bat bi `#` ikurren artean dagoen guztia da, **hutsunerik gabe**. `Eskaera #12 eta #34` testuan ez dago eremurik, bi traolen artean hutsuneak daudelako.
 - Izena eremuarekin edo zutabearekin lotzen da **maiuskulak eta minuskulak bereizi gabe**, eta eremuaren edo zutabearen izeneko hutsune bat `_` gisa idazten da. Adibidez, `#num_factura#` izenak `num factura`, `Num Factura` edo `NUM_FACTURA` izeneko zutabe bati dagokio.
+- Agendarekin, eremu pertsonalizatuez gain, kontaktuaren oinarrizko hiru eremu erabil daitezke: `#email#` (helbide elektronikoa), `#name#` (izena) eta `#number#` (telefono-zenbakia).
 - Eranskinaren eremuaren orriak (agendarekin) edo zutabeen orriak (fitxategi batekin) bakoitza nola idazten den erakusten du, adibidez `num factura → #num_factura#`. Kontsola moduan, zerrenda gaiak erroreren bat badu agertzen da.
 
 ### Erroreak eta baztertutako hartzaileak
