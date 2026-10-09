@@ -1,5 +1,9 @@
+from datetime import date
 from unittest.mock import MagicMock
 
+import pytest
+
+from src.domain.date_input import DateFormat
 from src.domain.entities.contact import Contact
 from src.domain.entities.recipient import Recipient
 from src.infrastructure.recipients.agenda_recipient_source import AgendaRecipientSource
@@ -53,3 +57,55 @@ class TestAgendaRecipientSource:
     def test_log_fields_name_the_group(self):
         """The log describes the source by its group ID."""
         assert make_source([], group_id=42).log_fields == {"group_id": "42"}
+
+    def test_without_a_date_field_there_is_no_send_date(self):
+        """Outside the contact date mode recipients carry no send date."""
+        contact = Contact(id=1, name="A", email="a@x.com", extra_fields={"attachment_url": "a.pdf"})
+        source = make_source([contact])
+        assert source.get_recipients()[0].send_date is None
+        assert source.date_field is None
+
+
+def make_dated_source(contacts: list) -> AgendaRecipientSource:
+    """Build a source that reads the send day from the 'Fecha' field, as dd/mm/yyyy."""
+    repository = MagicMock()
+    repository.get_by_group.return_value = contacts
+    return AgendaRecipientSource(repository, 10, "attachment_url", "Fecha", DateFormat.DMY_SLASH)
+
+
+def dated_contact(value) -> Contact:
+    """Build a sendable contact whose 'Fecha' field holds *value* (None leaves it out)."""
+    fields = {"attachment_url": "a.pdf"}
+    if value is not None:
+        fields["Fecha"] = value
+    return Contact(id=1, name="A", email="a@x.com", extra_fields=fields)
+
+
+class TestAgendaRecipientSourceSendDate:
+    """Covers reading the send day of each contact from a custom field."""
+
+    def test_reads_the_send_date_in_the_chosen_format(self):
+        """The field is read with the chosen format."""
+        [recipient] = make_dated_source([dated_contact("5/11/26")]).get_recipients()
+        assert (recipient.send_date, recipient.skip_reason) == (date(2026, 11, 5), None)
+
+    @pytest.mark.parametrize("value, reason", [
+        (None, "no_send_date"),
+        ("", "no_send_date"),
+        ("2026-11-05", "invalid_send_date"),
+        ("05/11/2026 10:00", "send_date_has_time"),
+    ])
+    def test_unusable_send_dates_are_skipped(self, value, reason):
+        """A missing, unreadable or timed value skips the contact with its reason."""
+        assert make_dated_source([dated_contact(value)]).get_recipients()[0].skip_reason == reason
+
+    def test_missing_email_is_reported_before_the_date(self):
+        """A contact without an email is skipped for that, whatever its date."""
+        contact = Contact(id=1, name="A", email="", extra_fields={"attachment_url": "a.pdf"})
+        assert make_dated_source([contact]).get_recipients()[0].skip_reason == "no_email"
+
+    def test_date_field_and_log(self):
+        """The source names its date field, and the log shows it with its format."""
+        source = make_dated_source([])
+        assert source.date_field == "Fecha"
+        assert source.log_fields == {"group_id": "10", "date_field": "Fecha", "date_format": "dd/mm/yyyy"}

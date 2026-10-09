@@ -161,3 +161,23 @@ def parse_send_date(text: str, fmt: DateFormat) -> date:
         return date(year, int(match["month"]), int(match["day"]))
     except ValueError:
         raise SendDateError("invalid_send_date", text)
+
+
+def read_send_date(text: str, fmt: DateFormat) -> tuple[date | None, str | None]:
+    """Read a contact's send date, telling why it cannot be used if so.
+
+    Args:
+        text: The value as stored; empty when the contact has none.
+        fmt: Format chosen by the user for the field or column.
+
+    Returns:
+        The date and None when it can be read; otherwise None and the
+        skip reason: 'no_send_date', 'invalid_send_date' or
+        'send_date_has_time'.
+    """
+    if not text.strip():
+        return None, "no_send_date"
+    try:
+        return parse_send_date(text, fmt), None
+    except SendDateError as e:
+        return None, e.reason
