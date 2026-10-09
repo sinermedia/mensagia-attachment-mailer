@@ -1,6 +1,7 @@
 import pathlib
 import queue
 import threading
+import webbrowser
 from datetime import datetime
 import tkinter as tk
 from pathlib import Path
@@ -34,6 +35,8 @@ from src.infrastructure.ui.send_summary import date_format_label, day_lines, rep
 from src.domain.scheduling import StartMode, preview_days, split_by_send_date
 from src.domain.date_input import DateFormat
 from src.domain.file_rows import rows_on_several_dates
+from src.infrastructure.http.github_release_checker import RELEASES_PAGE_URL
+from src.infrastructure.ui.update_notice import start_update_check
 
 
 # Apply the light theme globally before any widget is created;
@@ -133,6 +136,8 @@ class App(ctk.CTk):
             while the file cannot be used.
         _email_column: Column chosen for the email address.
         _attachment_column: Column chosen for the attachment.
+        _new_version: Newer release found by the start-up check, or None.
+            Kept across language changes so the notice is shown again.
     """
 
     def __init__(self):
@@ -176,6 +181,7 @@ class App(ctk.CTk):
 
         # Updates handed over by background threads, applied by _pump_ui
         self._ui_queue = queue.Queue()
+        self._new_version = None
 
         # Build all wizard frames and start on the token step
         self._build_frames()
@@ -183,6 +189,10 @@ class App(ctk.CTk):
 
         # Start draining the queue only once the UI exists to be updated
         self._pump_ui()
+
+        # The check reports from a background thread, so the notice goes
+        # through the queue like any other update from a worker
+        start_update_check(lambda version: self._ui_queue.put(lambda: self._show_update_notice(version)))
 
     def _pump_ui(self):
         """Apply the UI updates queued by background threads.
@@ -367,6 +377,33 @@ class App(ctk.CTk):
         ctk.CTkButton(btn_frame, text=t("btn_validate"), command=self._validate_token).pack(side="left", padx=(0, 8))
         self._token_next_btn = ctk.CTkButton(btn_frame, text=t("btn_next"), state="disabled", command=self._token_next)
         self._token_next_btn.pack(side="left")
+
+        # New version notice at the very bottom, small so it never gets in
+        # the way. Built empty and only packed when a newer version is
+        # found; a version found earlier is shown again after a rebuild
+        self._update_link = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=11, underline=True),
+                                         text_color=("#1f6aa5", "#5aa0d8"), cursor="hand2")
+        self._update_link.bind("<Button-1>", lambda _event: self._open_releases_page())
+        self._update_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=11), text_color="gray")
+        if self._new_version:
+            self._show_update_notice(self._new_version)
+
+    def _show_update_notice(self, version: str):
+        """Show the new version notice at the bottom of the token step.
+
+        Args:
+            version: The newer version found by the start-up check.
+        """
+        self._new_version = version
+        self._update_label.configure(text=t("update_available", version=version))
+        self._update_link.configure(text=RELEASES_PAGE_URL)
+        # Packed from the bottom up, so the link ends below the text
+        self._update_link.pack(side="bottom", anchor="w")
+        self._update_label.pack(side="bottom", anchor="w")
+
+    def _open_releases_page(self):
+        """Open the download page of the latest release in the browser."""
+        webbrowser.open(RELEASES_PAGE_URL)
 
     def _validate_token(self):
         """Validate the entered API token against the Mensagia API.
