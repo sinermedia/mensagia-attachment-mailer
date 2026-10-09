@@ -206,7 +206,7 @@ These rows are left out, and the [log](#simulating-a-send) gives the reason:
 
 - without an email (`no_email`) or with an invalid one (`invalid_email`);
 - without an attachment (`no_attachment`);
-- with the same email (ignoring case) and the same attachment as an earlier row (`duplicate_row`): only the first one is sent.
+- with the same email (ignoring case) and the same attachment as an earlier row (`duplicate_row`): only the first one is sent. A file name and the full URL it becomes with the base URL count as the same attachment.
 
 In the log, each row is identified by its number as Excel shows it (the header is row 1), its email and its attachment. For example:
 

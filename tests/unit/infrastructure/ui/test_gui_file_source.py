@@ -272,6 +272,18 @@ class TestGuiFileSummary:
         assert str(app._send_btn.cget("state")) == "disabled"
         assert str(app._dry_run_btn.cget("state")) == "normal"
 
+    def test_relative_and_absolute_values_of_the_same_file_are_one_row(self, app, tmp_path):
+        """With the base URL of the first step, a relative path and its full URL count as a single row."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto\na@x.com;a.pdf\na@x.com;https://cdn.x.com/docs/a.pdf\n")
+        app._base_url_entry.delete(0, "end")
+        app._base_url_entry.insert(0, "https://cdn.x.com/docs/")
+        _prepare_file_summary(app, path)
+        app._load_summary()
+        _wait_until(app, lambda: app._summary_contacts_label.cget("text") != "Loading...")
+
+        assert app._summary_contacts_label.cget("text") == "Eligible rows: 1"
+        assert app._summary_skipped_label.cget("text") == "Discarded rows: 1"
+
 
 class TestGuiFileSelections:
     """Covers the choices remembered after a send."""

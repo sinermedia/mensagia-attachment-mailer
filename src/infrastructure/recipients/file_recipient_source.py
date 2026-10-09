@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from src.domain.attachment_url import resolve_attachment_url
 from src.domain.entities.recipient import Recipient
 from src.domain.file_rows import email_skip_reason, row_key, skip_duplicate_rows
 from src.domain.ports.recipient_source import RecipientSource
@@ -21,9 +22,12 @@ class FileRecipientSource(RecipientSource):
             sheet).
         email_column: Name of the column holding the address.
         attachment_column: Name of the column holding the attachment value.
+        attachment_base_url: Base URL that relative attachment values are
+            resolved against, or None when there is none.
     """
 
-    def __init__(self, path: str, sheet: str | None, email_column: str, attachment_column: str):
+    def __init__(self, path: str, sheet: str | None, email_column: str, attachment_column: str,
+                 attachment_base_url: str | None = None):
         """Initialise the source for one file, sheet and pair of columns.
 
         Args:
@@ -31,11 +35,33 @@ class FileRecipientSource(RecipientSource):
             sheet: Workbook sheet to read, or None.
             email_column: Name of the column holding the address.
             attachment_column: Name of the column holding the attachment.
+            attachment_base_url: Base URL for relative attachment values,
+                used to tell which rows point to the same file.
         """
         self.path = path
         self.sheet = sheet
         self.email_column = email_column
         self.attachment_column = attachment_column
+        self.attachment_base_url = attachment_base_url
+
+    def _attachment_identity(self, attachment: str) -> str:
+        """Return the value that tells whether two rows attach the same file.
+
+        A relative path and the full URL it resolves to are the same file,
+        so the resolved URL is compared. Without a base URL a relative path
+        cannot be resolved (the send will report it) and is compared as
+        written.
+
+        Args:
+            attachment: Attachment value as written in the cell.
+
+        Returns:
+            The resolved URL, or the value itself when it cannot be resolved.
+        """
+        try:
+            return resolve_attachment_url(attachment, self.attachment_base_url)
+        except ValueError:
+            return attachment
 
     @property
     def identity(self) -> str:
@@ -80,7 +106,8 @@ class FileRecipientSource(RecipientSource):
         Returns:
             One recipient per non-empty row, in file order. Rows with an
             empty or invalid address, without an attachment, or repeating
-            an earlier row carry the reason.
+            the address and attachment file of an earlier row carry the
+            reason.
 
         Raises:
             TableFileError: When the file cannot be read or used, or when a
@@ -101,7 +128,7 @@ class FileRecipientSource(RecipientSource):
             if reason is None and not attachment:
                 reason = "no_attachment"
             recipients.append(Recipient(
-                key=row_key(email, attachment), email=email, attachment=attachment,
+                key=row_key(email, self._attachment_identity(attachment)), email=email, attachment=attachment,
                 row=row.number, skip_reason=reason,
             ))
         return skip_duplicate_rows(recipients)

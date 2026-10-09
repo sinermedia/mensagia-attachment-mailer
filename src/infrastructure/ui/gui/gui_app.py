@@ -1042,7 +1042,10 @@ class App(ctk.CTk):
         self._send_btn.configure(state="disabled")
         self._can_send = False
 
-        threading.Thread(target=self._fetch_summary, daemon=True).start()
+        # The source reads widgets (the base URL), so it is built here, on the
+        # main thread, and only read from the background thread
+        source = self._recipient_source()
+        threading.Thread(target=self._fetch_summary, args=(source,), daemon=True).start()
 
     # ── Step 7: Summary ────────────────────────────────────────────────────────
 
@@ -1087,9 +1090,12 @@ class App(ctk.CTk):
             The RecipientSource of the chosen file, sheet and columns, or of
             the selected group and attachment field.
         """
+        # The base URL lets a file tell a relative path and the full URL it
+        # resolves to apart from different files when looking for duplicates
         if self._source_kind == "file":
             return FileRecipientSource(self._file_path, self._file_sheet,
-                                       self._email_column, self._attachment_column)
+                                       self._email_column, self._attachment_column,
+                                       self._base_url_entry.get().strip() or None)
         return AgendaRecipientSource(MensagiaContactRepository(self.client),
                                      self.selected_agenda.id, self.selected_field.name)
 
@@ -1106,15 +1112,18 @@ class App(ctk.CTk):
         return [t("summary_group", value=self.selected_agenda.name),
                 t("summary_field", value=self.selected_field.name)]
 
-    def _fetch_summary(self):
+    def _fetch_summary(self, source):
         """Background thread: read the chosen recipients for the summary.
 
         Errors are reported inline rather than in a modal dialog so the user
         can simply go back and pick another group, or fix the file, which
         is read again here and may have changed since it was chosen.
+
+        Args:
+            source: RecipientSource built on the main thread.
         """
         try:
-            recipients = self._recipient_source().get_recipients()
+            recipients = source.get_recipients()
         except MensagiaAPIError as e:
             message = t("error_api", error=str(e))
             self._ui_queue.put(lambda: self._show_summary_error(message))
@@ -1327,6 +1336,9 @@ class App(ctk.CTk):
             # Force a UI redraw so the progress is visible immediately
             self.update_idletasks()
 
+        # Widgets may only be read on the main thread, so the source is built here
+        source = self._recipient_source()
+
         def _run():
             """Background thread: delegate to SendBulkEmailsUseCase and update the UI progressively."""
             try:
@@ -1339,7 +1351,7 @@ class App(ctk.CTk):
 
                 result = use_case.execute(
                     from_email=self.selected_sender.email,
-                    recipient_source=self._recipient_source(),
+                    recipient_source=source,
                     subject=self._subject_entry.get().strip(),
                     template_id=self.selected_template.id,
                     certified=self._certified_var.get(),

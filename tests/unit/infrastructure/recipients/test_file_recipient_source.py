@@ -47,6 +47,26 @@ class TestFileRecipientSourceRows:
         reasons = [r.skip_reason for r in source_for(path).get_recipients()]
         assert reasons == [None, "duplicate_row", None]
 
+    def test_relative_and_absolute_values_of_the_same_file_are_duplicates(self, tmp_path):
+        """A relative path and the full URL it resolves to are the same attachment for the same address."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto\na@x.com;a.pdf\na@x.com;https://cdn.x.com/docs/a.pdf\n")
+        source = FileRecipientSource(path, None, "Correo", "Adjunto", "https://cdn.x.com/docs/")
+        reasons = [r.skip_reason for r in source.get_recipients()]
+        assert reasons == [None, "duplicate_row"]
+
+    def test_key_uses_the_resolved_url(self, tmp_path):
+        """A row is recorded by the URL its attachment resolves to, while it keeps the value as written."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto\na@x.com;a.pdf\n")
+        [recipient] = FileRecipientSource(path, None, "Correo", "Adjunto", "https://cdn.x.com/docs").get_recipients()
+        assert recipient.key == row_key("a@x.com", "https://cdn.x.com/docs/a.pdf")
+        assert recipient.attachment == "a.pdf"
+
+    def test_relative_values_are_compared_as_written_without_a_base_url(self, tmp_path):
+        """Without a base URL, a relative path cannot be resolved and is compared as written."""
+        path = write_csv(tmp_path / "f.csv", "Correo;Adjunto\na@x.com;a.pdf\na@x.com;https://cdn.x.com/docs/a.pdf\n")
+        reasons = [r.skip_reason for r in source_for(path).get_recipients()]
+        assert reasons == [None, None]
+
     def test_numeric_attachment_cells_lose_their_decimals(self, tmp_path):
         """An attachment written as a whole number in Excel is read without decimals."""
         workbook = openpyxl.Workbook()

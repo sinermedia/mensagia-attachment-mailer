@@ -477,6 +477,20 @@ def run():
 
     # The source tells which recipients cannot be sent (no email, no attachment...)
     eligible = [r for r in recipients if r.skip_reason is None]
+
+    # Resolve the base URL for relative attachment paths, prompting if needed.
+    # A file is then read again with it: a relative path and the full URL it
+    # resolves to are the same file, which changes the duplicate rows and
+    # the keys the progress is recorded with
+    attachment_base_url = _resolve_attachment_base_url(eligible)
+    if rows and attachment_base_url:
+        source.attachment_base_url = attachment_base_url
+        try:
+            recipients = source.get_recipients()
+        except TableFileError as e:
+            print(f"  {file_error_message(e)}")
+            sys.exit(1)
+        eligible = [r for r in recipients if r.skip_reason is None]
     skipped_count = len(recipients) - len(eligible)
 
     # Detect contacts already sent this exact campaign in a previous,
@@ -501,9 +515,6 @@ def run():
 
     # Number of contacts that will actually be sent to in this run
     to_send_count = len(eligible) - already_sent_count
-
-    # Resolve the base URL for relative attachment paths, prompting if needed
-    attachment_base_url = _resolve_attachment_base_url(eligible)
 
     # Print the summary for the user to review before committing to send
     sender_display = f"{sender.name} <{sender.email}>" if sender.name else sender.email

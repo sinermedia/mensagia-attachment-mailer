@@ -206,7 +206,7 @@ Es descarten aquestes files, i el [log](#simular-un-enviament) n'indica el motiu
 
 - sense correu (`no_email`) o amb un correu no vàlid (`invalid_email`);
 - sense adjunt (`no_attachment`);
-- amb el mateix correu (sense distingir majúscules) i el mateix adjunt que una fila anterior (`duplicate_row`): només s'envia la primera.
+- amb el mateix correu (sense distingir majúscules) i el mateix adjunt que una fila anterior (`duplicate_row`): només s'envia la primera. Un nom de fitxer i la URL completa que s'obté amb la URL base compten com el mateix adjunt.
 
 Al log, cada fila s'identifica pel seu número tal com el mostra Excel (la capçalera és la fila 1), el correu i l'adjunt. Per exemple:
 

@@ -208,7 +208,7 @@ Errenkada hauek baztertu egiten dira, eta [logak](#bidalketa-bat-simulatu) arraz
 
 - helbiderik gabekoak (`no_email`) edo helbide baliogabea dutenak (`invalid_email`);
 - eranskinik gabekoak (`no_attachment`);
-- aurreko errenkada baten helbide bera (maiuskulak bereizi gabe) eta eranskin bera dutenak (`duplicate_row`): lehena bakarrik bidaltzen da.
+- aurreko errenkada baten helbide bera (maiuskulak bereizi gabe) eta eranskin bera dutenak (`duplicate_row`): lehena bakarrik bidaltzen da. Fitxategi-izen bat eta oinarrizko URLarekin lortzen den URL osoa eranskin bera dira.
 
 Logean, errenkada bakoitza Excelek erakusten duen zenbakiarekin (goiburua 1. errenkada da), helbidearekin eta eranskinarekin identifikatzen da. Adibidez:
 

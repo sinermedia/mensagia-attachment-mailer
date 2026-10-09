@@ -206,7 +206,7 @@ Se descartan estas filas, y el [log](#simular-un-envío) indica el motivo:
 
 - sin correo (`no_email`) o con un correo no válido (`invalid_email`);
 - sin adjunto (`no_attachment`);
-- con el mismo correo (sin distinguir mayúsculas) y el mismo adjunto que una fila anterior (`duplicate_row`): solo se envía la primera.
+- con el mismo correo (sin distinguir mayúsculas) y el mismo adjunto que una fila anterior (`duplicate_row`): solo se envía la primera. Un nombre de archivo y la URL completa que se obtiene con la URL base cuentan como el mismo adjunto.
 
 En el log, cada fila se identifica por su número tal como lo muestra Excel (la cabecera es la fila 1), el correo y el adjunto. Por ejemplo:
 

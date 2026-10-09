@@ -208,7 +208,7 @@ Descártanse estas filas, e o [log](#simular-un-envío) indica o motivo:
 
 - sen correo (`no_email`) ou cun correo non válido (`invalid_email`);
 - sen adxunto (`no_attachment`);
-- co mesmo correo (sen distinguir maiúsculas) e o mesmo adxunto que unha fila anterior (`duplicate_row`): só se envía a primeira.
+- co mesmo correo (sen distinguir maiúsculas) e o mesmo adxunto que unha fila anterior (`duplicate_row`): só se envía a primeira. Un nome de arquivo e a URL completa que se obtén coa URL base contan como o mesmo adxunto.
 
 No log, cada fila identifícase polo seu número tal como o mostra Excel (a cabeceira é a fila 1), o correo e o adxunto. Por exemplo:
 
