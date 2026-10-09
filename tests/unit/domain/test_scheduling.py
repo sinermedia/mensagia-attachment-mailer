@@ -3,8 +3,9 @@ import pytest
 from src.domain.scheduling import (
     MAX_SCHEDULE_AHEAD, MIN_START_LEAD, SECONDS_BETWEEN_EMAILS, DayPreview, SendSchedule, StartMode,
     StartTooFarError, StartTooSoonError, calculate_start_dates, default_start_time, next_ten_minute_mark,
-    preview_days, send_date_skip_reason, validate_fixed_start,
+    preview_days, send_date_skip_reason, split_by_send_date, validate_fixed_start,
 )
+from src.domain.entities.recipient import Recipient
 
 
 class TestNextTenMinuteMark:
@@ -386,6 +387,28 @@ class TestSendDateSkipReason:
         assert send_date_skip_reason(last_allowed, time(10, 7), self.NOW) is None
         assert send_date_skip_reason(last_allowed, time(10, 8), self.NOW) == "send_date_too_far"
         assert send_date_skip_reason(last_allowed + timedelta(days=1), time(0, 0), self.NOW) == "send_date_too_far"
+
+
+class TestSplitBySendDate:
+    """Tests for separating the recipients that can be scheduled by their send day."""
+
+    NOW = datetime(2026, 10, 8, 10, 7, 0)
+
+    @staticmethod
+    def recipient(key: str, day: date) -> Recipient:
+        """Build a sendable recipient for *day*."""
+        return Recipient(key=key, email=f"{key}@x.com", attachment="a.pdf", send_date=day)
+
+    def test_keeps_valid_days_in_date_order_and_skips_the_rest(self):
+        """Valid recipients come back ordered by day (stable); past and far ones are skipped with the reason."""
+        recipients = [
+            self.recipient("a", date(2026, 10, 10)), self.recipient("b", date(2026, 10, 7)),
+            self.recipient("c", date(2026, 10, 9)), self.recipient("d", date(2026, 12, 1)),
+            self.recipient("e", date(2026, 10, 9)),
+        ]
+        valid, skipped = split_by_send_date(recipients, time(9, 0), self.NOW)
+        assert [r.key for r in valid] == ["c", "e", "a"]
+        assert [(r.key, r.skip_reason) for r in skipped] == [("b", "past_send_date"), ("d", "send_date_too_far")]
 
 
 class TestPreviewDays:

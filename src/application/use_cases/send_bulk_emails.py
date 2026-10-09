@@ -1,4 +1,3 @@
-import dataclasses
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, time as clock_time
@@ -7,7 +6,7 @@ from src.domain.entities.campaign import Campaign
 from src.domain.entities.email_message import EmailMessage
 from src.domain.ports.email_sender import EmailNotSentError, EmailRejectedError, EmailSender
 from src.domain.ports.recipient_source import RecipientSource
-from src.domain.scheduling import SendSchedule, StartMode, send_date_skip_reason
+from src.domain.scheduling import SendSchedule, StartMode, split_by_send_date
 from src.domain.attachment_url import resolve_attachment_url
 
 
@@ -247,15 +246,8 @@ class SendBulkEmailsUseCase:
         # so the emails of the nearest days are scheduled before their slots
         # can lose their lead
         if by_day:
-            checked = clock()
-            for r in eligible:
-                reason = send_date_skip_reason(r.send_date, start_time, checked)
-                if reason:
-                    skipped.append(dataclasses.replace(r, skip_reason=reason))
-            eligible = sorted(
-                (r for r in eligible if send_date_skip_reason(r.send_date, start_time, checked) is None),
-                key=lambda r: r.send_date,
-            )
+            eligible, out_of_range = split_by_send_date(eligible, start_time, clock())
+            skipped.extend(out_of_range)
 
         # Slots are handed out as each email is scheduled, with the time of
         # that moment, so a long run or a late retry never gets a stale one

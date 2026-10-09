@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from enum import Enum
@@ -284,6 +285,33 @@ def send_date_skip_reason(send_date: date, start_time: time, now: datetime) -> s
     if datetime.combine(send_date, start_time) - now > MAX_SCHEDULE_AHEAD:
         return "send_date_too_far"
     return None
+
+
+def split_by_send_date(recipients: list, start_time: time, now: datetime) -> tuple[list, list]:
+    """Separate the recipients whose send day can still be scheduled.
+
+    The ones that can are ordered by day, earliest first and otherwise in
+    their original order, so the emails of the nearest days are scheduled
+    before their slots can lose their lead.
+
+    Args:
+        recipients: Sendable Recipient objects, each with a send_date.
+        start_time: Time chosen by the user.
+        now: Current date and time.
+
+    Returns:
+        The recipients that can be scheduled, ordered by day, and the ones
+        that cannot, as copies carrying the reason (see
+        send_date_skip_reason()).
+    """
+    valid, skipped = [], []
+    for recipient in recipients:
+        reason = send_date_skip_reason(recipient.send_date, start_time, now)
+        if reason:
+            skipped.append(dataclasses.replace(recipient, skip_reason=reason))
+        else:
+            valid.append(recipient)
+    return sorted(valid, key=lambda r: r.send_date), skipped
 
 
 @dataclass(frozen=True)
