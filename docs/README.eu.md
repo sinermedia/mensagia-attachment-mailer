@@ -167,7 +167,7 @@ python main.py
    - Agendarekin, eranskinaren URLa duen eremu pertsonalizatua aukeratzen da. Mezuak kontaktu bakoitzaren egunean bidaltzen badira, ondoren data duen eremua eta haren formatua aukeratzen dira.
    - Fitxategi batekin, helbide elektronikoa zein zutabetan dagoen eta eranskina zeinetan dagoen aukeratzen da. Mezuak kontaktu bakoitzaren egunean bidaltzen badira, data duen zutabea eta haren formatua ere bai.
 7. **Ziurtagiria** — Erabiltzaileak bidalketak ziurtatzea erabakitzen du.
-8. **Bidalketa** — Helbide baliozkorik edo eranskinik ez duten hartzaileak, edo gaiko eremu bat hutsik dutenak, baztertzen dira, eta minutuko 5eko abiaduran mezu bat bidaltzen zaio bakoitzari.
+8. **Bidalketa** — Helbide baliozkorik edo eranskinik ez duten hartzaileak, edo gaiko eremu bat hutsik dutenak, baztertzen dira, eta minutuko 5eko abiaduran mezu bat bidaltzen zaio bakoitzari. Amaitzean, bidalitako, baztertutako eta errore emandako mezuen kopurua erakusten da. Modu grafikoan, berretsi gabeko bidalketen abisuak eta errorea duten hartzaileak azpian agertzen dira, korritze-barra duen zerrenda batean, eta logaren bidea eta botoiak beti ikusgai geratzen dira, errore asko egon arren.
 
 ---
 
