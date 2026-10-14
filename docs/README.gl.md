@@ -409,6 +409,12 @@ As liñas `[SEND_OK]` indican tamén a data e a hora para as que se programou ca
 
 As liñas `[SEND_ERROR]` corresponden a contactos aptos cuxo adxunto non se puido preparar (por exemplo, unha ruta relativa sen URL base ou un ficheiro que non se pode descargar). Se o servidor do adxunto tarda máis de 10 segundos en responder, a comprobación repítese unha vez antes de descartar o contacto. Unha resposta de erro do servidor (por exemplo, un 404 porque o ficheiro non existe) non se repite.
 
+Nun envío real, as liñas `[SEND_ERROR]` tamén recollen os correos que Mensagia rexeitou. Se o motivo é un erro de validación (por exemplo, porque o contacto está marcado como «Non válido» na axenda), a mensaxe inclúe entre corchetes o detalle que devolve Mensagia para cada campo, tamén na pantalla final:
+
+```
+[SEND_ERROR] ... reason="The data validation is not correct. See validation_errors array. [email: …]"
+```
+
 Cando **ningún contacto do grupo nin ningunha fila do ficheiro é apto** (ou todos recibiron xa o correo nun envío anterior), non se pode enviar, pero si simular: o log permite saber por que se descartou cada un. No modo gráfico, o botón **Enviar** queda desactivado; no modo consola, a aplicación só ofrece a simulación. Ademais, despois dunha simulación, o modo gráfico só ofrece o botón **Enviar** se se enviaría algún correo (por exemplo, non o ofrece se ningún adxunto se pode descargar).
 
 ---
