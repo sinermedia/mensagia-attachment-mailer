@@ -150,3 +150,13 @@ class TestMensagiaClientValidationErrors:
         with pytest.raises(MensagiaAPIError) as info:
             client.get_agendas_page()
         assert str(info.value) == f"{GENERIC} [per_page: Too big.]"
+
+    def test_real_response_for_a_contact_marked_not_valid(self, client):
+        """Shows the detail of the answer Mensagia gave for a contact marked as not valid in the agenda."""
+        error = _raised(client, {
+            "code": "VALIDATION_FAIL",
+            "message": GENERIC,
+            "http_code": "400",
+            "validation_errors": {"to": ["There must be at least one valid recipient to send"]},
+        })
+        assert str(error) == f"{GENERIC} [to: There must be at least one valid recipient to send]"
