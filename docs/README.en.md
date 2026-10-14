@@ -410,7 +410,7 @@ The `[SEND_ERROR]` lines are eligible contacts whose attachment could not be pre
 In a real send, the `[SEND_ERROR]` lines also include the emails that Mensagia rejected. When the reason is a validation error (for example, because the contact is marked as "Not valid" in the agenda), the message adds in brackets the detail Mensagia returns for each field, also on the final screen:
 
 ```
-[SEND_ERROR] ... reason="The data validation is not correct. See validation_errors array. [email: …]"
+[SEND_ERROR] ... reason="The data validation is not correct. See validation_errors array. [to: There must be at least one valid recipient to send]"
 ```
 
 When **no contact in the group or row of the file is eligible** (or all of them already received the email in a previous send), sending is not possible but simulating is: the log shows why each one was left out. In GUI mode the **Send** button stays disabled; in console mode the app only offers the simulation. Also, after a simulation, GUI mode only offers the **Send** button if some email would be sent (for example, it is not offered when no attachment can be downloaded).

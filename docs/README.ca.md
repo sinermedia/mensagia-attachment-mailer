@@ -410,7 +410,7 @@ Les línies `[SEND_ERROR]` corresponen a contactes aptes l'adjunt dels quals no 
 En un enviament real, les línies `[SEND_ERROR]` també recullen els correus que Mensagia ha rebutjat. Si el motiu és un error de validació (per exemple, perquè el contacte està marcat com a «No vàlid» a l'agenda), el missatge inclou entre claudàtors el detall que retorna Mensagia per a cada camp, també a la pantalla final:
 
 ```
-[SEND_ERROR] ... reason="The data validation is not correct. See validation_errors array. [email: …]"
+[SEND_ERROR] ... reason="The data validation is not correct. See validation_errors array. [to: There must be at least one valid recipient to send]"
 ```
 
 Quan **cap contacte del grup ni cap fila del fitxer és apte** (o tots ja han rebut el correu en un enviament anterior), no es pot enviar, però sí simular: el log permet esbrinar per què s'ha descartat cadascun. En el mode gràfic, el botó **Enviar** queda desactivat; en el mode consola, l'aplicació només ofereix la simulació. A més, després d'una simulació, el mode gràfic només ofereix el botó **Enviar** si s'enviaria algun correu (per exemple, no l'ofereix si cap adjunt no es pot descarregar).

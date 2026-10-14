@@ -412,7 +412,7 @@ Baztertzeko arrazoiak (`reason=`, `[SEND_SKIP]` lerroetan):
 Benetako bidalketa batean, `[SEND_ERROR]` lerroek Mensagiak baztertutako mezuak ere jasotzen dituzte. Arrazoia baliozkotze-errore bat bada (adibidez, kontaktua agendan «Ez baliozkoa» gisa markatuta dagoelako), mezuak Mensagiak eremu bakoitzerako itzultzen duen xehetasuna dakar kortxete artean, azken pantailan ere bai:
 
 ```
-[SEND_ERROR] ... reason="The data validation is not correct. See validation_errors array. [email: …]"
+[SEND_ERROR] ... reason="The data validation is not correct. See validation_errors array. [to: There must be at least one valid recipient to send]"
 ```
 
 **Taldeko kontakturen bat edo fitxategiko errenkadaren bat ere egokia ez denean** (edo denek aurreko bidalketa batean jaso dutenean mezua), ezin da bidali, baina simulatu bai: logari esker jakin daiteke bakoitza zergatik baztertu den. Modu grafikoan, **Bidali** botoia desaktibatuta geratzen da; kontsola moduan, aplikazioak simulazioa bakarrik eskaintzen du. Gainera, simulazio baten ondoren, modu grafikoak mezuren bat bidaliko balitz bakarrik eskaintzen du **Bidali** botoia (adibidez, ez du eskaintzen eranskinik deskargatu ezin bada).

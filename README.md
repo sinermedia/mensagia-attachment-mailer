@@ -410,7 +410,7 @@ Las líneas `[SEND_ERROR]` corresponden a contactos aptos cuyo adjunto no se ha 
 En un envío real, las líneas `[SEND_ERROR]` también recogen los correos que Mensagia ha rechazado. Si el motivo es un error de validación (por ejemplo, porque el contacto está marcado como «No válido» en la agenda), el mensaje incluye entre corchetes el detalle que devuelve Mensagia para cada campo, también en la pantalla final:
 
 ```
-[SEND_ERROR] ... reason="The data validation is not correct. See validation_errors array. [email: …]"
+[SEND_ERROR] ... reason="The data validation is not correct. See validation_errors array. [to: There must be at least one valid recipient to send]"
 ```
 
 Cuando **ningún contacto del grupo o fila del fichero es apto** (o todos recibieron ya el correo en un envío anterior), no se puede enviar, pero sí simular: el log permite averiguar por qué se ha descartado cada uno. En el modo gráfico, el botón **Enviar** queda desactivado; en el modo consola, la aplicación solo ofrece la simulación. Además, tras una simulación, el modo gráfico solo ofrece el botón **Enviar** si se enviaría algún correo (por ejemplo, no lo ofrece si ningún adjunto se puede descargar).
