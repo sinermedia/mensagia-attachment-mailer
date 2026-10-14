@@ -405,7 +405,7 @@ Motius de descart (`reason=` a les línies `[SEND_SKIP]`):
 
 Les línies `[SEND_OK]` també indiquen la data i l'hora per a les quals s'ha programat cada correu (`start_date`), per trobar-lo al portal de Mensagia, i l'assumpte amb què surt (`subject`). El resum previ mostra els descartats agrupats per motiu.
 
-Les línies `[SEND_ERROR]` corresponen a contactes aptes l'adjunt dels quals no s'ha pogut preparar (per exemple, una ruta relativa sense URL base o un fitxer que no es pot descarregar).
+Les línies `[SEND_ERROR]` corresponen a contactes aptes l'adjunt dels quals no s'ha pogut preparar (per exemple, una ruta relativa sense URL base o un fitxer que no es pot descarregar). Si el servidor de l'adjunt triga més de 10 segons a respondre, la comprovació es repeteix una vegada abans de descartar el contacte. Una resposta d'error del servidor (per exemple, un 404 perquè el fitxer no existeix) no es repeteix.
 
 Quan **cap contacte del grup ni cap fila del fitxer és apte** (o tots ja han rebut el correu en un enviament anterior), no es pot enviar, però sí simular: el log permet esbrinar per què s'ha descartat cadascun. En el mode gràfic, el botó **Enviar** queda desactivat; en el mode consola, l'aplicació només ofereix la simulació. A més, després d'una simulació, el mode gràfic només ofereix el botó **Enviar** si s'enviaria algun correu (per exemple, no l'ofereix si cap adjunt no es pot descarregar).
 
