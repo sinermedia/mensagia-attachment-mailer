@@ -30,10 +30,18 @@ class MensagiaAPIError(Exception):
             the connection, which guarantees the request was never
             processed. True when an answer arrived or when the request may
             have been sent before the connection failed.
+        validation_errors: Messages of a failed validation by field name, as
+            the API returned them in 'error.validation_errors' (e.g.
+            {'email': ['...']}). None when the response had none usable.
     """
 
-    def __init__(self, message: str, code: str = None, http_code: int = None, reached_server: bool = True):
+    def __init__(self, message: str, code: str = None, http_code: int = None, reached_server: bool = True,
+                 validation_errors: dict = None):
         """Initialise the error with a human-readable message and optional metadata.
+
+        The detail of the validation errors, if any, is appended to the
+        message: the log and the screen show the text of the error, and
+        the generic validation message alone does not say what failed.
 
         Args:
             message: Human-readable description of the error.
@@ -41,11 +49,44 @@ class MensagiaAPIError(Exception):
             http_code: HTTP status code of the response, if available.
             reached_server: Whether the request may have reached the API.
                 Defaults to True, the safe assumption when in doubt.
+            validation_errors: The 'validation_errors' value of the
+                response, in whatever shape it came; ignored unless it is
+                an object with at least one message.
         """
-        super().__init__(message)
+        detail = _validation_detail(validation_errors)
+        super().__init__(f"{message} {detail}" if detail else message)
         self.code = code
         self.http_code = http_code
         self.reached_server = reached_server
+        self.validation_errors = validation_errors if detail else None
+
+
+def _validation_detail(validation_errors) -> str:
+    """Write the validation errors of an API response as one line of text.
+
+    Each field goes in its own brackets, with its messages separated by
+    semicolons: '[email: First.; Second.] [amount: Must be a number.]'.
+
+    Args:
+        validation_errors: The 'validation_errors' value of the response.
+            The API documents an object mapping each field to a list of
+            messages; a single text in place of the list is accepted too.
+
+    Returns:
+        The detail, or an empty string when there is none or it has any
+        other shape, so an unexpected response never hides the message.
+    """
+    if not isinstance(validation_errors, dict):
+        return ""
+    parts = []
+    for field, messages in validation_errors.items():
+        if isinstance(messages, str):
+            messages = [messages]
+        # Anything else than a list of messages carries nothing readable
+        if not isinstance(messages, list) or not messages:
+            continue
+        parts.append(f"[{field}: {'; '.join(str(m) for m in messages)}]")
+    return " ".join(parts)
 
 
 def _reached_server(exc: Exception) -> bool:
@@ -156,7 +197,8 @@ class MensagiaClient:
         """Raise MensagiaAPIError if the response indicates a failure.
 
         Attempts to extract the structured error information from the JSON
-        body first. Falls back to the raw response text if parsing fails.
+        body first, including the detail of a failed validation. Falls back
+        to the raw response text if parsing fails.
 
         Args:
             response: The requests.Response object to inspect.
@@ -172,6 +214,7 @@ class MensagiaClient:
                     error.get("message", response.text),
                     code=error.get("code"),
                     http_code=response.status_code,
+                    validation_errors=error.get("validation_errors"),
                 )
             except (ValueError, KeyError):
                 # Fall back to raw text if the body is not valid JSON

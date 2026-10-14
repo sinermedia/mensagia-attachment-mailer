@@ -77,3 +77,86 @@ class TestMensagiaClientTransportErrors:
             client.send_email({})
         assert info.value.reached_server is True
         assert info.value.http_code == 422
+
+
+GENERIC = "The data validation is not correct. See validation_errors array."
+
+
+def _error_response(error) -> MagicMock:
+    """Build a 400 response whose JSON body holds *error* under the 'error' key."""
+    response = MagicMock(ok=False, status_code=400, text="raw body")
+    response.json.return_value = {"error": error}
+    return response
+
+
+def _raised(client, error) -> MensagiaAPIError:
+    """Return the error raised when the API answers a send with *error*."""
+    client.session.post.return_value = _error_response(error)
+    with pytest.raises(MensagiaAPIError) as info:
+        client.send_email({})
+    return info.value
+
+
+class TestMensagiaClientValidationErrors:
+    """Covers the detail of validation errors kept from the API response and added to the error text."""
+
+    def test_detail_of_one_field_follows_the_message(self, client):
+        """Adds the field and its messages after the generic message."""
+        error = _raised(client, {"code": "VALIDATION_FAIL", "message": GENERIC, "http_code": "400",
+                                 "validation_errors": {"email": ["First reason.", "Second reason."]}})
+        assert str(error) == f"{GENERIC} [email: First reason.; Second reason.]"
+        assert error.code == "VALIDATION_FAIL"
+
+    def test_each_field_gets_its_own_detail(self, client):
+        """Lists every field with its own messages, in the order of the response."""
+        error = _raised(client, {"message": GENERIC, "validation_errors": {
+            "email": ["Bad email."], "amount": ["The amount must be a number."]}})
+        assert str(error) == f"{GENERIC} [email: Bad email.] [amount: The amount must be a number.]"
+
+    def test_keeps_the_validation_errors(self, client):
+        """Keeps the validation errors of the response on the exception."""
+        detail = {"email": ["Bad email."]}
+        error = _raised(client, {"message": GENERIC, "validation_errors": detail})
+        assert error.validation_errors == detail
+
+    def test_a_single_message_instead_of_a_list(self, client):
+        """Accepts a field whose messages come as a single text instead of a list."""
+        error = _raised(client, {"message": GENERIC, "validation_errors": {"email": "Bad email."}})
+        assert str(error) == f"{GENERIC} [email: Bad email.]"
+
+    def test_a_field_without_messages_is_left_out(self, client):
+        """Leaves out a field whose list of messages is empty."""
+        error = _raised(client, {"message": GENERIC, "validation_errors": {"email": [], "name": ["Too long."]}})
+        assert str(error) == f"{GENERIC} [name: Too long.]"
+
+    @pytest.mark.parametrize("detail", [None, {}, [], ["Bad email."], "Bad email.", {"email": []}],
+                             ids=["null", "empty", "empty_list", "list", "text", "no_messages"])
+    def test_missing_or_unexpected_detail_keeps_the_message(self, client, detail):
+        """Shows only the message, without failing, when the detail is missing, empty or not an object."""
+        error = _raised(client, {"message": GENERIC, "validation_errors": detail})
+        assert str(error) == GENERIC
+        assert error.validation_errors is None
+
+    def test_no_detail_in_the_response(self, client):
+        """Keeps the message as it is when the response has no validation errors at all."""
+        error = _raised(client, {"message": "Unauthorized", "code": "unauthorized"})
+        assert str(error) == "Unauthorized"
+        assert error.validation_errors is None
+
+    def test_get_requests_also_show_the_detail(self, client):
+        """Adds the detail to errors of any call, not only to sends."""
+        client.session.get.return_value = _error_response(
+            {"message": GENERIC, "validation_errors": {"per_page": ["Too big."]}})
+        with pytest.raises(MensagiaAPIError) as info:
+            client.get_agendas_page()
+        assert str(info.value) == f"{GENERIC} [per_page: Too big.]"
+
+    def test_real_response_for_a_contact_marked_not_valid(self, client):
+        """Shows the detail of the answer Mensagia gave for a contact marked as not valid in the agenda."""
+        error = _raised(client, {
+            "code": "VALIDATION_FAIL",
+            "message": GENERIC,
+            "http_code": "400",
+            "validation_errors": {"to": ["There must be at least one valid recipient to send"]},
+        })
+        assert str(error) == f"{GENERIC} [to: There must be at least one valid recipient to send]"
