@@ -405,7 +405,7 @@ Motivos de descarte (`reason=` en las líneas `[SEND_SKIP]`):
 
 Las líneas `[SEND_OK]` indican también la fecha y la hora para las que se ha programado cada correo (`start_date`), para encontrarlo en el portal de Mensagia, y el asunto con el que sale (`subject`). El resumen previo muestra los descartados agrupados por motivo.
 
-Las líneas `[SEND_ERROR]` corresponden a contactos aptos cuyo adjunto no se ha podido preparar (por ejemplo, una ruta relativa sin URL base o un archivo que no se puede descargar).
+Las líneas `[SEND_ERROR]` corresponden a contactos aptos cuyo adjunto no se ha podido preparar (por ejemplo, una ruta relativa sin URL base o un archivo que no se puede descargar). Si el servidor del adjunto tarda más de 10 segundos en responder, la comprobación se repite una vez antes de descartar el contacto. Una respuesta de error del servidor (por ejemplo, un 404 porque el archivo no existe) no se repite.
 
 Cuando **ningún contacto del grupo o fila del fichero es apto** (o todos recibieron ya el correo en un envío anterior), no se puede enviar, pero sí simular: el log permite averiguar por qué se ha descartado cada uno. En el modo gráfico, el botón **Enviar** queda desactivado; en el modo consola, la aplicación solo ofrece la simulación. Además, tras una simulación, el modo gráfico solo ofrece el botón **Enviar** si se enviaría algún correo (por ejemplo, no lo ofrece si ningún adjunto se puede descargar).
 

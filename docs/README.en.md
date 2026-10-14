@@ -405,7 +405,7 @@ Skip reasons (`reason=` in the `[SEND_SKIP]` lines):
 
 The `[SEND_OK]` lines also give the date and time each email was scheduled for (`start_date`), to find it in the Mensagia portal, and the subject it goes out with (`subject`). The summary before sending shows the discarded recipients grouped by reason.
 
-The `[SEND_ERROR]` lines are eligible contacts whose attachment could not be prepared (for example, a relative path without a base URL, or a file that cannot be downloaded).
+The `[SEND_ERROR]` lines are eligible contacts whose attachment could not be prepared (for example, a relative path without a base URL, or a file that cannot be downloaded). If the attachment's server takes more than 10 seconds to answer, the check is repeated once before the contact is left out. An error response from the server (for example, a 404 because the file does not exist) is not repeated.
 
 When **no contact in the group or row of the file is eligible** (or all of them already received the email in a previous send), sending is not possible but simulating is: the log shows why each one was left out. In GUI mode the **Send** button stays disabled; in console mode the app only offers the simulation. Also, after a simulation, GUI mode only offers the **Send** button if some email would be sent (for example, it is not offered when no attachment can be downloaded).
 
