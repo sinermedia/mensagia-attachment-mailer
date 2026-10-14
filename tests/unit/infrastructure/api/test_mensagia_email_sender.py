@@ -86,3 +86,12 @@ class TestMensagiaEmailSenderErrorTranslation:
         client.send_email.side_effect = MensagiaAPIError("invalid address", http_code=422)
         with pytest.raises(EmailRejectedError, match="invalid address"):
             sender.send(make_message())
+
+    def test_translated_error_keeps_the_validation_detail(self, sender, client):
+        """The translated error keeps the detail of a failed validation, so the log shows why."""
+        client.send_email.side_effect = MensagiaAPIError(
+            "The data validation is not correct.", http_code=400,
+            validation_errors={"email": ["The contact is not valid."]})
+        with pytest.raises(EmailRejectedError) as info:
+            sender.send(make_message())
+        assert str(info.value) == "The data validation is not correct. [email: The contact is not valid.]"
