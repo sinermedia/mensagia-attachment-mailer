@@ -165,7 +165,7 @@ python main.py
    - With the agenda, choose which custom field contains the attachment URL. If the emails go out on each contact's date, the field with the date and its format are chosen next.
    - With a file, choose which column contains the email and which one the attachment. If the emails go out on each contact's date, also the column with the date and its format.
 7. **Certified** — The user decides whether to certify the sends.
-8. **Send** — Recipients without a valid email, without an attachment or with an empty subject field are left out, and one email is sent to each of the others at a rate of 5/minute.
+8. **Send** — Recipients without a valid email, without an attachment or with an empty subject field are left out, and one email is sent to each of the others at a rate of 5/minute. When it finishes, the number of emails sent, skipped and failed is shown. In the graphical mode, the warnings about unconfirmed sends and the recipients with an error are listed below, in a scrollable list, and the log path and the buttons always stay in view, however many errors there are.
 
 ---
 

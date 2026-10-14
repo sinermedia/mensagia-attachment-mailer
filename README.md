@@ -165,7 +165,7 @@ python main.py
    - Con la agenda, se elige qué campo personalizado contiene la URL del adjunto. Si los correos salen el día de cada contacto, a continuación se elige el campo con la fecha y su formato.
    - Con un fichero, se elige qué columna contiene el correo y cuál el adjunto. Si los correos salen el día de cada contacto, también la columna con la fecha y su formato.
 7. **Certificado** — El usuario decide si certificar los envíos.
-8. **Envío** — Se descartan los destinatarios sin correo válido, sin adjunto o con un campo del asunto vacío, y se envía un correo por cada uno a razón de 5/minuto.
+8. **Envío** — Se descartan los destinatarios sin correo válido, sin adjunto o con un campo del asunto vacío, y se envía un correo por cada uno a razón de 5/minuto. Al terminar, se muestra el recuento de enviados, omitidos y errores. En el modo gráfico, los avisos de envíos no confirmados y los destinatarios con error aparecen debajo, en una lista con barra de desplazamiento, y la ruta del log y los botones quedan siempre a la vista, aunque haya muchos errores.
 
 ---
 

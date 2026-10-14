@@ -165,7 +165,7 @@ python main.py
    - Amb l'agenda, es tria quin camp personalitzat conté la URL de l'adjunt. Si els correus surten el dia de cada contacte, a continuació es tria el camp amb la data i el seu format.
    - Amb un fitxer, es tria quina columna conté el correu i quina l'adjunt. Si els correus surten el dia de cada contacte, també la columna amb la data i el seu format.
 7. **Certificat** — L'usuari decideix si certificar els enviaments.
-8. **Enviament** — Es descarten els destinataris sense un correu vàlid, sense adjunt o amb un camp de l'assumpte buit, i s'envia un correu per cada un a raó de 5/minut.
+8. **Enviament** — Es descarten els destinataris sense un correu vàlid, sense adjunt o amb un camp de l'assumpte buit, i s'envia un correu per cada un a raó de 5/minut. En acabar, es mostra el recompte d'enviats, omesos i errors. En el mode gràfic, els avisos d'enviaments no confirmats i els destinataris amb error apareixen a sota, en una llista amb barra de desplaçament, i la ruta del log i els botons queden sempre a la vista, encara que hi hagi molts errors.
 
 ---
 

@@ -167,7 +167,7 @@ python main.py
    - Coa axenda, elíxese que campo personalizado contén a URL do adxunto. Se os correos saen o día de cada contacto, a continuación elíxese o campo coa data e o seu formato.
    - Cun ficheiro, elíxese que columna contén o correo e cal o adxunto. Se os correos saen o día de cada contacto, tamén a columna coa data e o seu formato.
 7. **Certificado** — O usuario decide se certificar os envíos.
-8. **Envío** — Descártanse os destinatarios sen un correo válido, sen adxunto ou cun campo do asunto baleiro, e envíase un correo por cada un a razón de 5/minuto.
+8. **Envío** — Descártanse os destinatarios sen un correo válido, sen adxunto ou cun campo do asunto baleiro, e envíase un correo por cada un a razón de 5/minuto. Ao rematar, móstrase o reconto de enviados, omitidos e erros. No modo gráfico, os avisos de envíos non confirmados e os destinatarios con erro aparecen debaixo, nunha lista con barra de desprazamento, e a ruta do log e os botóns quedan sempre á vista, aínda que haxa moitos erros.
 
 ---
 

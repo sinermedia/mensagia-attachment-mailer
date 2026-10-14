@@ -53,6 +53,10 @@ PAD = 16
 WINDOW_W = 620
 WINDOW_H = 560
 
+# Height of the scrollable box with the errors of a finished send: what is
+# left of the window once the summary, the log path and the buttons fit
+RESULT_DETAILS_H = 240
+
 # How often the main thread drains the UI updates queued by worker threads
 UI_POLL_MS = 50
 
@@ -1557,8 +1561,8 @@ class App(ctk.CTk):
     def _build_sending_frame(self):
         """Build the progress and results step (step 8).
 
-        Creates the progress bar and result label that are updated live
-        during the send operation by _do_send().
+        Creates the progress bar, updated live during the send by _do_send(),
+        and the result widgets filled in by _finish_send() once it ends.
         """
         f = self._frames["sending"]
         ctk.CTkLabel(f, text=t("sending"), font=ctk.CTkFont(size=15, weight="bold")).pack(anchor="w", pady=(PAD, 4))
@@ -1567,12 +1571,25 @@ class App(ctk.CTk):
         self._progress_bar.set(0)
         self._progress_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=13))
         self._progress_label.pack(anchor="w")
-        self._result_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=13), wraplength=460, justify="left")
+        self._result_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=13), wraplength=560, justify="left")
         self._result_label.pack(anchor="w", pady=(PAD, 0))
         # Remember the theme's own colour so a later successful run can undo
         # the red applied when a send fails
         self._result_color = self._result_label.cget("text_color")
-        # Container for post-send action buttons; populated dynamically by _do_send
+
+        # The window has a fixed size, so the per-recipient lines, which can
+        # be many and long (each error carries the full attachment URL), go in
+        # a scrollable box of limited height. Packed into its slot only when
+        # there are any, so the summary, the log path and the buttons always
+        # stay in view whatever the number of errors
+        self._result_details_slot = ctk.CTkFrame(f, fg_color="transparent")
+        self._result_details_slot.pack(anchor="w", fill="x")
+        self._result_details = ctk.CTkTextbox(self._result_details_slot, height=RESULT_DETAILS_H, wrap="word",
+                                              font=ctk.CTkFont(size=12))
+        self._result_log_label = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=12), text_color="gray",
+                                              wraplength=560, justify="left")
+        self._result_log_label.pack(anchor="w", pady=(8, 0))
+        # Container for post-send action buttons; populated dynamically by _finish_send
         self._sending_actions = ctk.CTkFrame(f, fg_color="transparent")
         self._sending_actions.pack(anchor="w", pady=(PAD, 0))
 
@@ -1668,11 +1685,7 @@ class App(ctk.CTk):
         self._show_frame("sending")
         self._progress_bar.set(0)
         self._progress_label.configure(text="")
-        self._result_label.configure(text="", text_color=self._result_color)
-
-        # Remove any action buttons left over from a previous send
-        for w in self._sending_actions.winfo_children():
-            w.destroy()
+        self._clear_result()
 
         def _on_progress(current: int, total: int):
             """Update the progress bar and label; called by the use case per contact."""
@@ -1711,33 +1724,10 @@ class App(ctk.CTk):
                     start_time=self._start_time,
                 )
 
-                # Build the result text, appending per-contact error details if any
-                error_msgs = "\n".join(
-                    t("send_error", email=item["recipient"].email, error=item["error"])
-                    for item in result.errors
-                )
-                key = "dry_run_complete" if _dry_run else "send_complete"
-                result_text = t(key, sent=len(result.sent), skipped=len(result.skipped), errors=len(result.errors))
-                if error_msgs:
-                    result_text += "\n\n" + error_msgs
-
-                # Warn about sends that may have been scheduled without
-                # confirmation, with the recipient and slot to check in the portal
-                uncertain_msgs = result_uncertain_lines(result.uncertain)
-                if uncertain_msgs:
-                    result_text += "\n\n" + "\n\n".join(uncertain_msgs)
-                result_text += f"\n\n{t('log_saved', path=str(send_logger.log_path))}"
-
-                self._result_label.configure(text=result_text)
-                self._progress_bar.set(1)
-
-                # Persist the selections so they are pre-selected on the next run,
-                # and keep them for a new send in this same session
-                selections = self._selections()
-                save_last_selections(selections)
-                self._last_sel = selections
-
-                self._show_send_actions(_dry_run, would_send=len(result.sent))
+                # The result fills several widgets and reads the selections
+                # from others, which only the main thread may touch
+                log_path = send_logger.log_path
+                self._ui_queue.put(lambda: self._finish_send(result, _dry_run, log_path))
 
             except MensagiaAPIError as e:
                 message = t("error_api", error=str(e))
@@ -1753,6 +1743,73 @@ class App(ctk.CTk):
                 self._ui_queue.put(lambda: self._fail_send(message))
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _clear_result(self):
+        """Empty the result of a previous run before starting another one.
+
+        Leaves the summary in the theme's colour, removes the details, the
+        log path and the action buttons, so nothing of the previous run is
+        mistaken for the outcome of the new one.
+        """
+        self._result_label.configure(text="", text_color=self._result_color)
+        self._show_result_details([])
+        self._result_log_label.configure(text="")
+        for w in self._sending_actions.winfo_children():
+            w.destroy()
+
+    def _show_result_details(self, lines: list[str]):
+        """Fill the scrollable details of the result, hiding the box when empty.
+
+        Args:
+            lines: Lines to show; an empty string leaves a blank line.
+        """
+        self._result_details.configure(state="normal")
+        self._result_details.delete("1.0", "end")
+        self._result_details.pack_forget()
+        if lines:
+            self._result_details.insert("1.0", "\n".join(lines))
+            self._result_details.pack(anchor="w", fill="x", pady=(8, 0))
+        self._result_details.configure(state="disabled")
+
+    def _finish_send(self, result, dry_run: bool, log_path: Path):
+        """Show the outcome of a finished send or simulation and what can follow.
+
+        The counts go in the summary line, always in view. The warnings
+        about unconfirmed sends and the per-recipient errors go in the
+        scrollable details, the warnings first: they say what to check in
+        the Mensagia portal, while the errors are also in the log. The log
+        path and the action buttons come last, under the details. Runs on
+        the main thread, through the UI queue.
+
+        Args:
+            result: SendResult of the finished run.
+            dry_run: True when the run was a simulation.
+            log_path: Path of the log file written by the run.
+        """
+        key = "dry_run_complete" if dry_run else "send_complete"
+        self._result_label.configure(
+            text=t(key, sent=len(result.sent), skipped=len(result.skipped), errors=len(result.errors)))
+
+        # Each warning may span several lines, so a blank line sets them
+        # apart from each other and from the errors
+        details = []
+        for line in result_uncertain_lines(result.uncertain):
+            details += [line, ""]
+        details += [t("send_error", email=item["recipient"].email, error=item["error"]) for item in result.errors]
+        while details and details[-1] == "":
+            details.pop()
+        self._show_result_details(details)
+
+        self._result_log_label.configure(text=t("log_saved", path=str(log_path)))
+        self._progress_bar.set(1)
+
+        # Persist the selections so they are pre-selected on the next run,
+        # and keep them for a new send in this same session
+        selections = self._selections()
+        save_last_selections(selections)
+        self._last_sel = selections
+
+        self._show_send_actions(dry_run, would_send=len(result.sent))
 
     def _show_send_actions(self, dry_run: bool, would_send: int):
         """Offer the buttons that follow a finished send or simulation.
@@ -1801,9 +1858,8 @@ class App(ctk.CTk):
         Args:
             message: Text to show in place of the send result.
         """
+        self._clear_result()
         self._result_label.configure(text=message, text_color="red")
-        for w in self._sending_actions.winfo_children():
-            w.destroy()
         ctk.CTkButton(
             self._sending_actions, text=t("btn_back_to_summary"),
             command=lambda: self._show_frame("summary"),
